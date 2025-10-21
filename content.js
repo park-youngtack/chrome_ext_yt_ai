@@ -1,8 +1,10 @@
 // 번역 상태를 저장하는 전역 변수
 let isTranslated = false;
 let originalTexts = new Map(); // 원본 텍스트 저장
+let translatedTexts = new Map(); // 번역된 텍스트 캐시
 let translatedElements = new Set(); // 이미 번역된 요소 추적
 let scrollObserver = null; // 스크롤 감지 옵저버
+let mutationObserver = null; // 동적 콘텐츠 감지 옵저버
 let currentApiKey = null;
 let currentModel = null;
 
@@ -10,7 +12,11 @@ let currentModel = null;
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggleTranslation') {
     handleTranslationToggle(request.apiKey, request.model);
+    sendResponse({ success: true });
+  } else if (request.action === 'getTranslationState') {
+    sendResponse({ isTranslated: isTranslated });
   }
+  return true; // 비동기 응답을 위해 필요
 });
 
 // 번역 토글 핸들러
@@ -18,15 +24,25 @@ async function handleTranslationToggle(apiKey, model) {
   if (isTranslated) {
     // 이미 번역된 상태 -> 원본으로 복원
     restoreOriginalTexts();
+    updateTranslationState(false);
   } else {
     // API 키와 모델 저장
     currentApiKey = apiKey;
     currentModel = model;
-    // 번역 시작
+    // 번역 시작 (캐시 활용)
     await translateVisibleContent(apiKey, model);
     // 스크롤 감지 시작
     setupScrollObserver();
+    // 동적 콘텐츠 감지 시작
+    setupMutationObserver();
+    updateTranslationState(true);
   }
+}
+
+// 번역 상태를 storage에 저장
+function updateTranslationState(state) {
+  isTranslated = state;
+  chrome.storage.session.set({ isTranslated: state });
 }
 
 // 원본 텍스트로 복원
@@ -37,6 +53,12 @@ function restoreOriginalTexts() {
     scrollObserver = null;
   }
 
+  // Mutation 옵저버 중지
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+    mutationObserver = null;
+  }
+
   originalTexts.forEach((originalText, element) => {
     if (element && element.isConnected) {
       element.textContent = originalText;
@@ -45,11 +67,9 @@ function restoreOriginalTexts() {
     }
   });
 
-  originalTexts.clear();
+  // 캐시는 유지 (originalTexts, translatedTexts)
+  // 다음 번역 시 API 호출 없이 사용 가능
   translatedElements.clear();
-  isTranslated = false;
-  currentApiKey = null;
-  currentModel = null;
 
   showNotification('원본으로 복원되었습니다.', 'success');
 }
@@ -217,24 +237,53 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     const { texts, elements } = extractTextsForTranslation(textNodes);
 
     // 이미 번역된 요소는 제외
-    const newTexts = [];
-    const newElements = [];
+    const cachedElements = []; // 캐시에서 가져올 요소
+    const newTexts = []; // API 호출이 필요한 텍스트
+    const newElements = []; // API 호출이 필요한 요소
 
     elements.forEach((element, idx) => {
       if (!translatedElements.has(element)) {
-        newTexts.push(texts[idx]);
-        newElements.push(element);
+        const originalText = texts[idx];
+
+        // 캐시에 번역이 있는지 확인
+        if (translatedTexts.has(originalText)) {
+          cachedElements.push({ element, originalText });
+        } else {
+          newTexts.push(originalText);
+          newElements.push(element);
+        }
       }
     });
 
+    // 캐시된 번역 즉시 적용
+    let cachedCount = 0;
+    cachedElements.forEach(({ element, originalText }) => {
+      const translation = translatedTexts.get(originalText);
+      if (translation) {
+        if (!originalTexts.has(element)) {
+          originalTexts.set(element, element.textContent);
+        }
+        element.textContent = translation;
+        translatedElements.add(element);
+        cachedCount++;
+      }
+    });
+
+    if (cachedCount > 0) {
+      console.log(`캐시에서 ${cachedCount}개 번역 적용`);
+    }
+
+    // API 호출이 필요한 텍스트가 없으면 종료
     if (newTexts.length === 0) {
-      if (!silentMode) {
+      if (!silentMode && cachedCount > 0) {
+        showNotification(`번역 완료! (캐시 사용: ${cachedCount}개)`, 'success');
+      } else if (!silentMode) {
         showNotification('번역할 새로운 텍스트가 없습니다.', 'warning');
       }
       return;
     }
 
-    console.log(`번역할 텍스트 ${newTexts.length}개 발견`);
+    console.log(`새로 번역할 텍스트 ${newTexts.length}개 발견 (캐시: ${cachedCount}개)`);
 
     // 배치 크기로 나누어 번역 (한 번에 너무 많이 보내지 않도록)
     const batchSize = 50;
@@ -261,17 +310,26 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
 
       const translations = await translateWithOpenRouter(batch.texts, apiKey, model);
 
-      // 번역 결과 적용
+      // 번역 결과 적용 및 캐시에 저장
       batch.elements.forEach((element, idx) => {
         if (translations[idx]) {
+          const originalText = batch.texts[idx];
+          const translation = translations[idx];
+
           // 원본 저장
           if (!originalTexts.has(element)) {
             originalTexts.set(element, element.textContent);
           }
+
+          // 캐시에 저장
+          translatedTexts.set(originalText, translation);
+
           // 번역 적용
-          element.textContent = translations[idx];
+          element.textContent = translation;
+
           // 번역 완료 표시
           translatedElements.add(element);
+
           // 로딩 효과 제거
           removeLoadingEffect(element);
         }
@@ -283,9 +341,11 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
       }
     }
 
-    isTranslated = true;
     if (!silentMode) {
-      showNotification('번역 완료!', 'success');
+      const totalMsg = cachedCount > 0
+        ? `번역 완료! (새로 번역: ${newTexts.length}개, 캐시: ${cachedCount}개)`
+        : `번역 완료! (${newTexts.length}개)`;
+      showNotification(totalMsg, 'success');
     }
 
   } catch (error) {
@@ -399,6 +459,65 @@ function setupScrollObserver() {
 
   console.log('스크롤 감지 시작:', observeElements.length, '개 요소 관찰');
 }
+
+// 동적 콘텐츠 감지 설정 (MutationObserver)
+function setupMutationObserver() {
+  // 기존 옵저버가 있으면 제거
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+  }
+
+  mutationObserver = new MutationObserver((mutations) => {
+    // 번역 모드가 아니면 무시
+    if (!isTranslated || !currentApiKey || !currentModel) return;
+
+    let hasNewContent = false;
+
+    mutations.forEach(mutation => {
+      // 새로 추가된 노드 확인
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        mutation.addedNodes.forEach(node => {
+          // 텍스트 노드이거나 요소 노드인 경우
+          if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.ELEMENT_NODE) {
+            hasNewContent = true;
+          }
+        });
+      }
+
+      // 텍스트 내용이 변경된 경우
+      if (mutation.type === 'characterData') {
+        hasNewContent = true;
+      }
+    });
+
+    if (hasNewContent) {
+      // 디바운스를 위해 타이머 사용
+      clearTimeout(mutationObserver.timer);
+      mutationObserver.timer = setTimeout(async () => {
+        console.log('동적 콘텐츠 감지: 번역 시작');
+        await translateVisibleContent(currentApiKey, currentModel, true);
+      }, 1000); // 1초 디바운스
+    }
+  });
+
+  // 전체 문서를 관찰
+  mutationObserver.observe(document.body, {
+    childList: true, // 자식 노드 추가/제거 감지
+    subtree: true, // 모든 하위 노드 감지
+    characterData: true, // 텍스트 변경 감지
+    characterDataOldValue: false
+  });
+
+  console.log('동적 콘텐츠 감지 시작');
+}
+
+// 페이지 언로드 시 캐시 클리어
+window.addEventListener('beforeunload', () => {
+  originalTexts.clear();
+  translatedTexts.clear();
+  translatedElements.clear();
+  console.log('페이지 언로드: 캐시 클리어');
+});
 
 // 알림 표시
 function showNotification(message, type) {

@@ -12,7 +12,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (result.model) {
     document.getElementById('model').value = result.model;
   }
-  // 빈 값으로 두어 placeholder 표시
+
+  // 번역 버튼 텍스트 업데이트
+  await updateTranslateButtonText();
 });
 
 // 설정 저장
@@ -35,6 +37,30 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     showStatus('저장 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 });
+
+// 번역 버튼 텍스트 업데이트
+async function updateTranslateButtonText() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // content script에서 번역 상태 가져오기
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'getTranslationState'
+    });
+
+    const translateBtn = document.getElementById('translateBtn');
+    if (response && response.isTranslated) {
+      translateBtn.textContent = '원본 페이지 보기';
+      translateBtn.style.backgroundColor = '#FF9800'; // 주황색
+    } else {
+      translateBtn.textContent = '이 페이지 번역하기';
+      translateBtn.style.backgroundColor = '#2196F3'; // 파란색
+    }
+  } catch (error) {
+    // content script가 로드되지 않은 경우 기본 텍스트 사용
+    console.log('번역 상태 확인 불가:', error.message);
+  }
+}
 
 // 번역 버튼
 document.getElementById('translateBtn').addEventListener('click', async () => {
@@ -59,15 +85,15 @@ document.getElementById('translateBtn').addEventListener('click', async () => {
       model: model
     });
 
-    showStatus('번역을 시작합니다...', 'success');
+    showStatus('처리 중...', 'success');
 
-    // 3초 후 팝업 닫기
+    // 1.5초 후 팝업 닫기
     setTimeout(() => {
       window.close();
     }, 1500);
 
   } catch (error) {
-    showStatus('번역 중 오류: ' + error.message, 'error');
+    showStatus('오류: ' + error.message, 'error');
   }
 });
 
