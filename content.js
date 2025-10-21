@@ -3,7 +3,6 @@ let isTranslated = false;
 let originalTexts = new WeakMap(); // 원본 텍스트 저장 (WeakMap으로 메모리 누수 방지)
 let translatedElements = new Set(); // 이미 번역된 요소 추적 (Set으로 순회 가능하게 보관)
 let scrollObserver = null; // 스크롤 감지 옵저버
-let mutationObserver = null; // 동적 콘텐츠 감지 옵저버
 let currentApiKey = null;
 let currentModel = null;
 
@@ -45,10 +44,8 @@ async function handleTranslationToggle(apiKey, model) {
 
     // 번역 시작 (캐시 활용)
     await translateVisibleContent(apiKey, model);
-    // 스크롤 감지 시작
+    // 스크롤 감지 시작 (실시간 감시 대신 스크롤 이벤트만 사용)
     setupScrollObserver();
-    // 동적 콘텐츠 감지 시작
-    setupMutationObserver();
     updateTranslationState(true);
   }
 }
@@ -108,11 +105,6 @@ function cleanupMemory() {
     scrollObserver = null;
   }
 
-  if (mutationObserver) {
-    mutationObserver.disconnect();
-    mutationObserver = null;
-  }
-
   // WeakMap과 Set은 명시적으로 참조를 끊어 메모리 사용을 최소화
   originalTexts = new WeakMap();
   translatedElements.clear();
@@ -129,6 +121,35 @@ function cleanupMemory() {
   // 페이지 컨텍스트는 유지 (페이지가 바뀌지 않는 한)
 
   console.log('메모리 정리 완료');
+}
+
+// 번역된 요소 중 DOM에서 사라진 항목 정리 (스크롤 기반 감시에 맞춰 주기적으로 호출)
+function pruneTranslatedElements() {
+  if (translatedElements.size === 0) {
+    return;
+  }
+
+  const staleElements = [];
+
+  translatedElements.forEach(element => {
+    // 요소가 더 이상 문서에 없거나 접근할 수 없으면 제거 대상에 추가
+    if (!element || !document.contains(element)) {
+      staleElements.push(element);
+    }
+  });
+
+  if (staleElements.length === 0) {
+    return;
+  }
+
+  staleElements.forEach(element => {
+    translatedElements.delete(element);
+    if (element && originalTexts.has(element)) {
+      originalTexts.delete(element);
+    }
+  });
+
+  console.log(`번역 요소 정리: ${staleElements.length}개 제거`);
 }
 
 // 페이지 컨텍스트 분석 (LLM 기반 산업군 판단)
@@ -319,12 +340,6 @@ function restoreOriginalTexts() {
     scrollObserver = null;
   }
 
-  // Mutation 옵저버 중지
-  if (mutationObserver) {
-    mutationObserver.disconnect();
-    mutationObserver = null;
-  }
-
   // 모든 번역된 요소를 순회하며 원문으로 복구
   // Set을 사용하므로 화면 밖 요소도 빠짐없이 복구 가능
   translatedElements.forEach(element => {
@@ -352,6 +367,7 @@ function restoreOriginalTexts() {
 // 화면에 보이는 텍스트 요소 수집
 function getVisibleTextElements() {
   const textNodes = [];
+  const visibilityCache = new Map(); // 부모 요소별 가시성 정보를 저장해 레이아웃 계산 최소화
   const walker = document.createTreeWalker(
     document.body,
     NodeFilter.SHOW_TEXT,
@@ -382,20 +398,28 @@ function getVisibleTextElements() {
           return NodeFilter.FILTER_REJECT;
         }
 
-        // 요소가 화면에 보이는지 확인
-        const rect = parent.getBoundingClientRect();
-        const isVisible = rect.top < window.innerHeight &&
-                         rect.bottom > 0 &&
-                         rect.left < window.innerWidth &&
-                         rect.right > 0;
+        // 부모 요소의 가시성 정보를 캐시해 중복 계산을 줄임
+        let cachedVisibility = visibilityCache.get(parent);
 
-        if (!isVisible) {
-          return NodeFilter.FILTER_REJECT;
+        if (!cachedVisibility) {
+          const rect = parent.getBoundingClientRect();
+          const style = window.getComputedStyle(parent);
+          const isInsideViewport = rect.top < window.innerHeight &&
+                                   rect.bottom > 0 &&
+                                   rect.left < window.innerWidth &&
+                                   rect.right > 0;
+          const isHidden = style.display === 'none' ||
+                           style.visibility === 'hidden' ||
+                           parseFloat(style.opacity || '1') === 0;
+
+          cachedVisibility = {
+            visible: isInsideViewport && !isHidden
+          };
+
+          visibilityCache.set(parent, cachedVisibility);
         }
 
-        // display: none이나 visibility: hidden인지 확인
-        const style = window.getComputedStyle(parent);
-        if (style.display === 'none' || style.visibility === 'hidden') {
+        if (!cachedVisibility.visible) {
           return NodeFilter.FILTER_REJECT;
         }
 
@@ -503,6 +527,9 @@ function parseTranslationResult(translatedText, expectedCount) {
 // 화면에 보이는 콘텐츠 번역
 async function translateVisibleContent(apiKey, model, silentMode = false) {
   try {
+    // 기존에 번역되었다가 화면에서 사라진 노드를 먼저 정리해 메모리 누수를 줄임
+    pruneTranslatedElements();
+
     // 컨텍스트는 이미 분석됨
     const context = pageContext || { industry: 'general' };
 
@@ -733,57 +760,6 @@ function setupScrollObserver() {
   };
 
   console.log('스크롤 감지 시작 (이벤트 기반)');
-}
-
-// 동적 콘텐츠 감지 설정 (MutationObserver)
-function setupMutationObserver() {
-  // 기존 옵저버가 있으면 제거
-  if (mutationObserver) {
-    mutationObserver.disconnect();
-  }
-
-  mutationObserver = new MutationObserver((mutations) => {
-    // 번역 모드가 아니면 무시
-    if (!isTranslated || !currentApiKey || !currentModel) return;
-
-    let hasNewContent = false;
-
-    mutations.forEach(mutation => {
-      // 새로 추가된 노드 확인
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        mutation.addedNodes.forEach(node => {
-          // 텍스트 노드이거나 요소 노드인 경우
-          if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.ELEMENT_NODE) {
-            hasNewContent = true;
-          }
-        });
-      }
-
-      // 텍스트 내용이 변경된 경우
-      if (mutation.type === 'characterData') {
-        hasNewContent = true;
-      }
-    });
-
-    if (hasNewContent) {
-      // 디바운스를 위해 타이머 사용
-      clearTimeout(mutationObserver.timer);
-      mutationObserver.timer = setTimeout(async () => {
-        console.log('동적 콘텐츠 감지: 번역 시작');
-        await translateVisibleContent(currentApiKey, currentModel, true);
-      }, 1000); // 1초 디바운스
-    }
-  });
-
-  // 전체 문서를 관찰
-  mutationObserver.observe(document.body, {
-    childList: true, // 자식 노드 추가/제거 감지
-    subtree: true, // 모든 하위 노드 감지
-    characterData: true, // 텍스트 변경 감지
-    characterDataOldValue: false
-  });
-
-  console.log('동적 콘텐츠 감지 시작');
 }
 
 // 페이지 언로드 시 메모리 정리
