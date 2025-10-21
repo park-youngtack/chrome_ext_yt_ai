@@ -12,6 +12,9 @@ const MAX_CACHE_SIZE = 1000; // 최대 1000개 텍스트만 캐시
 let translatedTexts = new Map(); // 번역된 텍스트 캐시
 let cacheAccessOrder = []; // LRU 추적용
 
+// 페이지 컨텍스트 (한 번만 분석)
+let pageContext = null;
+
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggleTranslation') {
@@ -116,7 +119,145 @@ function cleanupMemory() {
   currentApiKey = null;
   currentModel = null;
 
+  // 페이지 컨텍스트는 유지 (페이지가 바뀌지 않는 한)
+
   console.log('메모리 정리 완료');
+}
+
+// 페이지 컨텍스트 분석 (맥락 파악)
+function analyzePageContext() {
+  if (pageContext) {
+    return pageContext; // 이미 분석됨
+  }
+
+  console.log('페이지 컨텍스트 분석 중...');
+
+  const context = {
+    url: window.location.href,
+    domain: window.location.hostname,
+    title: document.title,
+    description: '',
+    keywords: [],
+    category: 'general',
+    industry: 'general',
+    mainTopics: []
+  };
+
+  // 메타 태그에서 정보 추출
+  const metaDescription = document.querySelector('meta[name="description"]');
+  if (metaDescription) {
+    context.description = metaDescription.getAttribute('content') || '';
+  }
+
+  const metaKeywords = document.querySelector('meta[name="keywords"]');
+  if (metaKeywords) {
+    const keywords = metaKeywords.getAttribute('content') || '';
+    context.keywords = keywords.split(',').map(k => k.trim()).filter(k => k);
+  }
+
+  // 헤딩 태그에서 주요 주제 추출 (h1, h2)
+  const headings = Array.from(document.querySelectorAll('h1, h2'))
+    .map(h => h.textContent.trim())
+    .filter(t => t && t.length > 0 && t.length < 100)
+    .slice(0, 5); // 최대 5개
+  context.mainTopics = headings;
+
+  // URL 기반 산업/카테고리 추정
+  const domain = context.domain.toLowerCase();
+  const path = window.location.pathname.toLowerCase();
+  const fullUrl = (domain + path).toLowerCase();
+
+  // 산업군 키워드 매칭
+  const industryPatterns = {
+    'medical': ['health', 'medical', 'doctor', 'hospital', 'clinic', 'patient', 'medicine', 'disease'],
+    'tech': ['tech', 'software', 'developer', 'programming', 'code', 'api', 'github', 'stackoverflow'],
+    'finance': ['finance', 'bank', 'invest', 'stock', 'trading', 'money', 'insurance', 'loan'],
+    'legal': ['law', 'legal', 'attorney', 'court', 'justice', 'lawyer', 'regulation'],
+    'education': ['education', 'university', 'school', 'course', 'learn', 'study', 'academic'],
+    'ecommerce': ['shop', 'store', 'buy', 'product', 'cart', 'price', 'sale', 'amazon', 'ebay'],
+    'news': ['news', 'article', 'blog', 'post', 'media', 'press', 'journal'],
+    'gaming': ['game', 'gaming', 'play', 'player', 'steam', 'twitch'],
+    'science': ['science', 'research', 'paper', 'journal', 'study', 'experiment']
+  };
+
+  // 키워드 매칭으로 산업 추정
+  let maxMatches = 0;
+  let detectedIndustry = 'general';
+
+  for (const [industry, patterns] of Object.entries(industryPatterns)) {
+    let matches = 0;
+
+    // URL, 제목, 설명, 주제에서 키워드 찾기
+    const searchText = `${fullUrl} ${context.title} ${context.description} ${headings.join(' ')}`.toLowerCase();
+
+    for (const pattern of patterns) {
+      if (searchText.includes(pattern)) {
+        matches++;
+      }
+    }
+
+    if (matches > maxMatches) {
+      maxMatches = matches;
+      detectedIndustry = industry;
+    }
+  }
+
+  if (maxMatches >= 2) { // 최소 2개 이상 매칭되어야 확정
+    context.industry = detectedIndustry;
+    context.category = detectedIndustry;
+  }
+
+  pageContext = context;
+
+  console.log('페이지 컨텍스트:', {
+    industry: context.industry,
+    category: context.category,
+    domain: context.domain,
+    topicsCount: context.mainTopics.length
+  });
+
+  return context;
+}
+
+// 컨텍스트 기반 번역 프롬프트 생성
+function buildContextualPrompt(texts, context) {
+  let contextInfo = '';
+
+  if (context.industry !== 'general') {
+    const industryNames = {
+      'medical': '의료/건강',
+      'tech': 'IT/기술',
+      'finance': '금융',
+      'legal': '법률',
+      'education': '교육',
+      'ecommerce': '전자상거래',
+      'news': '뉴스/미디어',
+      'gaming': '게임',
+      'science': '과학/연구'
+    };
+
+    contextInfo = `
+이 페이지는 "${industryNames[context.industry] || context.industry}" 분야의 콘텐츠입니다.`;
+  }
+
+  if (context.mainTopics && context.mainTopics.length > 0) {
+    contextInfo += `
+주요 주제: ${context.mainTopics.slice(0, 3).join(', ')}`;
+  }
+
+  const prompt = `다음 텍스트들을 한국어로 번역해주세요.${contextInfo}
+
+번역할 텍스트:
+${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
+
+중요:
+- 각 줄을 [0], [1], [2] ... 형식으로 번호를 붙여서 번역 결과를 반환해주세요.
+- ${context.industry !== 'general' ? `${context.industry} 분야의 전문 용어를 정확하게 번역해주세요.` : ''}
+- 원본의 형식과 구조를 최대한 유지하되, 내용만 한국어로 번역해주세요.
+- 번역만 제공하고 다른 설명은 추가하지 마세요.
+- HTML 태그가 있다면 그대로 유지해주세요.`;
+
+  return prompt;
 }
 
 // 원본 텍스트로 복원
@@ -236,15 +377,11 @@ function extractTextsForTranslation(textNodes) {
 
 // OpenRouter API를 사용한 번역
 async function translateWithOpenRouter(texts, apiKey, model) {
-  const prompt = `다음 텍스트들을 한국어로 번역해주세요. 각 줄을 번역하여 같은 순서로 반환해주세요. 원본의 형식과 구조를 최대한 유지하되, 내용만 한국어로 번역해주세요.
+  // 페이지 컨텍스트 분석 (최초 1회만)
+  const context = analyzePageContext();
 
-번역할 텍스트:
-${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
-
-중요:
-- 각 줄을 [0], [1], [2] ... 형식으로 번호를 붙여서 번역 결과를 반환해주세요.
-- 번역만 제공하고 다른 설명은 추가하지 마세요.
-- HTML 태그가 있다면 그대로 유지해주세요.`;
+  // 컨텍스트 기반 프롬프트 생성
+  const prompt = buildContextualPrompt(texts, context);
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -309,8 +446,14 @@ function parseTranslationResult(translatedText, expectedCount) {
 // 화면에 보이는 콘텐츠 번역
 async function translateVisibleContent(apiKey, model, silentMode = false) {
   try {
+    // 컨텍스트 분석 (최초 1회)
+    const context = analyzePageContext();
+
     if (!silentMode) {
-      showNotification('번역 중...', 'info');
+      const contextMsg = context.industry !== 'general'
+        ? `번역 중... (${context.industry} 분야 감지)`
+        : '번역 중...';
+      showNotification(contextMsg, 'info');
     }
 
     // 화면에 보이는 텍스트 노드 수집
