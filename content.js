@@ -36,6 +36,13 @@ async function handleTranslationToggle(apiKey, model) {
     // API 키와 모델 저장
     currentApiKey = apiKey;
     currentModel = model;
+
+    // 컨텍스트 분석 (LLM 사용, 최초 1회만)
+    if (!pageContext) {
+      showNotification('페이지 분석 중... (AI가 산업군 판단)', 'info');
+      await analyzePageContext(apiKey, model);
+    }
+
     // 번역 시작 (캐시 활용)
     await translateVisibleContent(apiKey, model);
     // 스크롤 감지 시작
@@ -124,35 +131,27 @@ function cleanupMemory() {
   console.log('메모리 정리 완료');
 }
 
-// 페이지 컨텍스트 분석 (맥락 파악)
-function analyzePageContext() {
+// 페이지 컨텍스트 분석 (LLM 기반 산업군 판단)
+async function analyzePageContext(apiKey, model) {
   if (pageContext) {
     return pageContext; // 이미 분석됨
   }
 
-  console.log('페이지 컨텍스트 분석 중...');
+  console.log('페이지 컨텍스트를 LLM으로 분석 중...');
 
-  const context = {
+  // 페이지 정보 수집
+  const pageInfo = {
     url: window.location.href,
     domain: window.location.hostname,
     title: document.title,
     description: '',
-    keywords: [],
-    category: 'general',
-    industry: 'general',
     mainTopics: []
   };
 
   // 메타 태그에서 정보 추출
   const metaDescription = document.querySelector('meta[name="description"]');
   if (metaDescription) {
-    context.description = metaDescription.getAttribute('content') || '';
-  }
-
-  const metaKeywords = document.querySelector('meta[name="keywords"]');
-  if (metaKeywords) {
-    const keywords = metaKeywords.getAttribute('content') || '';
-    context.keywords = keywords.split(',').map(k => k.trim()).filter(k => k);
+    pageInfo.description = metaDescription.getAttribute('content') || '';
   }
 
   // 헤딩 태그에서 주요 주제 추출 (h1, h2)
@@ -160,89 +159,141 @@ function analyzePageContext() {
     .map(h => h.textContent.trim())
     .filter(t => t && t.length > 0 && t.length < 100)
     .slice(0, 5); // 최대 5개
-  context.mainTopics = headings;
+  pageInfo.mainTopics = headings;
 
-  // URL 기반 산업/카테고리 추정
-  const domain = context.domain.toLowerCase();
-  const path = window.location.pathname.toLowerCase();
-  const fullUrl = (domain + path).toLowerCase();
+  // 본문 일부 추출 (첫 500자)
+  const bodyText = document.body.innerText
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 500);
 
-  // 산업군 키워드 매칭
-  const industryPatterns = {
-    'medical': ['health', 'medical', 'doctor', 'hospital', 'clinic', 'patient', 'medicine', 'disease'],
-    'tech': ['tech', 'software', 'developer', 'programming', 'code', 'api', 'github', 'stackoverflow'],
-    'finance': ['finance', 'bank', 'invest', 'stock', 'trading', 'money', 'insurance', 'loan'],
-    'legal': ['law', 'legal', 'attorney', 'court', 'justice', 'lawyer', 'regulation'],
-    'education': ['education', 'university', 'school', 'course', 'learn', 'study', 'academic'],
-    'ecommerce': ['shop', 'store', 'buy', 'product', 'cart', 'price', 'sale', 'amazon', 'ebay'],
-    'news': ['news', 'article', 'blog', 'post', 'media', 'press', 'journal'],
-    'gaming': ['game', 'gaming', 'play', 'player', 'steam', 'twitch'],
-    'science': ['science', 'research', 'paper', 'journal', 'study', 'experiment']
-  };
+  // LLM에게 산업군 판단 요청
+  const analysisPrompt = `다음 웹페이지 정보를 분석하여 산업군/카테고리를 판단하고, 한국어 번역 시 주의할 점을 제공해주세요.
 
-  // 키워드 매칭으로 산업 추정
-  let maxMatches = 0;
-  let detectedIndustry = 'general';
+웹페이지 정보:
+- URL: ${pageInfo.url}
+- 도메인: ${pageInfo.domain}
+- 제목: ${pageInfo.title}
+- 설명: ${pageInfo.description}
+- 주요 헤딩: ${pageInfo.mainTopics.join(', ')}
+- 본문 일부: ${bodyText}
 
-  for (const [industry, patterns] of Object.entries(industryPatterns)) {
-    let matches = 0;
+다음 JSON 형식으로만 응답해주세요 (다른 설명 없이):
+{
+  "industry": "산업군 (예: 블록체인/암호화폐, AI/머신러닝, 의료/건강 등)",
+  "category": "세부 카테고리",
+  "translationGuidelines": "이 분야의 한국어 번역 시 주의사항 (전문 용어, 일반적인 번역 관행 등)"
+}`;
 
-    // URL, 제목, 설명, 주제에서 키워드 찾기
-    const searchText = `${fullUrl} ${context.title} ${context.description} ${headings.join(' ')}`.toLowerCase();
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.href,
+        'X-Title': 'Web Page Translator - Context Analysis'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: analysisPrompt
+          }
+        ],
+        temperature: 0.3 // 일관된 분석을 위해 낮은 temperature
+      })
+    });
 
-    for (const pattern of patterns) {
-      if (searchText.includes(pattern)) {
-        matches++;
+    if (!response.ok) {
+      throw new Error(`LLM API 오류: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const analysisText = data.choices[0].message.content;
+
+    // JSON 파싱
+    let analysisResult;
+    try {
+      // JSON만 추출 (마크다운 코드 블록이 있을 수 있음)
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysisResult = JSON.parse(jsonMatch[0]);
+      } else {
+        analysisResult = JSON.parse(analysisText);
       }
+    } catch (parseError) {
+      console.warn('LLM 응답 JSON 파싱 실패, 기본값 사용:', parseError);
+      analysisResult = {
+        industry: 'general',
+        category: 'general',
+        translationGuidelines: '일반적인 번역 가이드라인을 따릅니다.'
+      };
     }
 
-    if (matches > maxMatches) {
-      maxMatches = matches;
-      detectedIndustry = industry;
-    }
+    // 컨텍스트 생성
+    pageContext = {
+      url: pageInfo.url,
+      domain: pageInfo.domain,
+      title: pageInfo.title,
+      description: pageInfo.description,
+      mainTopics: pageInfo.mainTopics,
+      industry: analysisResult.industry || 'general',
+      category: analysisResult.category || 'general',
+      translationGuidelines: analysisResult.translationGuidelines || ''
+    };
+
+    console.log('LLM 컨텍스트 분석 완료:', {
+      industry: pageContext.industry,
+      category: pageContext.category,
+      guidelines: pageContext.translationGuidelines.substring(0, 100) + '...'
+    });
+
+    return pageContext;
+
+  } catch (error) {
+    console.error('LLM 컨텍스트 분석 실패:', error);
+
+    // 실패 시 기본 컨텍스트 사용
+    pageContext = {
+      url: pageInfo.url,
+      domain: pageInfo.domain,
+      title: pageInfo.title,
+      description: pageInfo.description,
+      mainTopics: pageInfo.mainTopics,
+      industry: 'general',
+      category: 'general',
+      translationGuidelines: '일반적인 번역 가이드라인을 따릅니다.'
+    };
+
+    return pageContext;
   }
-
-  if (maxMatches >= 2) { // 최소 2개 이상 매칭되어야 확정
-    context.industry = detectedIndustry;
-    context.category = detectedIndustry;
-  }
-
-  pageContext = context;
-
-  console.log('페이지 컨텍스트:', {
-    industry: context.industry,
-    category: context.category,
-    domain: context.domain,
-    topicsCount: context.mainTopics.length
-  });
-
-  return context;
 }
 
-// 컨텍스트 기반 번역 프롬프트 생성
+// 컨텍스트 기반 번역 프롬프트 생성 (LLM 가이드라인 활용)
 function buildContextualPrompt(texts, context) {
   let contextInfo = '';
 
-  if (context.industry !== 'general') {
-    const industryNames = {
-      'medical': '의료/건강',
-      'tech': 'IT/기술',
-      'finance': '금융',
-      'legal': '법률',
-      'education': '교육',
-      'ecommerce': '전자상거래',
-      'news': '뉴스/미디어',
-      'gaming': '게임',
-      'science': '과학/연구'
-    };
-
+  if (context.industry && context.industry !== 'general') {
     contextInfo = `
-이 페이지는 "${industryNames[context.industry] || context.industry}" 분야의 콘텐츠입니다.`;
+이 페이지는 "${context.industry}" 분야의 콘텐츠입니다.`;
+
+    if (context.category && context.category !== context.industry) {
+      contextInfo += `
+세부 카테고리: ${context.category}`;
+    }
   }
 
   if (context.mainTopics && context.mainTopics.length > 0) {
     contextInfo += `
 주요 주제: ${context.mainTopics.slice(0, 3).join(', ')}`;
+  }
+
+  if (context.translationGuidelines) {
+    contextInfo += `
+
+번역 가이드라인: ${context.translationGuidelines}`;
   }
 
   const prompt = `다음 텍스트들을 한국어로 번역해주세요.${contextInfo}
@@ -252,7 +303,7 @@ ${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
 
 중요:
 - 각 줄을 [0], [1], [2] ... 형식으로 번호를 붙여서 번역 결과를 반환해주세요.
-- ${context.industry !== 'general' ? `${context.industry} 분야의 전문 용어를 정확하게 번역해주세요.` : ''}
+- 위의 번역 가이드라인을 엄격히 따라주세요.
 - 원본의 형식과 구조를 최대한 유지하되, 내용만 한국어로 번역해주세요.
 - 번역만 제공하고 다른 설명은 추가하지 마세요.
 - HTML 태그가 있다면 그대로 유지해주세요.`;
@@ -377,8 +428,12 @@ function extractTextsForTranslation(textNodes) {
 
 // OpenRouter API를 사용한 번역
 async function translateWithOpenRouter(texts, apiKey, model) {
-  // 페이지 컨텍스트 분석 (최초 1회만)
-  const context = analyzePageContext();
+  // 페이지 컨텍스트는 이미 분석됨 (handleTranslationToggle에서)
+  const context = pageContext || {
+    industry: 'general',
+    category: 'general',
+    translationGuidelines: ''
+  };
 
   // 컨텍스트 기반 프롬프트 생성
   const prompt = buildContextualPrompt(texts, context);
@@ -446,12 +501,12 @@ function parseTranslationResult(translatedText, expectedCount) {
 // 화면에 보이는 콘텐츠 번역
 async function translateVisibleContent(apiKey, model, silentMode = false) {
   try {
-    // 컨텍스트 분석 (최초 1회)
-    const context = analyzePageContext();
+    // 컨텍스트는 이미 분석됨
+    const context = pageContext || { industry: 'general' };
 
     if (!silentMode) {
-      const contextMsg = context.industry !== 'general'
-        ? `번역 중... (${context.industry} 분야 감지)`
+      const contextMsg = context.industry && context.industry !== 'general'
+        ? `번역 중... (${context.industry} 분야)`
         : '번역 중...';
       showNotification(contextMsg, 'info');
     }
