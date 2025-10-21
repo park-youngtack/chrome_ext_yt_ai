@@ -613,6 +613,8 @@ function extractTextsForTranslation(textNodes) {
 
 // OpenRouter API를 사용한 번역
 async function translateWithOpenRouter(texts, apiKey, model) {
+  const startTime = performance.now();
+
   // 페이지 컨텍스트는 이미 분석됨 (handleTranslationToggle에서)
   const context = pageContext || {
     industry: 'general',
@@ -623,7 +625,10 @@ async function translateWithOpenRouter(texts, apiKey, model) {
   // 컨텍스트 기반 프롬프트 생성
   const prompt = buildContextualPrompt(texts, context);
 
+  console.log(`[API] 번역 요청 시작 - ${texts.length}개 텍스트, 모델: ${model}`);
+
   try {
+    const fetchStartTime = performance.now();
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -643,19 +648,32 @@ async function translateWithOpenRouter(texts, apiKey, model) {
       })
     });
 
+    const fetchEndTime = performance.now();
+    console.log(`[API] 네트워크 요청 완료 - ${(fetchEndTime - fetchStartTime).toFixed(0)}ms`);
+
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(`API 오류: ${errorData.error?.message || response.statusText}`);
     }
 
+    const parseStartTime = performance.now();
     const data = await response.json();
     const translatedText = data.choices[0].message.content;
 
     // 번역 결과 파싱
-    return parseTranslationResult(translatedText, texts.length);
+    const result = parseTranslationResult(translatedText, texts.length);
+
+    const parseEndTime = performance.now();
+    const totalTime = parseEndTime - startTime;
+
+    console.log(`[API] 파싱 완료 - ${(parseEndTime - parseStartTime).toFixed(0)}ms`);
+    console.log(`[API] 전체 API 호출 시간 - ${totalTime.toFixed(0)}ms (평균 ${(totalTime / texts.length).toFixed(0)}ms/개)`);
+
+    return result;
 
   } catch (error) {
-    console.error('Translation error:', error);
+    const errorTime = performance.now() - startTime;
+    console.error(`[API] 번역 실패 (${errorTime.toFixed(0)}ms):`, error);
     throw error;
   }
 }
@@ -685,6 +703,9 @@ function parseTranslationResult(translatedText, expectedCount) {
 
 // 화면에 보이는 콘텐츠 번역
 async function translateVisibleContent(apiKey, model, silentMode = false) {
+  const totalStartTime = performance.now();
+  console.log(`\n========== [번역 시작] ==========`);
+
   try {
     // 기존에 번역되었다가 화면에서 사라진 노드를 먼저 정리해 메모리 누수를 줄임
     pruneTranslatedElements();
@@ -700,13 +721,18 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     }
 
     // 화면에 보이는 텍스트 노드 수집
+    const scanStartTime = performance.now();
     const textNodes = getVisibleTextElements();
     const { texts, elements } = extractTextsForTranslation(textNodes);
+    const scanEndTime = performance.now();
+    console.log(`[스캔] 텍스트 노드 수집 완료 - ${textNodes.length}개 노드, ${texts.length}개 텍스트, ${(scanEndTime - scanStartTime).toFixed(0)}ms`);
 
     // 이미 번역된 요소는 제외
+    const cacheCheckStartTime = performance.now();
     const cachedElements = []; // 캐시에서 가져올 요소
     const newTexts = []; // API 호출이 필요한 텍스트
     const newElements = []; // API 호출이 필요한 요소
+    let alreadyTranslatedCount = 0;
 
     elements.forEach((element, idx) => {
       if (!translatedElements.has(element)) {
@@ -720,28 +746,47 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
           newTexts.push(originalText);
           newElements.push(element);
         }
+      } else {
+        alreadyTranslatedCount++;
       }
     });
 
-    // 캐시된 번역 즉시 적용
+    const cacheCheckEndTime = performance.now();
+    console.log(`[캐시] 체크 완료 - 이미 번역됨: ${alreadyTranslatedCount}개, 캐시 히트: ${cachedElements.length}개, 신규: ${newTexts.length}개, ${(cacheCheckEndTime - cacheCheckStartTime).toFixed(0)}ms`);
+
+    // 캐시된 번역 즉시 적용 (requestAnimationFrame으로 최적화)
+    const domUpdateStartTime = performance.now();
     let cachedCount = 0;
-    cachedElements.forEach(({ element, originalText, translation }) => {
-      if (translation) {
-        if (!originalTexts.has(element)) {
-          originalTexts.set(element, element.textContent);
-        }
-        element.textContent = translation;
-        translatedElements.add(element);
-        cachedCount++;
-      }
-    });
 
+    if (cachedElements.length > 0) {
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          cachedElements.forEach(({ element, originalText, translation }) => {
+            if (translation) {
+              if (!originalTexts.has(element)) {
+                originalTexts.set(element, element.textContent);
+              }
+              element.textContent = translation;
+              translatedElements.add(element);
+              cachedCount++;
+            }
+          });
+          resolve();
+        });
+      });
+    }
+
+    const domUpdateEndTime = performance.now();
     if (cachedCount > 0) {
-      console.log(`캐시에서 ${cachedCount}개 번역 적용`);
+      console.log(`[DOM] 캐시 번역 적용 - ${cachedCount}개, ${(domUpdateEndTime - domUpdateStartTime).toFixed(0)}ms`);
     }
 
     // API 호출이 필요한 텍스트가 없으면 종료
     if (newTexts.length === 0) {
+      const totalTime = performance.now() - totalStartTime;
+      console.log(`[완료] 번역할 새 텍스트 없음 - 전체 ${totalTime.toFixed(0)}ms`);
+      console.log(`========== [번역 종료] ==========\n`);
+
       if (!silentMode && cachedCount > 0) {
         showNotification(`번역 완료! (캐시 사용: ${cachedCount}개)`, 'success');
       } else if (!silentMode) {
@@ -750,7 +795,7 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
       return;
     }
 
-    console.log(`새로 번역할 텍스트 ${newTexts.length}개 발견 (캐시: ${cachedCount}개)`);
+    console.log(`[배치] 신규 번역 필요 - ${newTexts.length}개 텍스트`);
 
     // 배치 크기로 나누어 번역 (한 번에 너무 많이 보내지 않도록)
     const batchSize = 50;
@@ -763,50 +808,104 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
       });
     }
 
+    console.log(`[배치] ${batches.length}개 배치로 분할 (배치당 최대 ${batchSize}개)`);
+
     // 각 배치를 순차적으로 번역
+    let totalApiTime = 0;
+    let totalDomTime = 0;
+    let totalWaitTime = 0;
+
     for (let i = 0; i < batches.length; i++) {
+      const batchStartTime = performance.now();
       const batch = batches[i];
+
+      console.log(`\n[배치 ${i + 1}/${batches.length}] 처리 시작 - ${batch.texts.length}개 텍스트`);
+
       if (!silentMode) {
         showNotification(`번역 중... (${i + 1}/${batches.length})`, 'info');
       }
 
       // 로딩 효과 추가
+      const loadingStartTime = performance.now();
       batch.elements.forEach(element => {
         addLoadingEffect(element);
       });
+      console.log(`[배치 ${i + 1}] 로딩 효과 적용 - ${(performance.now() - loadingStartTime).toFixed(0)}ms`);
 
+      // API 호출
+      const apiStartTime = performance.now();
       const translations = await translateWithOpenRouter(batch.texts, apiKey, model);
+      const apiEndTime = performance.now();
+      const apiTime = apiEndTime - apiStartTime;
+      totalApiTime += apiTime;
 
       // 번역 결과 적용 및 캐시에 저장
-      batch.elements.forEach((element, idx) => {
-        if (translations[idx]) {
-          const originalText = batch.texts[idx];
-          const translation = translations[idx];
+      const domApplyStartTime = performance.now();
+      let successCount = 0;
 
-          // 원본 저장
-          if (!originalTexts.has(element)) {
-            originalTexts.set(element, element.textContent);
-          }
+      // DOM 업데이트를 requestAnimationFrame으로 최적화
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          batch.elements.forEach((element, idx) => {
+            if (translations[idx]) {
+              const originalText = batch.texts[idx];
+              const translation = translations[idx];
 
-          // 캐시에 저장 (LRU 방식)
-          setCachedTranslation(originalText, translation);
+              // 원본 저장
+              if (!originalTexts.has(element)) {
+                originalTexts.set(element, element.textContent);
+              }
 
-          // 번역 적용
-          element.textContent = translation;
+              // 캐시에 저장 (LRU 방식)
+              setCachedTranslation(originalText, translation);
 
-          // 번역 완료 표시
-          translatedElements.add(element);
+              // 번역 적용
+              element.textContent = translation;
 
-          // 로딩 효과 제거
-          removeLoadingEffect(element);
-        }
+              // 번역 완료 표시
+              translatedElements.add(element);
+
+              // 로딩 효과 제거
+              removeLoadingEffect(element);
+
+              successCount++;
+            }
+          });
+          resolve();
+        });
       });
 
-      // API 레이트 리밋을 고려하여 약간의 딜레이
+      const domApplyEndTime = performance.now();
+      const domTime = domApplyEndTime - domApplyStartTime;
+      totalDomTime += domTime;
+
+      console.log(`[배치 ${i + 1}] DOM 업데이트 완료 - ${successCount}개 적용, ${domTime.toFixed(0)}ms`);
+
+      const batchEndTime = performance.now();
+      const batchTotalTime = batchEndTime - batchStartTime;
+      console.log(`[배치 ${i + 1}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (API: ${apiTime.toFixed(0)}ms, DOM: ${domTime.toFixed(0)}ms)`);
+
+      // API 레이트 리밋을 고려하여 약간의 딜레이 (배치가 여러개인 경우만)
       if (i < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const waitStartTime = performance.now();
+        console.log(`[배치 ${i + 1}] 다음 배치 대기 중... (300ms)`);
+        await new Promise(resolve => setTimeout(resolve, 300)); // 1초 → 300ms로 단축
+        const waitTime = performance.now() - waitStartTime;
+        totalWaitTime += waitTime;
       }
     }
+
+    const totalEndTime = performance.now();
+    const totalTime = totalEndTime - totalStartTime;
+
+    console.log(`\n[요약] 전체 번역 완료:`);
+    console.log(`  - 총 텍스트: ${texts.length}개 (신규: ${newTexts.length}개, 캐시: ${cachedCount}개, 이미번역: ${alreadyTranslatedCount}개)`);
+    console.log(`  - 배치 수: ${batches.length}개`);
+    console.log(`  - API 시간: ${totalApiTime.toFixed(0)}ms (${(totalApiTime / batches.length).toFixed(0)}ms/배치)`);
+    console.log(`  - DOM 업데이트: ${totalDomTime.toFixed(0)}ms`);
+    console.log(`  - 배치 대기: ${totalWaitTime.toFixed(0)}ms`);
+    console.log(`  - 전체 시간: ${totalTime.toFixed(0)}ms`);
+    console.log(`========== [번역 종료] ==========\n`);
 
     if (!silentMode) {
       const totalMsg = cachedCount > 0
@@ -816,7 +915,9 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     }
 
   } catch (error) {
-    console.error('Translation error:', error);
+    const totalTime = performance.now() - totalStartTime;
+    console.error(`[오류] 번역 실패 (${totalTime.toFixed(0)}ms):`, error);
+    console.log(`========== [번역 종료 (오류)] ==========\n`);
     showNotification(`번역 실패: ${error.message}`, 'error');
   }
 }
