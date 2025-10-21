@@ -681,7 +681,7 @@ async function translateWithOpenRouter(texts, apiKey, model) {
 // 번역 결과 파싱
 function parseTranslationResult(translatedText, expectedCount) {
   const lines = translatedText.split('\n').filter(line => line.trim());
-  const translations = [];
+  const translationMap = new Map(); // index -> translation 매핑
 
   // [0], [1] 형식으로 파싱 시도
   lines.forEach(line => {
@@ -689,16 +689,32 @@ function parseTranslationResult(translatedText, expectedCount) {
     if (match) {
       const index = parseInt(match[1]);
       const translation = match[2].trim();
-      translations[index] = translation;
+      translationMap.set(index, translation);
     }
   });
 
-  // 파싱이 잘 안되었으면 줄바꿈으로 분리
-  if (translations.length < expectedCount) {
-    return translatedText.split('\n').filter(line => line.trim() && !line.match(/^\[\d+\]/));
+  // Map을 배열로 변환 (순서 유지)
+  const translations = [];
+  for (let i = 0; i < expectedCount; i++) {
+    translations[i] = translationMap.get(i) || null; // 없으면 null
   }
 
-  return translations.filter(t => t); // undefined 제거
+  // 매핑된 번역이 50% 미만이면 fallback (줄바꿈 기준)
+  const mappedCount = translations.filter(t => t !== null).length;
+  if (mappedCount < expectedCount * 0.5) {
+    console.warn(`[파싱] 인덱스 매핑 실패 (${mappedCount}/${expectedCount}), fallback 사용`);
+    const fallbackLines = translatedText.split('\n')
+      .map(line => line.replace(/^\[\d+\]\s*/, '').trim()) // [0] 제거
+      .filter(line => line.length > 0);
+
+    // fallback도 expectedCount에 맞춰 반환
+    return fallbackLines.slice(0, expectedCount).concat(
+      Array(Math.max(0, expectedCount - fallbackLines.length)).fill(null)
+    );
+  }
+
+  console.log(`[파싱] 성공: ${mappedCount}/${expectedCount}개 매핑됨`);
+  return translations;
 }
 
 // 화면에 보이는 콘텐츠 번역
@@ -842,14 +858,16 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
       // 번역 결과 적용 및 캐시에 저장
       const domApplyStartTime = performance.now();
       let successCount = 0;
+      let failedCount = 0;
 
       // DOM 업데이트를 requestAnimationFrame으로 최적화
       await new Promise(resolve => {
         requestAnimationFrame(() => {
           batch.elements.forEach((element, idx) => {
-            if (translations[idx]) {
+            const translation = translations[idx];
+
+            if (translation && translation !== null) {
               const originalText = batch.texts[idx];
-              const translation = translations[idx];
 
               // 원본 저장
               if (!originalTexts.has(element)) {
@@ -865,11 +883,15 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
               // 번역 완료 표시
               translatedElements.add(element);
 
-              // 로딩 효과 제거
-              removeLoadingEffect(element);
-
               successCount++;
+            } else {
+              // 번역 실패 시에도 원본 유지하고 추적
+              failedCount++;
+              console.warn(`[배치 ${i + 1}] 번역 실패 [${idx}]: "${batch.texts[idx].substring(0, 50)}..."`);
             }
+
+            // 로딩 효과는 성공/실패 관계없이 항상 제거
+            removeLoadingEffect(element);
           });
           resolve();
         });
@@ -879,7 +901,11 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
       const domTime = domApplyEndTime - domApplyStartTime;
       totalDomTime += domTime;
 
-      console.log(`[배치 ${i + 1}] DOM 업데이트 완료 - ${successCount}개 적용, ${domTime.toFixed(0)}ms`);
+      if (failedCount > 0) {
+        console.log(`[배치 ${i + 1}] DOM 업데이트 완료 - ${successCount}개 적용, ${failedCount}개 실패, ${domTime.toFixed(0)}ms`);
+      } else {
+        console.log(`[배치 ${i + 1}] DOM 업데이트 완료 - ${successCount}개 적용, ${domTime.toFixed(0)}ms`);
+      }
 
       const batchEndTime = performance.now();
       const batchTotalTime = batchEndTime - batchStartTime;
