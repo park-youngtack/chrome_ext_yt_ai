@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>번역기 설정</title>
+  <style>
+    body {
+      width: 350px;
+      padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 20px 0;
+      color: #333;
+    }
+    .section {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #555;
+      font-size: 14px;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #4CAF50;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 10px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    .translate-btn {
+      background-color: #2196F3;
+    }
+    .translate-btn:hover {
+      background-color: #0b7dda;
+    }
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success {
+      background-color: #d4edda;
+      color: #155724;
+      display: block;
+    }
+    .status.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      display: block;
+    }
+    .help-text {
+      font-size: 12px;
+      color: #888;
+      margin-top: 5px;
+    }
+    .divider {
+      border-top: 1px solid #eee;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>웹페이지 번역기 설정</h1>
+
+  <div class="section">
+    <label for="apiKey">OpenRouter API Key</label>
+    <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+    <div class="help-text">
+      API Key는 로컬에 안전하게 저장됩니다.
+      <a href="https://openrouter.ai/keys" target="_blank">키 발급받기</a>
+    </div>
+  </div>
+
+  <div class="section">
+    <label for="model">AI 모델 선택</label>
+    <select id="model">
+      <option value="anthropic/claude-3-haiku">Claude 3 Haiku (빠르고 저렴)</option>
+      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (권장)</option>
+      <option value="openai/gpt-4o-mini">GPT-4o Mini (빠르고 저렴)</option>
+      <option value="openai/gpt-4o">GPT-4o (고품질)</option>
+      <option value="google/gemini-flash-1.5">Gemini Flash 1.5 (빠름)</option>
+      <option value="google/gemini-pro-1.5">Gemini Pro 1.5</option>
+    </select>
+  </div>
+
+  <button id="saveBtn">설정 저장</button>
+
+  <div class="divider"></div>
+
+  <button id="translateBtn" class="translate-btn">이 페이지 번역하기</button>
+
+  <div id="status" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
