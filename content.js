@@ -1,10 +1,16 @@
 // 번역 상태를 저장하는 전역 변수
-let isTranslated = false;
+// 상태: 'inactive' (원본 페이지), 'active' (번역중), 'paused' (번역 중지됨)
+let translationState = 'inactive';
 let originalTexts = new WeakMap(); // 원본 텍스트 저장 (WeakMap으로 메모리 누수 방지)
 let translatedElements = new Set(); // 이미 번역된 요소 추적 (Set으로 순회 가능하게 보관)
 let scrollObserver = null; // 스크롤 감지 옵저버
 let currentApiKey = null;
 let currentModel = null;
+
+// 자동 일시정지 관련
+let idleTimer = null;
+let idleTimeout = 60000; // 기본 60초
+let userActivityListeners = [];
 
 // 번역 캐시 (LRU 방식으로 크기 제한)
 const MAX_CACHE_SIZE = 1000; // 최대 1000개 텍스트만 캐시
@@ -17,24 +23,38 @@ let pageContext = null;
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggleTranslation') {
-    handleTranslationToggle(request.apiKey, request.model);
+    handleTranslationToggle(request.apiKey, request.model, request.autoPauseEnabled, request.autoPauseTimeout);
+    sendResponse({ success: true });
+  } else if (request.action === 'resumeTranslation') {
+    handleResumeTranslation();
     sendResponse({ success: true });
   } else if (request.action === 'getTranslationState') {
-    sendResponse({ isTranslated: isTranslated });
+    sendResponse({
+      state: translationState,
+      // 하위 호환성을 위해 isTranslated도 반환
+      isTranslated: translationState === 'active' || translationState === 'paused'
+    });
   }
   return true; // 비동기 응답을 위해 필요
 });
 
 // 번역 토글 핸들러
-async function handleTranslationToggle(apiKey, model) {
-  if (isTranslated) {
-    // 이미 번역된 상태 -> 원본으로 복원
+async function handleTranslationToggle(apiKey, model, autoPauseEnabled = true, autoPauseTimeout = 60) {
+  if (translationState === 'active' || translationState === 'paused') {
+    // 번역 상태 -> 원본으로 복원
     restoreOriginalTexts();
-    updateTranslationState(false);
+    updateTranslationState('inactive');
   } else {
     // API 키와 모델 저장
     currentApiKey = apiKey;
     currentModel = model;
+
+    // 자동 일시정지 설정 저장
+    if (autoPauseEnabled) {
+      idleTimeout = autoPauseTimeout * 1000; // 초를 밀리초로 변환
+    } else {
+      idleTimeout = Infinity; // 비활성화
+    }
 
     // 컨텍스트 분석 (LLM 사용, 최초 1회만)
     if (!pageContext) {
@@ -46,14 +66,40 @@ async function handleTranslationToggle(apiKey, model) {
     await translateVisibleContent(apiKey, model);
     // 스크롤 감지 시작 (실시간 감시 대신 스크롤 이벤트만 사용)
     setupScrollObserver();
-    updateTranslationState(true);
+    // 사용자 활동 감지 시작 (자동 일시정지용)
+    if (autoPauseEnabled) {
+      startIdleDetection();
+    }
+    updateTranslationState('active');
   }
+}
+
+// 번역 재개 핸들러 (paused 상태에서만 사용)
+async function handleResumeTranslation() {
+  if (translationState !== 'paused') {
+    console.log('재개 가능한 상태가 아닙니다.');
+    return;
+  }
+
+  if (!currentApiKey || !currentModel) {
+    showNotification('설정 정보가 없습니다. 번역을 다시 시작해주세요.', 'error');
+    return;
+  }
+
+  // 스크롤 감지 재시작
+  setupScrollObserver();
+  // 사용자 활동 감지 재시작
+  startIdleDetection();
+
+  updateTranslationState('active');
+  showNotification('번역 작업을 재개합니다.', 'info');
 }
 
 // 번역 상태를 storage에 저장
 function updateTranslationState(state) {
-  isTranslated = state;
-  chrome.storage.session.set({ isTranslated: state }).catch(() => {});
+  translationState = state;
+  chrome.storage.session.set({ translationState: state }).catch(() => {});
+  console.log('번역 상태 변경:', state);
 }
 
 // 캐시에 번역 저장 (LRU 방식)
@@ -95,6 +141,116 @@ function getCachedTranslation(original) {
   return null;
 }
 
+// 사용자 활동 감지 시작
+function startIdleDetection() {
+  // 기존 리스너 제거
+  stopIdleDetection();
+
+  // 사용자 활동 감지 함수
+  const resetIdleTimer = () => {
+    clearTimeout(idleTimer);
+
+    // 번역 활성 상태에서만 타이머 재설정
+    if (translationState === 'active' && idleTimeout !== Infinity) {
+      idleTimer = setTimeout(() => {
+        handleIdlePause();
+      }, idleTimeout);
+    }
+  };
+
+  // 이벤트 리스너 등록
+  const events = ['scroll', 'mousemove', 'keydown', 'click', 'touchstart'];
+  events.forEach(event => {
+    const listener = resetIdleTimer;
+    window.addEventListener(event, listener, { passive: true });
+    userActivityListeners.push({ event, listener });
+  });
+
+  // 초기 타이머 시작
+  resetIdleTimer();
+
+  console.log(`사용자 활동 감지 시작 (${idleTimeout / 1000}초)`);
+}
+
+// 사용자 활동 감지 중지
+function stopIdleDetection() {
+  // 타이머 클리어
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  // 이벤트 리스너 제거
+  userActivityListeners.forEach(({ event, listener }) => {
+    window.removeEventListener(event, listener);
+  });
+  userActivityListeners = [];
+}
+
+// 자동 일시정지 처리
+function handleIdlePause() {
+  console.log('사용자 활동 없음 - 자동 일시정지');
+
+  // 스크롤 감지 중지
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+    scrollObserver = null;
+  }
+
+  // 사용자 활동 감지 중지
+  stopIdleDetection();
+
+  // 상태 변경
+  updateTranslationState('paused');
+
+  // 사용자에게 안내 토스트 표시
+  showToast('활동이 없어 자동 일시정지되었습니다. 팝업에서 번역 작업 시작으로 재개하세요.');
+}
+
+// 토스트 메시지 표시 (더 긴 안내 메시지용, 자동 일시정지 전용)
+function showToast(message) {
+  // 기존 토스트 제거
+  const existing = document.getElementById('translation-toast');
+  if (existing) {
+    existing.remove();
+  }
+
+  // 새 토스트 생성
+  const toast = document.createElement('div');
+  toast.id = 'translation-toast';
+  toast.textContent = message;
+
+  Object.assign(toast.style, {
+    position: 'fixed',
+    bottom: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '15px 25px',
+    backgroundColor: '#FF9800',
+    color: 'white',
+    borderRadius: '8px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    zIndex: '999999',
+    fontSize: '14px',
+    fontFamily: 'Arial, sans-serif',
+    fontWeight: '500',
+    maxWidth: '500px',
+    textAlign: 'center',
+    lineHeight: '1.5',
+    transition: 'opacity 0.3s'
+  });
+
+  document.body.appendChild(toast);
+
+  // 5초 후 제거
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => {
+      toast.remove();
+    }, 300);
+  }, 5000);
+}
+
 // 메모리 정리 함수
 function cleanupMemory() {
   console.log('메모리 정리 시작...');
@@ -104,6 +260,9 @@ function cleanupMemory() {
     scrollObserver.disconnect();
     scrollObserver = null;
   }
+
+  // 사용자 활동 감지 정리
+  stopIdleDetection();
 
   // WeakMap과 Set은 명시적으로 참조를 끊어 메모리 사용을 최소화
   originalTexts = new WeakMap();
@@ -739,7 +898,7 @@ function setupScrollObserver() {
 
   // 스크롤 이벤트 핸들러 (디바운스 적용)
   const handleScroll = () => {
-    if (!isTranslated || !currentApiKey || !currentModel) return;
+    if (translationState !== 'active' || !currentApiKey || !currentModel) return;
 
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(async () => {
@@ -770,7 +929,7 @@ window.addEventListener('beforeunload', () => {
 
 // 페이지 visibility 변경 시 메모리 정리 (탭 전환 등)
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && !isTranslated) {
+  if (document.hidden && translationState === 'inactive') {
     // 번역 모드가 아니고 페이지가 숨겨진 경우 메모리 정리
     cleanupMemory();
     console.log('페이지 숨김: 메모리 정리');
@@ -779,7 +938,7 @@ document.addEventListener('visibilitychange', () => {
 
 // 주기적 메모리 체크 (5분마다)
 setInterval(() => {
-  if (!isTranslated) {
+  if (translationState === 'inactive') {
     // 번역 모드가 아닐 때만 정리
     if (translatedTexts.size > 0 || cacheAccessOrder.length > 0) {
       console.log('주기적 캐시 정리 (비활성 상태)');
@@ -787,8 +946,8 @@ setInterval(() => {
       cacheAccessOrder = [];
     }
   } else {
-    // 번역 모드일 때는 캐시 크기만 로그
-    console.log(`캐시 크기: ${translatedTexts.size}/${MAX_CACHE_SIZE}`);
+    // 번역 모드일 때는 캐시 크기와 상태 로그
+    console.log(`상태: ${translationState}, 캐시 크기: ${translatedTexts.size}/${MAX_CACHE_SIZE}`);
   }
 }, 5 * 60 * 1000); // 5분
 

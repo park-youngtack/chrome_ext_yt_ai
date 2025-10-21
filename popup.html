@@ -7,50 +7,58 @@
   <style>
     body {
       width: 380px;
-      padding: 20px;
+      padding: 16px;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       margin: 0;
     }
     h1 {
-      font-size: 18px;
-      margin: 0 0 10px 0;
+      font-size: 17px;
+      margin: 0 0 8px 0;
       color: #333;
     }
     .description {
-      font-size: 13px;
+      font-size: 12px;
       color: #666;
-      line-height: 1.5;
-      margin-bottom: 20px;
-      padding: 12px;
+      line-height: 1.4;
+      margin-bottom: 14px;
+      padding: 10px;
       background-color: #f5f5f5;
       border-radius: 4px;
       border-left: 3px solid #2196F3;
     }
     .description ul {
-      margin: 8px 0 0 0;
-      padding-left: 20px;
+      margin: 6px 0 0 0;
+      padding-left: 18px;
     }
     .description li {
-      margin: 4px 0;
+      margin: 3px 0;
     }
     .section {
-      margin-bottom: 20px;
+      margin-bottom: 14px;
     }
     label {
       display: block;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       font-weight: 500;
       color: #555;
-      font-size: 14px;
+      font-size: 13px;
     }
-    input {
+    input[type="password"], input[type="text"] {
       width: 100%;
-      padding: 10px;
+      padding: 8px;
       border: 1px solid #ddd;
       border-radius: 4px;
-      font-size: 14px;
+      font-size: 13px;
       box-sizing: border-box;
       font-family: monospace;
+    }
+    input[type="number"] {
+      width: 60px;
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
     }
     input:focus {
       outline: none;
@@ -58,15 +66,15 @@
     }
     button {
       width: 100%;
-      padding: 12px;
+      padding: 10px;
       background-color: #4CAF50;
       color: white;
       border: none;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
-      margin-top: 10px;
+      margin-top: 8px;
     }
     button:hover {
       background-color: #45a049;
@@ -112,14 +120,55 @@
     }
     .divider {
       border-top: 1px solid #eee;
-      margin: 20px 0;
+      margin: 14px 0;
+    }
+    .translation-status {
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      background-color: #e3f2fd;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #1976d2;
+      border-left: 3px solid #2196F3;
+    }
+    .translation-status strong {
+      font-weight: 600;
+    }
+    .status-value {
+      font-weight: 500;
+      color: #1565c0;
+    }
+    .auto-pause-section {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background-color: #fff9e6;
+      border-radius: 4px;
+      border-left: 3px solid #FFC107;
+    }
+    .inline-setting {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+    .inline-setting label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .inline-setting input[type="checkbox"] {
+      cursor: pointer;
+      width: auto;
     }
     .footer {
-      margin-top: 20px;
-      padding-top: 15px;
+      margin-top: 14px;
+      padding-top: 12px;
       border-top: 1px solid #eee;
       text-align: center;
-      font-size: 11px;
+      font-size: 10px;
       color: #999;
     }
     .footer .creator {
@@ -158,11 +207,26 @@
       비워두면 기본 모델(GPT-4o Mini) 사용.
       <a href="https://openrouter.ai/models" target="_blank">모델 목록 보기</a>
     </div>
+
+    <div class="auto-pause-section">
+      <div class="inline-setting">
+        <label>
+          <input type="checkbox" id="autoPauseEnabled" checked>
+          자동 일시정지
+        </label>
+        <span>대기(초)</span>
+        <input type="number" id="autoPauseTimeout" value="60" min="10" max="600">
+      </div>
+    </div>
   </div>
 
   <button id="saveBtn">설정 저장</button>
 
   <div class="divider"></div>
+
+  <div class="translation-status">
+    <strong>페이지 번역 상태:</strong> <span class="status-value" id="statusValue">원본 페이지</span>
+  </div>
 
   <button id="translateBtn" class="translate-btn">이 페이지 번역하기</button>
 
