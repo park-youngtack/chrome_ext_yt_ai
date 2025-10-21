@@ -1,3 +1,6 @@
+// 기본 모델
+const DEFAULT_MODEL = 'openai/gpt-4o-mini';
+
 // 설정 로드
 document.addEventListener('DOMContentLoaded', async () => {
   const result = await chrome.storage.local.get(['apiKey', 'model']);
@@ -8,15 +11,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (result.model) {
     document.getElementById('model').value = result.model;
-  } else {
-    document.getElementById('model').value = 'anthropic/claude-3.5-sonnet';
   }
+  // 빈 값으로 두어 placeholder 표시
 });
 
 // 설정 저장
 document.getElementById('saveBtn').addEventListener('click', async () => {
   const apiKey = document.getElementById('apiKey').value.trim();
-  const model = document.getElementById('model').value;
+  const modelInput = document.getElementById('model').value.trim();
+
+  // 모델이 비어있으면 기본 모델 사용
+  const model = modelInput || DEFAULT_MODEL;
 
   if (!apiKey) {
     showStatus('API Key를 입력해주세요.', 'error');
@@ -25,7 +30,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 
   try {
     await chrome.storage.local.set({ apiKey, model });
-    showStatus('설정이 저장되었습니다!', 'success');
+    showStatus(`설정이 저장되었습니다! (모델: ${model})`, 'success');
   } catch (error) {
     showStatus('저장 중 오류가 발생했습니다: ' + error.message, 'error');
   }
@@ -40,6 +45,9 @@ document.getElementById('translateBtn').addEventListener('click', async () => {
     return;
   }
 
+  // 모델이 없으면 기본 모델 사용
+  const model = result.model || DEFAULT_MODEL;
+
   try {
     // 현재 활성 탭 가져오기
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -48,7 +56,7 @@ document.getElementById('translateBtn').addEventListener('click', async () => {
     await chrome.tabs.sendMessage(tab.id, {
       action: 'toggleTranslation',
       apiKey: result.apiKey,
-      model: result.model
+      model: model
     });
 
     showStatus('번역을 시작합니다...', 'success');

@@ -1,6 +1,10 @@
 // 번역 상태를 저장하는 전역 변수
 let isTranslated = false;
 let originalTexts = new Map(); // 원본 텍스트 저장
+let translatedElements = new Set(); // 이미 번역된 요소 추적
+let scrollObserver = null; // 스크롤 감지 옵저버
+let currentApiKey = null;
+let currentModel = null;
 
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -15,21 +19,37 @@ async function handleTranslationToggle(apiKey, model) {
     // 이미 번역된 상태 -> 원본으로 복원
     restoreOriginalTexts();
   } else {
+    // API 키와 모델 저장
+    currentApiKey = apiKey;
+    currentModel = model;
     // 번역 시작
     await translateVisibleContent(apiKey, model);
+    // 스크롤 감지 시작
+    setupScrollObserver();
   }
 }
 
 // 원본 텍스트로 복원
 function restoreOriginalTexts() {
+  // 스크롤 옵저버 중지
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+    scrollObserver = null;
+  }
+
   originalTexts.forEach((originalText, element) => {
     if (element && element.isConnected) {
       element.textContent = originalText;
+      // 로딩 효과 제거
+      removeLoadingEffect(element);
     }
   });
 
   originalTexts.clear();
+  translatedElements.clear();
   isTranslated = false;
+  currentApiKey = null;
+  currentModel = null;
 
   showNotification('원본으로 복원되었습니다.', 'success');
 }
@@ -46,10 +66,19 @@ function getVisibleTextElements() {
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
 
-        // script, style, noscript 태그는 제외
-        const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'OBJECT'];
+        // script, style, noscript, 코드 관련 태그는 제외
+        const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'OBJECT', 'CODE', 'PRE', 'KBD', 'SAMP', 'VAR'];
         if (excludeTags.includes(parent.tagName)) {
           return NodeFilter.FILTER_REJECT;
+        }
+
+        // 부모 중에 코드 블록이 있는지 확인
+        let ancestor = parent;
+        while (ancestor && ancestor !== document.body) {
+          if (excludeTags.includes(ancestor.tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          ancestor = ancestor.parentElement;
         }
 
         // 텍스트가 비어있거나 공백만 있으면 제외
@@ -177,36 +206,58 @@ function parseTranslationResult(translatedText, expectedCount) {
 }
 
 // 화면에 보이는 콘텐츠 번역
-async function translateVisibleContent(apiKey, model) {
+async function translateVisibleContent(apiKey, model, silentMode = false) {
   try {
-    showNotification('번역 중...', 'info');
+    if (!silentMode) {
+      showNotification('번역 중...', 'info');
+    }
 
     // 화면에 보이는 텍스트 노드 수집
     const textNodes = getVisibleTextElements();
     const { texts, elements } = extractTextsForTranslation(textNodes);
 
-    if (texts.length === 0) {
-      showNotification('번역할 텍스트가 없습니다.', 'warning');
+    // 이미 번역된 요소는 제외
+    const newTexts = [];
+    const newElements = [];
+
+    elements.forEach((element, idx) => {
+      if (!translatedElements.has(element)) {
+        newTexts.push(texts[idx]);
+        newElements.push(element);
+      }
+    });
+
+    if (newTexts.length === 0) {
+      if (!silentMode) {
+        showNotification('번역할 새로운 텍스트가 없습니다.', 'warning');
+      }
       return;
     }
 
-    console.log(`번역할 텍스트 ${texts.length}개 발견`);
+    console.log(`번역할 텍스트 ${newTexts.length}개 발견`);
 
     // 배치 크기로 나누어 번역 (한 번에 너무 많이 보내지 않도록)
     const batchSize = 50;
     const batches = [];
 
-    for (let i = 0; i < texts.length; i += batchSize) {
+    for (let i = 0; i < newTexts.length; i += batchSize) {
       batches.push({
-        texts: texts.slice(i, i + batchSize),
-        elements: elements.slice(i, i + batchSize)
+        texts: newTexts.slice(i, i + batchSize),
+        elements: newElements.slice(i, i + batchSize)
       });
     }
 
     // 각 배치를 순차적으로 번역
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      showNotification(`번역 중... (${i + 1}/${batches.length})`, 'info');
+      if (!silentMode) {
+        showNotification(`번역 중... (${i + 1}/${batches.length})`, 'info');
+      }
+
+      // 로딩 효과 추가
+      batch.elements.forEach(element => {
+        addLoadingEffect(element);
+      });
 
       const translations = await translateWithOpenRouter(batch.texts, apiKey, model);
 
@@ -219,6 +270,10 @@ async function translateVisibleContent(apiKey, model) {
           }
           // 번역 적용
           element.textContent = translations[idx];
+          // 번역 완료 표시
+          translatedElements.add(element);
+          // 로딩 효과 제거
+          removeLoadingEffect(element);
         }
       });
 
@@ -229,12 +284,120 @@ async function translateVisibleContent(apiKey, model) {
     }
 
     isTranslated = true;
-    showNotification('번역 완료!', 'success');
+    if (!silentMode) {
+      showNotification('번역 완료!', 'success');
+    }
 
   } catch (error) {
     console.error('Translation error:', error);
     showNotification(`번역 실패: ${error.message}`, 'error');
   }
+}
+
+// 로딩 효과 추가
+function addLoadingEffect(element) {
+  if (!element || !element.parentElement) return;
+
+  const parent = element.parentElement;
+
+  // 이미 로딩 효과가 있으면 스킵
+  if (parent.classList.contains('translating')) return;
+
+  parent.classList.add('translating');
+
+  // 기존 스타일 저장
+  const originalTransition = parent.style.transition;
+  const originalBackground = parent.style.background;
+
+  parent.setAttribute('data-original-transition', originalTransition);
+  parent.setAttribute('data-original-background', originalBackground);
+
+  // 로딩 애니메이션 추가
+  parent.style.transition = 'background-position 1.5s ease-in-out infinite';
+  parent.style.background = 'linear-gradient(90deg, transparent 0%, rgba(33, 150, 243, 0.1) 50%, transparent 100%)';
+  parent.style.backgroundSize = '200% 100%';
+  parent.style.animation = 'translateLoading 1.5s ease-in-out infinite';
+
+  // CSS 애니메이션 추가 (한 번만)
+  if (!document.getElementById('translation-loading-styles')) {
+    const style = document.createElement('style');
+    style.id = 'translation-loading-styles';
+    style.textContent = `
+      @keyframes translateLoading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      .translating {
+        position: relative;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
+// 로딩 효과 제거
+function removeLoadingEffect(element) {
+  if (!element || !element.parentElement) return;
+
+  const parent = element.parentElement;
+  parent.classList.remove('translating');
+
+  // 원래 스타일 복원
+  const originalTransition = parent.getAttribute('data-original-transition');
+  const originalBackground = parent.getAttribute('data-original-background');
+
+  if (originalTransition !== null) {
+    parent.style.transition = originalTransition;
+    parent.removeAttribute('data-original-transition');
+  }
+
+  if (originalBackground !== null) {
+    parent.style.background = originalBackground;
+    parent.removeAttribute('data-original-background');
+  }
+
+  parent.style.animation = '';
+  parent.style.backgroundSize = '';
+}
+
+// 스크롤 감지 설정
+function setupScrollObserver() {
+  // 기존 옵저버가 있으면 제거
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+  }
+
+  // IntersectionObserver로 새로 보이는 요소 감지
+  scrollObserver = new IntersectionObserver(
+    async (entries) => {
+      // 번역 모드가 아니면 무시
+      if (!isTranslated || !currentApiKey || !currentModel) return;
+
+      // 새로 보이는 요소가 있는지 확인
+      const hasNewVisible = entries.some(entry => entry.isIntersecting);
+
+      if (hasNewVisible) {
+        // 디바운스를 위해 타이머 사용
+        clearTimeout(scrollObserver.timer);
+        scrollObserver.timer = setTimeout(async () => {
+          await translateVisibleContent(currentApiKey, currentModel, true);
+        }, 500);
+      }
+    },
+    {
+      root: null,
+      rootMargin: '100px', // 화면 경계에서 100px 전에 감지
+      threshold: 0.1
+    }
+  );
+
+  // 모든 주요 컨테이너 요소들을 관찰
+  const observeElements = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, span, div, a, button');
+  observeElements.forEach(el => {
+    scrollObserver.observe(el);
+  });
+
+  console.log('스크롤 감지 시작:', observeElements.length, '개 요소 관찰');
 }
 
 // 알림 표시
