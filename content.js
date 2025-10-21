@@ -1,7 +1,7 @@
 // 번역 상태를 저장하는 전역 변수
 let isTranslated = false;
 let originalTexts = new WeakMap(); // 원본 텍스트 저장 (WeakMap으로 메모리 누수 방지)
-let translatedElements = new WeakSet(); // 이미 번역된 요소 추적 (WeakSet으로 자동 GC)
+let translatedElements = new Set(); // 이미 번역된 요소 추적 (Set으로 순회 가능하게 보관)
 let scrollObserver = null; // 스크롤 감지 옵저버
 let mutationObserver = null; // 동적 콘텐츠 감지 옵저버
 let currentApiKey = null;
@@ -113,10 +113,10 @@ function cleanupMemory() {
     mutationObserver = null;
   }
 
-  // WeakMap과 WeakSet은 자동으로 GC되므로 명시적 정리 불필요
-  // 하지만 참조를 끊어주는 것이 좋음
+  // WeakMap과 Set은 명시적으로 참조를 끊어 메모리 사용을 최소화
   originalTexts = new WeakMap();
-  translatedElements = new WeakSet();
+  translatedElements.clear();
+  translatedElements = new Set();
 
   // 캐시 정리 (Map은 수동 정리 필요)
   translatedTexts.clear();
@@ -325,22 +325,24 @@ function restoreOriginalTexts() {
     mutationObserver = null;
   }
 
-  // 모든 번역된 요소 복원
-  // WeakMap 순회는 불가능하므로 전체 DOM 다시 스캔
-  const textNodes = getVisibleTextElements();
-  const { elements } = extractTextsForTranslation(textNodes);
-
-  elements.forEach(element => {
-    if (originalTexts.has(element)) {
-      const originalText = originalTexts.get(element);
-      element.textContent = originalText;
-      removeLoadingEffect(element);
+  // 모든 번역된 요소를 순회하며 원문으로 복구
+  // Set을 사용하므로 화면 밖 요소도 빠짐없이 복구 가능
+  translatedElements.forEach(element => {
+    // 요소가 이미 제거되었거나 원문이 없다면 건너뜀
+    if (!element || !originalTexts.has(element)) {
+      return;
     }
+
+    const originalText = originalTexts.get(element);
+    element.textContent = originalText;
+    removeLoadingEffect(element);
   });
 
-  // WeakMap/WeakSet은 새로 생성하여 참조 끊기
+  // WeakMap은 새로 생성하여 원문 참조 정리
   originalTexts = new WeakMap();
-  translatedElements = new WeakSet();
+  // Set은 clear로 모든 요소를 정리하고 새 인스턴스로 교체하여 GC 유도
+  translatedElements.clear();
+  translatedElements = new Set();
 
   // 캐시는 유지 (다음 번역 시 재사용)
 
