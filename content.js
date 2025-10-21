@@ -1,12 +1,16 @@
 // 번역 상태를 저장하는 전역 변수
 let isTranslated = false;
-let originalTexts = new Map(); // 원본 텍스트 저장
-let translatedTexts = new Map(); // 번역된 텍스트 캐시
-let translatedElements = new Set(); // 이미 번역된 요소 추적
+let originalTexts = new WeakMap(); // 원본 텍스트 저장 (WeakMap으로 메모리 누수 방지)
+let translatedElements = new WeakSet(); // 이미 번역된 요소 추적 (WeakSet으로 자동 GC)
 let scrollObserver = null; // 스크롤 감지 옵저버
 let mutationObserver = null; // 동적 콘텐츠 감지 옵저버
 let currentApiKey = null;
 let currentModel = null;
+
+// 번역 캐시 (LRU 방식으로 크기 제한)
+const MAX_CACHE_SIZE = 1000; // 최대 1000개 텍스트만 캐시
+let translatedTexts = new Map(); // 번역된 텍스트 캐시
+let cacheAccessOrder = []; // LRU 추적용
 
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -42,7 +46,77 @@ async function handleTranslationToggle(apiKey, model) {
 // 번역 상태를 storage에 저장
 function updateTranslationState(state) {
   isTranslated = state;
-  chrome.storage.session.set({ isTranslated: state });
+  chrome.storage.session.set({ isTranslated: state }).catch(() => {});
+}
+
+// 캐시에 번역 저장 (LRU 방식)
+function setCachedTranslation(original, translation) {
+  // 이미 있으면 접근 순서만 업데이트
+  if (translatedTexts.has(original)) {
+    const index = cacheAccessOrder.indexOf(original);
+    if (index > -1) {
+      cacheAccessOrder.splice(index, 1);
+    }
+    cacheAccessOrder.push(original);
+    return;
+  }
+
+  // 캐시 크기 초과 시 가장 오래된 항목 제거
+  if (translatedTexts.size >= MAX_CACHE_SIZE) {
+    const oldest = cacheAccessOrder.shift();
+    if (oldest) {
+      translatedTexts.delete(oldest);
+    }
+  }
+
+  // 새 번역 추가
+  translatedTexts.set(original, translation);
+  cacheAccessOrder.push(original);
+}
+
+// 캐시에서 번역 가져오기
+function getCachedTranslation(original) {
+  if (translatedTexts.has(original)) {
+    // 접근 순서 업데이트 (LRU)
+    const index = cacheAccessOrder.indexOf(original);
+    if (index > -1) {
+      cacheAccessOrder.splice(index, 1);
+      cacheAccessOrder.push(original);
+    }
+    return translatedTexts.get(original);
+  }
+  return null;
+}
+
+// 메모리 정리 함수
+function cleanupMemory() {
+  console.log('메모리 정리 시작...');
+
+  // Observer 정리
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+    scrollObserver = null;
+  }
+
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+    mutationObserver = null;
+  }
+
+  // WeakMap과 WeakSet은 자동으로 GC되므로 명시적 정리 불필요
+  // 하지만 참조를 끊어주는 것이 좋음
+  originalTexts = new WeakMap();
+  translatedElements = new WeakSet();
+
+  // 캐시 정리 (Map은 수동 정리 필요)
+  translatedTexts.clear();
+  cacheAccessOrder = [];
+
+  // API 정보 정리
+  currentApiKey = null;
+  currentModel = null;
+
+  console.log('메모리 정리 완료');
 }
 
 // 원본 텍스트로 복원
@@ -59,17 +133,24 @@ function restoreOriginalTexts() {
     mutationObserver = null;
   }
 
-  originalTexts.forEach((originalText, element) => {
-    if (element && element.isConnected) {
+  // 모든 번역된 요소 복원
+  // WeakMap 순회는 불가능하므로 전체 DOM 다시 스캔
+  const textNodes = getVisibleTextElements();
+  const { elements } = extractTextsForTranslation(textNodes);
+
+  elements.forEach(element => {
+    if (originalTexts.has(element)) {
+      const originalText = originalTexts.get(element);
       element.textContent = originalText;
-      // 로딩 효과 제거
       removeLoadingEffect(element);
     }
   });
 
-  // 캐시는 유지 (originalTexts, translatedTexts)
-  // 다음 번역 시 API 호출 없이 사용 가능
-  translatedElements.clear();
+  // WeakMap/WeakSet은 새로 생성하여 참조 끊기
+  originalTexts = new WeakMap();
+  translatedElements = new WeakSet();
+
+  // 캐시는 유지 (다음 번역 시 재사용)
 
   showNotification('원본으로 복원되었습니다.', 'success');
 }
@@ -246,8 +327,9 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
         const originalText = texts[idx];
 
         // 캐시에 번역이 있는지 확인
-        if (translatedTexts.has(originalText)) {
-          cachedElements.push({ element, originalText });
+        const cachedTranslation = getCachedTranslation(originalText);
+        if (cachedTranslation) {
+          cachedElements.push({ element, originalText, translation: cachedTranslation });
         } else {
           newTexts.push(originalText);
           newElements.push(element);
@@ -257,8 +339,7 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
 
     // 캐시된 번역 즉시 적용
     let cachedCount = 0;
-    cachedElements.forEach(({ element, originalText }) => {
-      const translation = translatedTexts.get(originalText);
+    cachedElements.forEach(({ element, originalText, translation }) => {
       if (translation) {
         if (!originalTexts.has(element)) {
           originalTexts.set(element, element.textContent);
@@ -321,8 +402,8 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
             originalTexts.set(element, element.textContent);
           }
 
-          // 캐시에 저장
-          translatedTexts.set(originalText, translation);
+          // 캐시에 저장 (LRU 방식)
+          setCachedTranslation(originalText, translation);
 
           // 번역 적용
           element.textContent = translation;
@@ -420,44 +501,38 @@ function removeLoadingEffect(element) {
   parent.style.backgroundSize = '';
 }
 
-// 스크롤 감지 설정
+// 스크롤 감지 설정 (최적화: 스크롤 이벤트 기반)
 function setupScrollObserver() {
-  // 기존 옵저버가 있으면 제거
-  if (scrollObserver) {
-    scrollObserver.disconnect();
+  // 기존 리스너 제거
+  if (scrollObserver && scrollObserver.handler) {
+    window.removeEventListener('scroll', scrollObserver.handler);
   }
 
-  // IntersectionObserver로 새로 보이는 요소 감지
-  scrollObserver = new IntersectionObserver(
-    async (entries) => {
-      // 번역 모드가 아니면 무시
-      if (!isTranslated || !currentApiKey || !currentModel) return;
+  let scrollTimeout = null;
 
-      // 새로 보이는 요소가 있는지 확인
-      const hasNewVisible = entries.some(entry => entry.isIntersecting);
+  // 스크롤 이벤트 핸들러 (디바운스 적용)
+  const handleScroll = () => {
+    if (!isTranslated || !currentApiKey || !currentModel) return;
 
-      if (hasNewVisible) {
-        // 디바운스를 위해 타이머 사용
-        clearTimeout(scrollObserver.timer);
-        scrollObserver.timer = setTimeout(async () => {
-          await translateVisibleContent(currentApiKey, currentModel, true);
-        }, 500);
-      }
-    },
-    {
-      root: null,
-      rootMargin: '100px', // 화면 경계에서 100px 전에 감지
-      threshold: 0.1
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(async () => {
+      await translateVisibleContent(currentApiKey, currentModel, true);
+    }, 800); // 800ms 디바운스
+  };
+
+  // 스크롤 리스너 등록 (passive로 성능 최적화)
+  window.addEventListener('scroll', handleScroll, { passive: true });
+
+  // 핸들러 참조 저장 (cleanup용)
+  scrollObserver = {
+    handler: handleScroll,
+    disconnect: () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
     }
-  );
+  };
 
-  // 모든 주요 컨테이너 요소들을 관찰
-  const observeElements = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, span, div, a, button');
-  observeElements.forEach(el => {
-    scrollObserver.observe(el);
-  });
-
-  console.log('스크롤 감지 시작:', observeElements.length, '개 요소 관찰');
+  console.log('스크롤 감지 시작 (이벤트 기반)');
 }
 
 // 동적 콘텐츠 감지 설정 (MutationObserver)
@@ -511,13 +586,35 @@ function setupMutationObserver() {
   console.log('동적 콘텐츠 감지 시작');
 }
 
-// 페이지 언로드 시 캐시 클리어
+// 페이지 언로드 시 메모리 정리
 window.addEventListener('beforeunload', () => {
-  originalTexts.clear();
-  translatedTexts.clear();
-  translatedElements.clear();
-  console.log('페이지 언로드: 캐시 클리어');
+  cleanupMemory();
+  console.log('페이지 언로드: 메모리 정리');
 });
+
+// 페이지 visibility 변경 시 메모리 정리 (탭 전환 등)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !isTranslated) {
+    // 번역 모드가 아니고 페이지가 숨겨진 경우 메모리 정리
+    cleanupMemory();
+    console.log('페이지 숨김: 메모리 정리');
+  }
+});
+
+// 주기적 메모리 체크 (5분마다)
+setInterval(() => {
+  if (!isTranslated) {
+    // 번역 모드가 아닐 때만 정리
+    if (translatedTexts.size > 0 || cacheAccessOrder.length > 0) {
+      console.log('주기적 캐시 정리 (비활성 상태)');
+      translatedTexts.clear();
+      cacheAccessOrder = [];
+    }
+  } else {
+    // 번역 모드일 때는 캐시 크기만 로그
+    console.log(`캐시 크기: ${translatedTexts.size}/${MAX_CACHE_SIZE}`);
+  }
+}, 5 * 60 * 1000); // 5분
 
 // 알림 표시
 function showNotification(message, type) {
