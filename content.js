@@ -100,14 +100,18 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
   console.log(`[배치 ${displayIndex}] 로딩 효과 적용 - ${(performance.now() - loadingStartTime).toFixed(0)}ms`);
 
   let translations = [];
+  let apiMetrics = null;
   const apiStartTime = performance.now();
   let apiTime = 0;
 
   let apiError = null;
 
   try {
-    translations = await translateWithOpenRouter(batch.texts, apiKey, model);
-    apiTime = performance.now() - apiStartTime;
+    // API 호출 결과에는 번역 배열과 단계별 소요 시간이 함께 전달되어 병목을 한눈에 파악할 수 있음
+    const apiResult = await translateWithOpenRouter(batch.texts, apiKey, model);
+    translations = apiResult.translations;
+    apiMetrics = apiResult.metrics;
+    apiTime = apiMetrics ? apiMetrics.totalTime : performance.now() - apiStartTime;
   } catch (error) {
     apiTime = performance.now() - apiStartTime;
     console.error(`[배치 ${displayIndex}] 번역 API 오류:`, error);
@@ -150,7 +154,10 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
   const domTime = performance.now() - domApplyStartTime;
 
   const batchTotalTime = performance.now() - batchStartTime;
-  console.log(`[배치 ${displayIndex}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (API: ${apiTime.toFixed(0)}ms, DOM: ${domTime.toFixed(0)}ms, 성공: ${successCount}개, 실패: ${failedCount}개)`);
+  // 단계별 시간 정보를 배치 로그에도 노출하여 실제 지연 구간을 바로 확인 가능하도록 구성
+  const apiSummary = formatApiMetrics(apiMetrics, apiTime);
+
+  console.log(`[배치 ${displayIndex}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (${apiSummary}, DOM: ${domTime.toFixed(0)}ms, 성공: ${successCount}개, 실패: ${failedCount}개)`);
 
   if (apiError) {
     throw apiError;
@@ -162,6 +169,17 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
     successCount,
     failedCount
   };
+}
+
+// API 단계별 계측 정보를 보기 좋은 문자열로 가공하는 헬퍼 함수
+function formatApiMetrics(metrics, fallbackTime) {
+  // metrics가 없으면 총 소요 시간만 표기하여 최소 정보라도 유지
+  if (!metrics) {
+    return `API: ${fallbackTime.toFixed(0)}ms`;
+  }
+
+  // 각 구간의 시간을 정리해 콘솔에서 한 줄로 확인 가능하도록 구성
+  return `API: ${fallbackTime.toFixed(0)}ms (헤더 ${metrics.headerTime.toFixed(0)}ms | 본문 ${metrics.bodyReadTime.toFixed(0)}ms | JSON ${metrics.jsonParseTime.toFixed(0)}ms | 매핑 ${metrics.mappingTime.toFixed(0)}ms)`;
 }
 
 // 번역 재개 핸들러 (paused 상태에서만 사용)
@@ -973,27 +991,67 @@ async function translateWithOpenRouter(texts, apiKey, model) {
     });
 
     const fetchEndTime = performance.now();
-    console.log(`[API] 네트워크 요청 완료 - ${(fetchEndTime - fetchStartTime).toFixed(0)}ms`);
+    const headerTime = fetchEndTime - fetchStartTime;
+    console.log(`[API] 네트워크 요청 완료 - ${headerTime.toFixed(0)}ms`);
+
+    const bodyReadStartTime = performance.now();
+    const rawBody = await response.text();
+    const bodyReadEndTime = performance.now();
+    const bodyReadTime = bodyReadEndTime - bodyReadStartTime;
+    console.log(`[API] 응답 본문 수신 완료 - ${bodyReadTime.toFixed(0)}ms`);
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API 오류: ${errorData.error?.message || response.statusText}`);
+      let errorMessage = response.statusText;
+      try {
+        const errorData = JSON.parse(rawBody);
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch (errorParse) {
+        console.warn('API 오류 응답 JSON 파싱 실패:', errorParse);
+      }
+      throw new Error(`API 오류: ${errorMessage}`);
     }
 
-    const parseStartTime = performance.now();
-    const data = await response.json();
-    const translatedText = data.choices[0].message.content;
+    // JSON 파싱 구간 시간을 분리해 병목을 쉽게 파악
+    const jsonParseStartTime = performance.now();
+    let data;
+    try {
+      data = JSON.parse(rawBody);
+    } catch (jsonError) {
+      const jsonParseFailTime = performance.now() - jsonParseStartTime;
+      console.error(`[API] JSON 파싱 실패 (${jsonParseFailTime.toFixed(0)}ms):`, jsonError);
+      throw new Error('번역 응답 JSON 파싱 실패');
+    }
+    const jsonParseEndTime = performance.now();
+    const jsonParseTime = jsonParseEndTime - jsonParseStartTime;
+    console.log(`[API] JSON 파싱 완료 - ${jsonParseTime.toFixed(0)}ms`);
 
-    // 번역 결과 파싱
+    const translatedText = data.choices?.[0]?.message?.content || '';
+
+    // 번역 결과 매핑 구간 시간을 별도로 계측
+    const mappingStartTime = performance.now();
     const result = parseTranslationResult(translatedText, texts.length);
+    const mappingEndTime = performance.now();
+    const mappingTime = mappingEndTime - mappingStartTime;
 
-    const parseEndTime = performance.now();
-    const totalTime = parseEndTime - startTime;
+    const totalTime = mappingEndTime - startTime;
+    const averageTime = texts.length > 0 ? totalTime / texts.length : 0;
 
-    console.log(`[API] 파싱 완료 - ${(parseEndTime - parseStartTime).toFixed(0)}ms`);
-    console.log(`[API] 전체 API 호출 시간 - ${totalTime.toFixed(0)}ms (평균 ${(totalTime / texts.length).toFixed(0)}ms/개)`);
+    console.log(`[API] 번역 매핑 완료 - ${mappingTime.toFixed(0)}ms`);
+    console.log(`[API] 전체 API 호출 시간 - ${totalTime.toFixed(0)}ms (평균 ${averageTime.toFixed(0)}ms/개)`);
+    console.log(`[API] 단계별 시간 요약 - 헤더: ${headerTime.toFixed(0)}ms, 본문: ${bodyReadTime.toFixed(0)}ms, JSON: ${jsonParseTime.toFixed(0)}ms, 매핑: ${mappingTime.toFixed(0)}ms`);
 
-    return result;
+    // 번역 결과와 함께 측정된 단계별 시간 정보를 반환해 후속 로깅 및 모니터링에 활용
+    return {
+      translations: result,
+      metrics: {
+        headerTime,
+        bodyReadTime,
+        jsonParseTime,
+        mappingTime,
+        totalTime,
+        averageTime
+      }
+    };
 
   } catch (error) {
     const errorTime = performance.now() - startTime;
