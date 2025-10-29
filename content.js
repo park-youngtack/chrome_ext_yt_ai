@@ -114,7 +114,8 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
     apiTime = apiMetrics ? apiMetrics.totalTime : performance.now() - apiStartTime;
   } catch (error) {
     apiTime = performance.now() - apiStartTime;
-    console.error(`[배치 ${displayIndex}] 번역 API 오류:`, error);
+    const errorDetails = extractApiErrorDetails(error);
+    console.error(`[배치 ${displayIndex}] 번역 API 오류 - ${errorDetails}`, error);
     translations = batch.texts.map(() => null);
     apiError = error;
   }
@@ -156,8 +157,9 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
   const batchTotalTime = performance.now() - batchStartTime;
   // 단계별 시간 정보를 배치 로그에도 노출하여 실제 지연 구간을 바로 확인 가능하도록 구성
   const apiSummary = formatApiMetrics(apiMetrics, apiTime);
+  const failureReason = failedCount > 0 ? describeFailureReason(apiError) : '없음';
 
-  console.log(`[배치 ${displayIndex}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (${apiSummary}, DOM: ${domTime.toFixed(0)}ms, 성공: ${successCount}개, 실패: ${failedCount}개)`);
+  console.log(`[배치 ${displayIndex}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (${apiSummary}, DOM: ${domTime.toFixed(0)}ms, 성공: ${successCount}개, 실패: ${failedCount}개, 실패 원인: ${failureReason})`);
 
   if (apiError) {
     throw apiError;
@@ -167,7 +169,9 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
     apiTime,
     domTime,
     successCount,
-    failedCount
+    failedCount,
+    apiMetrics,
+    failureReason
   };
 }
 
@@ -175,11 +179,73 @@ async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey
 function formatApiMetrics(metrics, fallbackTime) {
   // metrics가 없으면 총 소요 시간만 표기하여 최소 정보라도 유지
   if (!metrics) {
-    return `API: ${fallbackTime.toFixed(0)}ms`;
+    return `API 총 ${fallbackTime.toFixed(0)}ms (세부 계측 정보 없음)`;
   }
 
-  // 각 구간의 시간을 정리해 콘솔에서 한 줄로 확인 가능하도록 구성
-  return `API: ${fallbackTime.toFixed(0)}ms (헤더 ${metrics.headerTime.toFixed(0)}ms | 본문 ${metrics.bodyReadTime.toFixed(0)}ms | JSON ${metrics.jsonParseTime.toFixed(0)}ms | 매핑 ${metrics.mappingTime.toFixed(0)}ms)`;
+  // 측정된 구간을 배열로 정리해 가장 느린 단계가 무엇인지 파악하기 쉽게 함
+  const segments = [
+    { label: '헤더', value: metrics.headerTime },
+    { label: '본문', value: metrics.bodyReadTime },
+    { label: 'JSON', value: metrics.jsonParseTime },
+    { label: '매핑', value: metrics.mappingTime }
+  ].filter(segment => Number.isFinite(segment.value));
+
+  const segmentSummary = segments
+    .map(segment => `${segment.label} ${segment.value.toFixed(0)}ms`)
+    .join(' | ');
+  const summaryText = segmentSummary || '세부 계측 없음';
+
+  const slowestSegment = segments.reduce((slowest, segment) => {
+    if (!slowest || segment.value > slowest.value) {
+      return segment;
+    }
+    return slowest;
+  }, null);
+
+  const slowestRatio = slowestSegment && fallbackTime > 0
+    ? ((slowestSegment.value / fallbackTime) * 100).toFixed(0)
+    : null;
+
+  const delaySummary = slowestSegment
+    ? `${slowestSegment.label} ${slowestSegment.value.toFixed(0)}ms (${slowestRatio}% 비중)`
+    : '측정 구간 부족';
+
+  return `API 총 ${fallbackTime.toFixed(0)}ms (${summaryText} | 지연 구간: ${delaySummary})`;
+}
+
+// API 호출 오류의 핵심 정보를 추출해 로그에 요약하기 위한 헬퍼 함수
+function extractApiErrorDetails(error) {
+  if (!error) {
+    return '오류 정보 없음';
+  }
+
+  const details = [];
+
+  if (error.name) {
+    details.push(`유형 ${error.name}`);
+  }
+
+  if (error.status || error.statusCode) {
+    details.push(`상태 ${error.status || error.statusCode}`);
+  }
+
+  if (error.message) {
+    details.push(`메시지 "${error.message}"`);
+  }
+
+  if (details.length === 0) {
+    return '추가 정보 없음';
+  }
+
+  return details.join(' | ');
+}
+
+// 배치 처리 실패 사유를 한 줄로 요약해 후속 분석을 돕는 헬퍼 함수
+function describeFailureReason(apiError) {
+  if (apiError) {
+    return extractApiErrorDetails(apiError);
+  }
+  return '응답 매핑 누락 또는 빈 결과';
 }
 
 // 번역 재개 핸들러 (paused 상태에서만 사용)
@@ -1212,6 +1278,7 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     let totalDomTime = 0;
     let totalSuccessCount = 0;
     let totalFailedCount = 0;
+    let slowestBatchByApi = { index: -1, apiTime: 0, domTime: 0, metrics: null, failureReason: '없음' };
 
     const concurrency = Math.max(1, Math.min(MAX_CONCURRENT_TRANSLATIONS, batches.length));
     console.log(`[배치] 최대 동시 처리 수: ${concurrency}개`);
@@ -1240,6 +1307,16 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
         totalSuccessCount += result.successCount;
         totalFailedCount += result.failedCount;
 
+        if (result.apiTime >= slowestBatchByApi.apiTime) {
+          slowestBatchByApi = {
+            index: batchIndex,
+            apiTime: result.apiTime,
+            domTime: result.domTime,
+            metrics: result.apiMetrics,
+            failureReason: result.failureReason
+          };
+        }
+
         completedBatches += 1;
 
         if (!silentMode) {
@@ -1261,6 +1338,10 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     console.log(`  - DOM 업데이트: ${totalDomTime.toFixed(0)}ms`);
     console.log(`  - 성공: ${totalSuccessCount}개, 실패: ${totalFailedCount}개`);
     console.log(`  - 전체 시간: ${totalTime.toFixed(0)}ms`);
+    if (slowestBatchByApi.index >= 0) {
+      const slowestBatchSummary = formatApiMetrics(slowestBatchByApi.metrics, slowestBatchByApi.apiTime);
+      console.log(`  - 가장 느린 배치: #${slowestBatchByApi.index + 1} (${slowestBatchSummary}, DOM: ${slowestBatchByApi.domTime.toFixed(0)}ms, 실패 원인: ${slowestBatchByApi.failureReason})`);
+    }
     console.log(`========== [번역 종료] ==========\n`);
 
     if (!silentMode) {
