@@ -7,6 +7,18 @@ let scrollObserver = null; // 스크롤 감지 옵저버
 let currentApiKey = null;
 let currentModel = null;
 
+// 텍스트 노드 관찰 최적화 관련 전역 변수
+const EXCLUDE_TAGS = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'OBJECT', 'CODE', 'PRE', 'KBD', 'SAMP', 'VAR'];
+let textNodeObserverInitialized = false;
+let textNodeIntersectionObserver = null;
+let textNodeMutationObserver = null;
+let parentToTextNodes = new Map();
+let visibleTextNodes = new Set();
+let textNodeToParent = new WeakMap();
+
+// 번역 배치 처리 동시성 제한
+const MAX_CONCURRENT_TRANSLATIONS = 3;
+
 // 자동 일시정지 관련
 let idleTimer = null;
 let idleTimeout = 60000; // 기본 60초
@@ -74,6 +86,84 @@ async function handleTranslationToggle(apiKey, model, autoPauseEnabled = true, a
   }
 }
 
+// 번역 배치를 병렬 처리하기 위한 헬퍼 함수
+async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey, model }) {
+  const displayIndex = batchIndex + 1;
+  const batchStartTime = performance.now();
+
+  console.log(`\n[배치 ${displayIndex}/${totalBatches}] 처리 시작 - ${batch.texts.length}개 텍스트`);
+
+  const loadingStartTime = performance.now();
+  batch.elements.forEach(element => {
+    addLoadingEffect(element);
+  });
+  console.log(`[배치 ${displayIndex}] 로딩 효과 적용 - ${(performance.now() - loadingStartTime).toFixed(0)}ms`);
+
+  let translations = [];
+  const apiStartTime = performance.now();
+  let apiTime = 0;
+
+  let apiError = null;
+
+  try {
+    translations = await translateWithOpenRouter(batch.texts, apiKey, model);
+    apiTime = performance.now() - apiStartTime;
+  } catch (error) {
+    apiTime = performance.now() - apiStartTime;
+    console.error(`[배치 ${displayIndex}] 번역 API 오류:`, error);
+    translations = batch.texts.map(() => null);
+    apiError = error;
+  }
+
+  let successCount = 0;
+  let failedCount = 0;
+
+  const domApplyStartTime = performance.now();
+  await new Promise(resolve => {
+    requestAnimationFrame(() => {
+      batch.elements.forEach((element, idx) => {
+        const translation = translations[idx];
+
+        if (translation && translation !== null) {
+          const originalText = batch.texts[idx];
+
+          if (!originalTexts.has(element)) {
+            originalTexts.set(element, element.textContent);
+          }
+
+          setCachedTranslation(originalText, translation);
+          element.textContent = translation;
+          translatedElements.add(element);
+          successCount++;
+        } else {
+          failedCount++;
+          if (!apiError) {
+            console.warn(`[배치 ${displayIndex}] 번역 실패 [${idx}]: "${batch.texts[idx].substring(0, 50)}..."`);
+          }
+        }
+
+        removeLoadingEffect(element);
+      });
+      resolve();
+    });
+  });
+  const domTime = performance.now() - domApplyStartTime;
+
+  const batchTotalTime = performance.now() - batchStartTime;
+  console.log(`[배치 ${displayIndex}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (API: ${apiTime.toFixed(0)}ms, DOM: ${domTime.toFixed(0)}ms, 성공: ${successCount}개, 실패: ${failedCount}개)`);
+
+  if (apiError) {
+    throw apiError;
+  }
+
+  return {
+    apiTime,
+    domTime,
+    successCount,
+    failedCount
+  };
+}
+
 // 번역 재개 핸들러 (paused 상태에서만 사용)
 async function handleResumeTranslation() {
   if (translationState !== 'paused') {
@@ -111,6 +201,8 @@ function setCachedTranslation(original, translation) {
       cacheAccessOrder.splice(index, 1);
     }
     cacheAccessOrder.push(original);
+    // 기존 항목이더라도 최신 번역으로 교체하여 일관성을 유지
+    translatedTexts.set(original, translation);
     return;
   }
 
@@ -260,6 +352,9 @@ function cleanupMemory() {
     scrollObserver.disconnect();
     scrollObserver = null;
   }
+
+  // 텍스트 노드 옵저버 정리
+  cleanupTextNodeObservers();
 
   // 사용자 활동 감지 정리
   stopIdleDetection();
@@ -520,79 +615,308 @@ function restoreOriginalTexts() {
 
   // 캐시는 유지 (다음 번역 시 재사용)
 
+  // 텍스트 노드 옵저버 정리
+  cleanupTextNodeObservers();
+
   showNotification('원본으로 복원되었습니다.', 'success');
 }
 
-// 화면에 보이는 텍스트 요소 수집
-function getVisibleTextElements() {
-  const textNodes = [];
-  const visibilityCache = new Map(); // 부모 요소별 가시성 정보를 저장해 레이아웃 계산 최소화
-  const walker = document.createTreeWalker(
-    document.body,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode: function(node) {
-        // 부모 요소가 화면에 보이는지 확인
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_REJECT;
-
-        // script, style, noscript, 코드 관련 태그는 제외
-        const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'OBJECT', 'CODE', 'PRE', 'KBD', 'SAMP', 'VAR'];
-        if (excludeTags.includes(parent.tagName)) {
-          return NodeFilter.FILTER_REJECT;
-        }
-
-        // 부모 중에 코드 블록이 있는지 확인
-        let ancestor = parent;
-        while (ancestor && ancestor !== document.body) {
-          if (excludeTags.includes(ancestor.tagName)) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          ancestor = ancestor.parentElement;
-        }
-
-        // 텍스트가 비어있거나 공백만 있으면 제외
-        const text = node.textContent.trim();
-        if (!text || text.length === 0) {
-          return NodeFilter.FILTER_REJECT;
-        }
-
-        // 부모 요소의 가시성 정보를 캐시해 중복 계산을 줄임
-        let cachedVisibility = visibilityCache.get(parent);
-
-        if (!cachedVisibility) {
-          const rect = parent.getBoundingClientRect();
-          const style = window.getComputedStyle(parent);
-          const isInsideViewport = rect.top < window.innerHeight &&
-                                   rect.bottom > 0 &&
-                                   rect.left < window.innerWidth &&
-                                   rect.right > 0;
-          const isHidden = style.display === 'none' ||
-                           style.visibility === 'hidden' ||
-                           parseFloat(style.opacity || '1') === 0;
-
-          cachedVisibility = {
-            visible: isInsideViewport && !isHidden
-          };
-
-          visibilityCache.set(parent, cachedVisibility);
-        }
-
-        if (!cachedVisibility.visible) {
-          return NodeFilter.FILTER_REJECT;
-        }
-
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }
-  );
-
-  let node;
-  while (node = walker.nextNode()) {
-    textNodes.push(node);
+// 텍스트 노드 관찰 초기화 (최초 1회)
+function initTextNodeObservers() {
+  if (textNodeObserverInitialized) {
+    return;
   }
 
-  return textNodes;
+  // 기존 데이터 구조 초기화
+  parentToTextNodes = new Map();
+  visibleTextNodes = new Set();
+  textNodeToParent = new WeakMap();
+
+  // IntersectionObserver를 이용해 뷰포트 내 가시성을 추적
+  textNodeIntersectionObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      const parent = entry.target;
+      const registeredNodes = parentToTextNodes.get(parent);
+      if (!registeredNodes) {
+        return;
+      }
+
+      if (entry.isIntersecting && entry.intersectionRatio > 0) {
+        registeredNodes.forEach(node => {
+          if (isTextNodeValid(node)) {
+            visibleTextNodes.add(node);
+          }
+        });
+      } else {
+        registeredNodes.forEach(node => {
+          visibleTextNodes.delete(node);
+        });
+      }
+    });
+  }, { threshold: 0 });
+
+  // MutationObserver로 DOM 변경 감시 (새로운 텍스트 노드 추가/제거)
+  textNodeMutationObserver = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach(node => {
+          scanNodeForTextNodes(node);
+        });
+        mutation.removedNodes.forEach(node => {
+          removeTextNodesFromTree(node);
+        });
+      } else if (mutation.type === 'characterData') {
+        handleTextNodeContentChange(mutation.target);
+      }
+    });
+  });
+
+  textNodeMutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+
+  // 초기 DOM을 한 번만 순회하여 후보 텍스트 노드를 등록
+  scanNodeForTextNodes(document.body);
+
+  textNodeObserverInitialized = true;
+}
+
+// DOM 트리를 순회하며 텍스트 노드를 등록
+function scanNodeForTextNodes(node) {
+  if (!node) {
+    return;
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    registerTextNode(node);
+    return;
+  }
+
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    if (shouldSkipElement(node)) {
+      return;
+    }
+
+    node.childNodes.forEach(child => {
+      scanNodeForTextNodes(child);
+    });
+  }
+}
+
+// 텍스트 노드를 구조체에 등록하고 관찰 시작
+function registerTextNode(node) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) {
+    return;
+  }
+
+  if (textNodeToParent.has(node)) {
+    return; // 이미 등록된 노드
+  }
+
+  const parent = node.parentElement;
+  if (!parent || shouldSkipElement(parent) || hasExcludedAncestor(parent)) {
+    return;
+  }
+
+  const text = (node.textContent || '').trim();
+  if (!text) {
+    return;
+  }
+
+  textNodeToParent.set(node, parent);
+
+  let nodeSet = parentToTextNodes.get(parent);
+  if (!nodeSet) {
+    nodeSet = new Set();
+    parentToTextNodes.set(parent, nodeSet);
+    textNodeIntersectionObserver.observe(parent);
+  }
+
+  nodeSet.add(node);
+
+  if (checkElementVisibility(parent)) {
+    visibleTextNodes.add(node);
+  }
+}
+
+// 제거된 노드를 구조체에서 정리
+function removeTextNodesFromTree(node) {
+  if (!node) {
+    return;
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    unregisterTextNode(node);
+    return;
+  }
+
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const parentSet = parentToTextNodes.get(node);
+    if (parentSet) {
+      parentSet.forEach(textNode => {
+        unregisterTextNode(textNode);
+      });
+    }
+
+    node.childNodes.forEach(child => {
+      removeTextNodesFromTree(child);
+    });
+  }
+}
+
+// 등록된 텍스트 노드 해제
+function unregisterTextNode(node) {
+  if (!textNodeToParent.has(node)) {
+    return;
+  }
+
+  const parent = textNodeToParent.get(node);
+  textNodeToParent.delete(node);
+
+  visibleTextNodes.delete(node);
+
+  if (parent && parentToTextNodes.has(parent)) {
+    const nodeSet = parentToTextNodes.get(parent);
+    nodeSet.delete(node);
+
+    if (nodeSet.size === 0) {
+      parentToTextNodes.delete(parent);
+      if (textNodeIntersectionObserver) {
+        textNodeIntersectionObserver.unobserve(parent);
+      }
+    }
+  }
+}
+
+// 텍스트 노드의 내용이 변할 때 가시성 갱신
+function handleTextNodeContentChange(node) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) {
+    return;
+  }
+
+  if (!textNodeToParent.has(node)) {
+    // 기존에 관리하지 않던 노드라면 새로 등록 시도
+    registerTextNode(node);
+    return;
+  }
+
+  const parent = textNodeToParent.get(node);
+  if (!parent) {
+    unregisterTextNode(node);
+    return;
+  }
+
+  const text = (node.textContent || '').trim();
+
+  if (!text) {
+    visibleTextNodes.delete(node);
+    return;
+  }
+
+  if (checkElementVisibility(parent)) {
+    visibleTextNodes.add(node);
+  } else {
+    visibleTextNodes.delete(node);
+  }
+}
+
+// 제외 대상 요소 여부 검사
+function shouldSkipElement(element) {
+  if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+    return true;
+  }
+
+  if (EXCLUDE_TAGS.includes(element.tagName)) {
+    return true;
+  }
+
+  return false;
+}
+
+// 상위 요소 중 제외 대상이 있는지 검사
+function hasExcludedAncestor(element) {
+  let current = element;
+  while (current && current !== document.body) {
+    if (EXCLUDE_TAGS.includes(current.tagName)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+// 텍스트 노드가 여전히 유효한지 검사
+function isTextNodeValid(node) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) {
+    return false;
+  }
+
+  if (!node.isConnected) {
+    return false;
+  }
+
+  const parent = node.parentElement;
+  if (!parent || shouldSkipElement(parent) || hasExcludedAncestor(parent)) {
+    return false;
+  }
+
+  const text = (node.textContent || '').trim();
+  return text.length > 0;
+}
+
+// 요소의 가시성 계산 (초기 등록 시 1회만 사용)
+function checkElementVisibility(element) {
+  if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+
+  const isInsideViewport = rect.top < window.innerHeight &&
+    rect.bottom > 0 &&
+    rect.left < window.innerWidth &&
+    rect.right > 0;
+
+  const isHidden = style.display === 'none' ||
+    style.visibility === 'hidden' ||
+    parseFloat(style.opacity || '1') === 0;
+
+  return isInsideViewport && !isHidden;
+}
+
+// 화면에 보이는 텍스트 요소 수집 (옵저버가 유지하는 집합을 즉시 반환)
+function getVisibleTextElements() {
+  initTextNodeObservers();
+
+  const nodes = [];
+  visibleTextNodes.forEach(node => {
+    if (isTextNodeValid(node)) {
+      nodes.push(node);
+    }
+  });
+
+  return nodes;
+}
+
+// 옵저버 및 관련 자료구조 정리
+function cleanupTextNodeObservers() {
+  if (textNodeIntersectionObserver) {
+    textNodeIntersectionObserver.disconnect();
+    textNodeIntersectionObserver = null;
+  }
+
+  if (textNodeMutationObserver) {
+    textNodeMutationObserver.disconnect();
+    textNodeMutationObserver = null;
+  }
+
+  parentToTextNodes = new Map();
+  visibleTextNodes = new Set();
+  textNodeToParent = new WeakMap();
+  textNodeObserverInitialized = false;
 }
 
 // 텍스트 노드들을 그룹화하여 텍스트 추출
@@ -826,100 +1150,48 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
 
     console.log(`[배치] ${batches.length}개 배치로 분할 (배치당 최대 ${batchSize}개)`);
 
-    // 각 배치를 순차적으로 번역
     let totalApiTime = 0;
     let totalDomTime = 0;
-    let totalWaitTime = 0;
+    let totalSuccessCount = 0;
+    let totalFailedCount = 0;
 
-    for (let i = 0; i < batches.length; i++) {
-      const batchStartTime = performance.now();
-      const batch = batches[i];
+    const concurrency = Math.max(1, Math.min(MAX_CONCURRENT_TRANSLATIONS, batches.length));
+    console.log(`[배치] 최대 동시 처리 수: ${concurrency}개`);
 
-      console.log(`\n[배치 ${i + 1}/${batches.length}] 처리 시작 - ${batch.texts.length}개 텍스트`);
+    let nextBatchIndex = 0;
+    let completedBatches = 0;
 
-      if (!silentMode) {
-        showNotification(`번역 중... (${i + 1}/${batches.length})`, 'info');
-      }
+    const worker = async () => {
+      while (true) {
+        const batchIndex = nextBatchIndex;
+        nextBatchIndex += 1;
 
-      // 로딩 효과 추가
-      const loadingStartTime = performance.now();
-      batch.elements.forEach(element => {
-        addLoadingEffect(element);
-      });
-      console.log(`[배치 ${i + 1}] 로딩 효과 적용 - ${(performance.now() - loadingStartTime).toFixed(0)}ms`);
+        if (batchIndex >= batches.length) {
+          break;
+        }
 
-      // API 호출
-      const apiStartTime = performance.now();
-      const translations = await translateWithOpenRouter(batch.texts, apiKey, model);
-      const apiEndTime = performance.now();
-      const apiTime = apiEndTime - apiStartTime;
-      totalApiTime += apiTime;
-
-      // 번역 결과 적용 및 캐시에 저장
-      const domApplyStartTime = performance.now();
-      let successCount = 0;
-      let failedCount = 0;
-
-      // DOM 업데이트를 requestAnimationFrame으로 최적화
-      await new Promise(resolve => {
-        requestAnimationFrame(() => {
-          batch.elements.forEach((element, idx) => {
-            const translation = translations[idx];
-
-            if (translation && translation !== null) {
-              const originalText = batch.texts[idx];
-
-              // 원본 저장
-              if (!originalTexts.has(element)) {
-                originalTexts.set(element, element.textContent);
-              }
-
-              // 캐시에 저장 (LRU 방식)
-              setCachedTranslation(originalText, translation);
-
-              // 번역 적용
-              element.textContent = translation;
-
-              // 번역 완료 표시
-              translatedElements.add(element);
-
-              successCount++;
-            } else {
-              // 번역 실패 시에도 원본 유지하고 추적
-              failedCount++;
-              console.warn(`[배치 ${i + 1}] 번역 실패 [${idx}]: "${batch.texts[idx].substring(0, 50)}..."`);
-            }
-
-            // 로딩 효과는 성공/실패 관계없이 항상 제거
-            removeLoadingEffect(element);
-          });
-          resolve();
+        const result = await processTranslationBatch(batches[batchIndex], {
+          batchIndex,
+          totalBatches: batches.length,
+          apiKey,
+          model
         });
-      });
 
-      const domApplyEndTime = performance.now();
-      const domTime = domApplyEndTime - domApplyStartTime;
-      totalDomTime += domTime;
+        totalApiTime += result.apiTime;
+        totalDomTime += result.domTime;
+        totalSuccessCount += result.successCount;
+        totalFailedCount += result.failedCount;
 
-      if (failedCount > 0) {
-        console.log(`[배치 ${i + 1}] DOM 업데이트 완료 - ${successCount}개 적용, ${failedCount}개 실패, ${domTime.toFixed(0)}ms`);
-      } else {
-        console.log(`[배치 ${i + 1}] DOM 업데이트 완료 - ${successCount}개 적용, ${domTime.toFixed(0)}ms`);
+        completedBatches += 1;
+
+        if (!silentMode) {
+          showNotification(`번역 중... (완료 ${completedBatches}/${batches.length})`, 'info');
+        }
       }
+    };
 
-      const batchEndTime = performance.now();
-      const batchTotalTime = batchEndTime - batchStartTime;
-      console.log(`[배치 ${i + 1}] 배치 완료 - ${batchTotalTime.toFixed(0)}ms (API: ${apiTime.toFixed(0)}ms, DOM: ${domTime.toFixed(0)}ms)`);
-
-      // API 레이트 리밋을 고려하여 약간의 딜레이 (배치가 여러개인 경우만)
-      if (i < batches.length - 1) {
-        const waitStartTime = performance.now();
-        console.log(`[배치 ${i + 1}] 다음 배치 대기 중... (300ms)`);
-        await new Promise(resolve => setTimeout(resolve, 300)); // 1초 → 300ms로 단축
-        const waitTime = performance.now() - waitStartTime;
-        totalWaitTime += waitTime;
-      }
-    }
+    const workers = Array.from({ length: concurrency }, () => worker());
+    await Promise.all(workers);
 
     const totalEndTime = performance.now();
     const totalTime = totalEndTime - totalStartTime;
@@ -929,7 +1201,7 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     console.log(`  - 배치 수: ${batches.length}개`);
     console.log(`  - API 시간: ${totalApiTime.toFixed(0)}ms (${(totalApiTime / batches.length).toFixed(0)}ms/배치)`);
     console.log(`  - DOM 업데이트: ${totalDomTime.toFixed(0)}ms`);
-    console.log(`  - 배치 대기: ${totalWaitTime.toFixed(0)}ms`);
+    console.log(`  - 성공: ${totalSuccessCount}개, 실패: ${totalFailedCount}개`);
     console.log(`  - 전체 시간: ${totalTime.toFixed(0)}ms`);
     console.log(`========== [번역 종료] ==========\n`);
 
