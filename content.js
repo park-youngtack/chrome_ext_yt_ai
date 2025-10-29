@@ -16,6 +16,10 @@ let parentToTextNodes = new Map();
 let visibleTextNodes = new Set();
 let textNodeToParent = new WeakMap();
 
+// 확장 전용 UI 식별을 위한 데이터 속성과 값 상수 (재사용 가능)
+const TRANSLATOR_UI_ATTRIBUTE = 'data-translator-ui';
+const TRANSLATOR_UI_ATTRIBUTE_VALUE = 'true';
+
 // 번역 배치 처리 동시성 제한
 const MAX_CONCURRENT_TRANSLATIONS = 3;
 
@@ -31,6 +35,29 @@ let cacheAccessOrder = []; // LRU 추적용
 
 // 페이지 컨텍스트 (한 번만 분석)
 let pageContext = null;
+
+// 확장 전용 UI 요소에 식별 표식을 부여하는 헬퍼 (다른 UI 요소에도 재사용 가능)
+function markTranslatorUiElement(element) {
+  if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+    return;
+  }
+
+  // 데이터 속성을 통해 확장 UI임을 명시하여 후속 로직에서 손쉽게 구분
+  element.setAttribute(TRANSLATOR_UI_ATTRIBUTE, TRANSLATOR_UI_ATTRIBUTE_VALUE);
+}
+
+// 지정된 요소가 확장 전용 UI인지 판별하는 헬퍼 (DOM 필터링 로직에서 공통 사용)
+function isTranslatorUiElement(element) {
+  if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+    return false;
+  }
+
+  if (element.id === 'translation-notification' || element.id === 'translation-toast') {
+    return true;
+  }
+
+  return element.getAttribute(TRANSLATOR_UI_ATTRIBUTE) === TRANSLATOR_UI_ATTRIBUTE_VALUE;
+}
 
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -395,6 +422,7 @@ function showToast(message) {
   const toast = document.createElement('div');
   toast.id = 'translation-toast';
   toast.textContent = message;
+  markTranslatorUiElement(toast);
 
   Object.assign(toast.style, {
     position: 'fixed',
@@ -795,13 +823,31 @@ function registerTextNode(node) {
     return;
   }
 
-  if (textNodeToParent.has(node)) {
-    return; // 이미 등록된 노드
+  const parent = node.parentElement;
+  if (!parent) {
+    if (textNodeToParent.has(node)) {
+      unregisterTextNode(node);
+    }
+    return;
   }
 
-  const parent = node.parentElement;
-  if (!parent || shouldSkipElement(parent) || hasExcludedAncestor(parent)) {
+  // 확장 전용 UI 내부의 텍스트는 등록하지 않고, 기존에 등록된 경우에는 전체 트리를 정리하여 누수를 방지
+  if (isTranslatorUiElement(parent)) {
+    if (textNodeToParent.has(node) || parentToTextNodes.has(parent)) {
+      removeTextNodesFromTree(parent);
+    }
     return;
+  }
+
+  if (shouldSkipElement(parent) || hasExcludedAncestor(parent)) {
+    if (textNodeToParent.has(node)) {
+      unregisterTextNode(node);
+    }
+    return;
+  }
+
+  if (textNodeToParent.has(node)) {
+    return; // 이미 등록된 노드
   }
 
   const text = (node.textContent || '').trim();
@@ -912,6 +958,11 @@ function shouldSkipElement(element) {
     return true;
   }
 
+  // 확장 전용 UI는 번역 대상에서 제외하여 사용자 인터페이스가 오염되지 않도록 함
+  if (isTranslatorUiElement(element)) {
+    return true;
+  }
+
   if (EXCLUDE_TAGS.includes(element.tagName)) {
     return true;
   }
@@ -923,7 +974,7 @@ function shouldSkipElement(element) {
 function hasExcludedAncestor(element) {
   let current = element;
   while (current && current !== document.body) {
-    if (EXCLUDE_TAGS.includes(current.tagName)) {
+    if (EXCLUDE_TAGS.includes(current.tagName) || isTranslatorUiElement(current)) {
       return true;
     }
     current = current.parentElement;
@@ -1501,6 +1552,7 @@ function showNotification(message, type) {
   const notification = document.createElement('div');
   notification.id = 'translation-notification';
   notification.textContent = message;
+  markTranslatorUiElement(notification);
 
   const colors = {
     info: '#2196F3',
