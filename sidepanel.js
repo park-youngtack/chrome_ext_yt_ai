@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 버튼 이벤트
   document.getElementById('toggleBtn').addEventListener('click', handleToggle);
+  document.getElementById('openSettings').addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+  });
 
   // 탭 변경 감지 (사용자가 다른 탭으로 전환할 때)
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
