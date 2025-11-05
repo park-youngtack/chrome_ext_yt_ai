@@ -5,8 +5,15 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('웹페이지 번역기가 설치되었습니다.');
 });
 
-// 아이콘 클릭 시 (추가 기능이 필요한 경우 여기에 구현)
-chrome.action.onClicked.addListener((tab) => {
-  // popup이 있으므로 여기서는 특별한 동작 불필요
+// 아이콘 클릭 시 사이드 패널 열기
+chrome.action.onClicked.addListener(async (tab) => {
   console.log('Extension icon clicked for tab:', tab.id);
+
+  // 사이드 패널 열기
+  try {
+    await chrome.sidePanel.open({ windowId: tab.windowId });
+    console.log('Side panel opened successfully');
+  } catch (error) {
+    console.error('Error opening side panel:', error);
+  }
 });
