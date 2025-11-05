@@ -36,6 +36,33 @@ let cacheAccessOrder = []; // LRU 추적용
 // 페이지 컨텍스트 (한 번만 분석)
 let pageContext = null;
 
+// 진행 상태 추적 (사이드 패널용)
+let progressStatus = {
+  state: 'inactive',
+  totalTexts: 0,
+  translatedCount: 0,
+  cachedCount: 0,
+  batchCount: 0,
+  currentBatch: 0,
+  batches: [],
+  startTime: null,
+  logs: []
+};
+
+// 로그 추가 헬퍼
+function addProgressLog(message, type = 'info') {
+  progressStatus.logs.push({
+    timestamp: Date.now(),
+    message,
+    type // info, success, error, warning
+  });
+
+  // 최대 100개까지만 유지
+  if (progressStatus.logs.length > 100) {
+    progressStatus.logs = progressStatus.logs.slice(-100);
+  }
+}
+
 // 확장 전용 UI 요소에 식별 표식을 부여하는 헬퍼 (다른 UI 요소에도 재사용 가능)
 function markTranslatorUiElement(element) {
   if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -73,6 +100,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // 하위 호환성을 위해 isTranslated도 반환
       isTranslated: translationState === 'active' || translationState === 'paused'
     });
+  } else if (request.action === 'getProgressStatus') {
+    // 사이드 패널용 진행 상태 반환
+    progressStatus.state = translationState;
+    sendResponse(progressStatus);
   }
   return true; // 비동기 응답을 위해 필요
 });
@@ -83,6 +114,20 @@ async function handleTranslationToggle(apiKey, model, autoPauseEnabled = true, a
     // 번역 상태 -> 원본으로 복원
     restoreOriginalTexts();
     updateTranslationState('inactive');
+
+    // 진행 상태 초기화
+    progressStatus = {
+      state: 'inactive',
+      totalTexts: 0,
+      translatedCount: 0,
+      cachedCount: 0,
+      batchCount: 0,
+      currentBatch: 0,
+      batches: [],
+      startTime: null,
+      logs: []
+    };
+    addProgressLog('번역이 중지되고 원본으로 복원되었습니다.', 'info');
   } else {
     // API 키와 모델 저장
     currentApiKey = apiKey;
@@ -95,10 +140,26 @@ async function handleTranslationToggle(apiKey, model, autoPauseEnabled = true, a
       idleTimeout = Infinity; // 비활성화
     }
 
+    // 진행 상태 초기화
+    progressStatus = {
+      state: 'active',
+      totalTexts: 0,
+      translatedCount: 0,
+      cachedCount: 0,
+      batchCount: 0,
+      currentBatch: 0,
+      batches: [],
+      startTime: Date.now(),
+      logs: []
+    };
+    addProgressLog('번역을 시작합니다...', 'info');
+
     // 컨텍스트 분석 (LLM 사용, 최초 1회만)
     if (!pageContext) {
       showNotification('페이지 분석 중... (AI가 산업군 판단)', 'info');
+      addProgressLog('페이지 컨텍스트를 분석 중...', 'info');
       await analyzePageContext(apiKey, model);
+      addProgressLog('페이지 컨텍스트 분석 완료', 'success');
     }
 
     // 번역 시작 (캐시 활용)
@@ -1266,6 +1327,11 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
       }
     });
 
+    // 진행 상태 업데이트
+    progressStatus.totalTexts = texts.length;
+    progressStatus.translatedCount = alreadyTranslatedCount;
+    progressStatus.cachedCount = cachedElements.length;
+
     const cacheCheckEndTime = performance.now();
     console.log(`[캐시] 체크 완료 - 이미 번역됨: ${alreadyTranslatedCount}개, 캐시 히트: ${cachedElements.length}개, 신규: ${newTexts.length}개, ${(cacheCheckEndTime - cacheCheckStartTime).toFixed(0)}ms`);
 
@@ -1311,6 +1377,7 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     }
 
     console.log(`[배치] 신규 번역 필요 - ${newTexts.length}개 텍스트`);
+    addProgressLog(`신규 번역 필요: ${newTexts.length}개 텍스트`, 'info');
 
     // 배치 크기로 나누어 번역 (한 번에 너무 많이 보내지 않도록)
     const batchSize = 50;
@@ -1324,6 +1391,15 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     }
 
     console.log(`[배치] ${batches.length}개 배치로 분할 (배치당 최대 ${batchSize}개)`);
+    addProgressLog(`${batches.length}개 배치로 분할하여 처리`, 'info');
+
+    // 진행 상태에 배치 정보 추가
+    progressStatus.batchCount = batches.length;
+    progressStatus.batches = batches.map((batch, index) => ({
+      index,
+      size: batch.texts.length,
+      status: 'pending'
+    }));
 
     let totalApiTime = 0;
     let totalDomTime = 0;
@@ -1346,6 +1422,13 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
           break;
         }
 
+        // 배치 상태 업데이트: processing
+        if (progressStatus.batches[batchIndex]) {
+          progressStatus.batches[batchIndex].status = 'processing';
+        }
+        progressStatus.currentBatch = batchIndex + 1;
+        addProgressLog(`배치 ${batchIndex + 1}/${batches.length} 처리 시작`, 'info');
+
         const result = await processTranslationBatch(batches[batchIndex], {
           batchIndex,
           totalBatches: batches.length,
@@ -1357,6 +1440,20 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
         totalDomTime += result.domTime;
         totalSuccessCount += result.successCount;
         totalFailedCount += result.failedCount;
+
+        // 배치 상태 업데이트: completed or failed
+        if (progressStatus.batches[batchIndex]) {
+          progressStatus.batches[batchIndex].status = result.failedCount > 0 ? 'failed' : 'completed';
+        }
+
+        // 번역 카운트 업데이트
+        progressStatus.translatedCount = alreadyTranslatedCount + totalSuccessCount;
+
+        if (result.failedCount > 0) {
+          addProgressLog(`배치 ${batchIndex + 1} 완료 (성공: ${result.successCount}, 실패: ${result.failedCount})`, 'warning');
+        } else {
+          addProgressLog(`배치 ${batchIndex + 1} 완료 (${result.successCount}개 번역)`, 'success');
+        }
 
         if (result.apiTime >= slowestBatchByApi.apiTime) {
           slowestBatchByApi = {
@@ -1395,6 +1492,10 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     }
     console.log(`========== [번역 종료] ==========\n`);
 
+    // 진행 상태 최종 업데이트
+    progressStatus.translatedCount = alreadyTranslatedCount + totalSuccessCount + cachedCount;
+    addProgressLog(`번역 완료! 총 ${progressStatus.translatedCount}개 (신규: ${totalSuccessCount}, 캐시: ${cachedCount}, 실패: ${totalFailedCount})`, 'success');
+
     if (!silentMode) {
       const totalMsg = cachedCount > 0
         ? `번역 완료! (새로 번역: ${newTexts.length}개, 캐시: ${cachedCount}개)`
@@ -1406,6 +1507,7 @@ async function translateVisibleContent(apiKey, model, silentMode = false) {
     const totalTime = performance.now() - totalStartTime;
     console.error(`[오류] 번역 실패 (${totalTime.toFixed(0)}ms):`, error);
     console.log(`========== [번역 종료 (오류)] ==========\n`);
+    addProgressLog(`번역 실패: ${error.message}`, 'error');
     showNotification(`번역 실패: ${error.message}`, 'error');
   }
 }

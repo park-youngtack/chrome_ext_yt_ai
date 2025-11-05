@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "웹페이지 번역기",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "OpenRouter AI를 사용하여 웹페이지를 한글로 번역하는 확장프로그램",
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://*/*",
@@ -34,5 +35,9 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html"
 }

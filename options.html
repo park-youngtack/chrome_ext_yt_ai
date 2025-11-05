@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>번역기 설정</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0f0f23;
+      --bg-secondary: #1a1a2e;
+      --bg-tertiary: #16213e;
+      --accent-primary: #00d4ff;
+      --accent-secondary: #7c3aed;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --border-color: #2d3748;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    body {
+      background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 50px;
+      animation: fadeInDown 0.6s ease-out;
+    }
+
+    .header h1 {
+      font-size: 36px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 30px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 30px var(--shadow);
+      animation: fadeInUp 0.6s ease-out;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 40px var(--shadow);
+    }
+
+    .card-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-title::before {
+      content: '';
+      width: 4px;
+      height: 24px;
+      background: linear-gradient(180deg, var(--accent-primary), var(--accent-secondary));
+      border-radius: 2px;
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+
+    input[type="password"],
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 14px;
+      transition: all 0.3s;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+
+    input[type="password"]:focus,
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+    }
+
+    input[type="number"] {
+      width: 100px;
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .help-text a {
+      color: var(--accent-primary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .help-text a:hover {
+      color: var(--accent-secondary);
+      text-decoration: underline;
+    }
+
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+    }
+
+    .toggle-group label {
+      margin: 0;
+      flex: 1;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 26px;
+      cursor: pointer;
+    }
+
+    .toggle-switch input {
+      display: none;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--border-color);
+      border-radius: 26px;
+      transition: all 0.3s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    }
+
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(24px);
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+    }
+
+    .radio-option {
+      flex: 1;
+      position: relative;
+    }
+
+    .radio-option input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .radio-label {
+      display: block;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-size: 14px;
+    }
+
+    .radio-option input[type="radio"]:checked + .radio-label {
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(124, 58, 237, 0.1));
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    .radio-label:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px 24px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .status.success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--success);
+      color: var(--success);
+      display: block;
+    }
+
+    .status.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--error);
+      color: var(--error);
+      display: block;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 50px;
+      padding-top: 30px;
+      border-top: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .footer .creator {
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+
+    @keyframes fadeInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .inline-setting {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .inline-setting label {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(124, 58, 237, 0.15));
+      border: 1px solid var(--accent-primary);
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚙️ 번역기 설정</h1>
+      <p>AI 기반 웹페이지 번역 확장프로그램 설정</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">API 설정</div>
+
+      <div class="form-group">
+        <label for="apiKey">OpenRouter API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+        <div class="help-text">
+          API Key는 로컬에 안전하게 저장됩니다.
+          <a href="https://openrouter.ai/keys" target="_blank">키 발급받기 →</a>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="model">AI 모델</label>
+        <input type="text" id="model" placeholder="openai/gpt-4o-mini">
+        <div class="help-text">
+          비워두면 기본 모델(GPT-4o Mini) 사용.
+          <a href="https://openrouter.ai/models" target="_blank">모델 목록 보기 →</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        UI 모드 선택
+        <span class="badge">New</span>
+      </div>
+
+      <div class="form-group">
+        <label>번역 진행 상태 표시 방식</label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" id="modeSidePanel" name="uiMode" value="sidepanel">
+            <label for="modeSidePanel" class="radio-label">
+              📊 사이드 패널
+            </label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="modeFloating" name="uiMode" value="floating">
+            <label for="modeFloating" class="radio-label">
+              💬 고정 팝업
+            </label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="modeMinimal" name="uiMode" value="minimal">
+            <label for="modeMinimal" class="radio-label">
+              🔔 알림만 표시
+            </label>
+          </div>
+        </div>
+        <div class="help-text" style="margin-top: 12px;">
+          • 사이드 패널: 브라우저 우측에 패널로 진행 상태 표시 (권장)<br>
+          • 고정 팝업: 페이지 내 고정된 위치에 진행 상태 표시<br>
+          • 알림만 표시: 기존 방식 (상단 알림만 표시)
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="toggle-group">
+          <label>팝업 자동 닫기</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="autoClosePopup">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="help-text">
+          번역 완료 후 진행 상태 팝업을 자동으로 닫습니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">번역 동작 설정</div>
+
+      <div class="form-group">
+        <div class="toggle-group">
+          <label>자동 일시정지</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="autoPauseEnabled" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="help-text">
+          사용자 활동이 없을 때 자동으로 번역을 일시정지합니다.
+        </div>
+
+        <div class="inline-setting">
+          <label>대기 시간 (초)</label>
+          <input type="number" id="autoPauseTimeout" value="60" min="10" max="600">
+        </div>
+      </div>
+    </div>
+
+    <button id="saveBtn" class="btn">💾 설정 저장</button>
+
+    <div id="status" class="status"></div>
+
+    <div class="footer">
+      <div class="creator">인크로스 AI비즈솔루션팀 박영택</div>
+      <div>Web Page Translator v2.0</div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
