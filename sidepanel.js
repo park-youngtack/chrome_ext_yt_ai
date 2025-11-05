@@ -88,38 +88,55 @@ function updateUI() {
   const translateAllBtn = document.getElementById('translateAllBtn');
   const restoreBtn = document.getElementById('restoreBtn');
 
+  // 버튼 가시성: 3개 버튼 항상 표시 (display는 변경하지 않음)
+  // disabled 속성만 토글하여 활성/비활성 관리
+
   if (state === 'active') {
     statusBadge.textContent = mode === 'fullpage' ? '전체 번역 중' : '번역 중';
     statusBadge.className = 'status-badge active pulse';
 
-    // 뷰포트 모드 중에는 전체 번역 비활성화
-    startViewportBtn.style.display = 'none';
-    translateAllBtn.style.display = mode === 'viewport' ? 'block' : 'none';
-    translateAllBtn.disabled = mode === 'fullpage';
-    restoreBtn.style.display = 'block';
+    // 번역 중 상태
+    if (mode === 'viewport') {
+      // 뷰포트 번역 중: 시작 버튼 비활성, 전체 번역 활성, 원본 보기 활성
+      startViewportBtn.disabled = true;
+      translateAllBtn.disabled = false;
+      restoreBtn.disabled = false;
+    } else if (mode === 'fullpage') {
+      // 전체 번역 중: 시작 버튼 비활성, 전체 번역 비활성, 원본 보기 활성
+      startViewportBtn.disabled = true;
+      translateAllBtn.disabled = true;
+      restoreBtn.disabled = false;
+    } else {
+      // mode가 없는 경우 (하위 호환)
+      startViewportBtn.disabled = true;
+      translateAllBtn.disabled = false;
+      restoreBtn.disabled = false;
+    }
   } else if (state === 'paused') {
     statusBadge.textContent = '일시정지';
     statusBadge.className = 'status-badge paused';
 
-    startViewportBtn.style.display = 'none';
-    translateAllBtn.style.display = 'block';
+    // 일시정지: 모든 버튼 활성
+    startViewportBtn.disabled = false;
     translateAllBtn.disabled = false;
-    restoreBtn.style.display = 'block';
+    restoreBtn.disabled = false;
   } else if (state === 'restored') {
     statusBadge.textContent = '원본 보기';
     statusBadge.className = 'status-badge restored';
 
-    startViewportBtn.style.display = 'block';
-    translateAllBtn.style.display = 'none';
-    restoreBtn.style.display = 'none';
+    // 원본 복원 상태: 시작 버튼 활성, 전체 번역 활성, 원본 보기 비활성
+    startViewportBtn.disabled = false;
+    translateAllBtn.disabled = false;
+    restoreBtn.disabled = true;
   } else {
-    // inactive
+    // inactive (대기 중)
     statusBadge.textContent = '대기 중';
     statusBadge.className = 'status-badge';
 
-    startViewportBtn.style.display = 'block';
-    translateAllBtn.style.display = 'none';
-    restoreBtn.style.display = 'none';
+    // 대기 중: 시작 2개 활성, 원본 보기 비활성
+    startViewportBtn.disabled = false;
+    translateAllBtn.disabled = false;
+    restoreBtn.disabled = true;
   }
 
   // 진행률 텍스트 업데이트
