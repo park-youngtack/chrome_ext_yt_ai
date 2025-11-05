@@ -2,6 +2,7 @@
 let currentTabId = null;
 let translationState = {
   state: 'inactive',
+  mode: null, // 'viewport' or 'fullpage'
   totalTexts: 0,
   translatedCount: 0,
   cachedCount: 0,
@@ -9,6 +10,7 @@ let translationState = {
   currentBatch: 0,
   batches: [],
   startTime: null,
+  activeTime: 0, // 실제 번역 작업 중인 시간 (밀리초)
   logs: []
 };
 
@@ -19,7 +21,6 @@ async function updateCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
     currentTabId = tab.id;
-    document.getElementById('pageUrl').textContent = tab.url;
     await updateStatus();
   }
 }
@@ -33,7 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await updateCurrentTab();
 
   // 버튼 이벤트
-  document.getElementById('toggleBtn').addEventListener('click', handleToggle);
+  document.getElementById('startViewportBtn').addEventListener('click', handleStartViewport);
+  document.getElementById('translateAllBtn').addEventListener('click', handleTranslateAll);
+  document.getElementById('restoreBtn').addEventListener('click', handleRestore);
   document.getElementById('openSettings').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
@@ -46,7 +49,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 탭 URL 변경 감지 (현재 탭에서 다른 페이지로 이동할 때)
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (tabId === currentTabId && changeInfo.url) {
-      document.getElementById('pageUrl').textContent = changeInfo.url;
+      // URL이 변경되면 상태 리셋
+      await updateStatus();
     }
   });
 
@@ -76,34 +80,66 @@ async function updateStatus() {
 
 // UI 업데이트
 function updateUI() {
-  const { state, totalTexts, translatedCount, cachedCount, batchCount, currentBatch, batches, startTime, logs } = translationState;
+  const { state, mode, totalTexts, translatedCount, cachedCount, batchCount, currentBatch, batches, startTime, activeTime, logs } = translationState;
 
   // 상태 뱃지 업데이트
   const statusBadge = document.getElementById('statusBadge');
+  const startViewportBtn = document.getElementById('startViewportBtn');
+  const translateAllBtn = document.getElementById('translateAllBtn');
+  const restoreBtn = document.getElementById('restoreBtn');
+
   if (state === 'active') {
-    statusBadge.textContent = '번역 중';
+    statusBadge.textContent = mode === 'fullpage' ? '전체 번역 중' : '번역 중';
     statusBadge.className = 'status-badge active pulse';
+
+    // 뷰포트 모드 중에는 전체 번역 비활성화
+    startViewportBtn.style.display = 'none';
+    translateAllBtn.style.display = mode === 'viewport' ? 'block' : 'none';
+    translateAllBtn.disabled = mode === 'fullpage';
+    restoreBtn.style.display = 'block';
   } else if (state === 'paused') {
     statusBadge.textContent = '일시정지';
     statusBadge.className = 'status-badge paused';
+
+    startViewportBtn.style.display = 'none';
+    translateAllBtn.style.display = 'block';
+    translateAllBtn.disabled = false;
+    restoreBtn.style.display = 'block';
+  } else if (state === 'restored') {
+    statusBadge.textContent = '원본 보기';
+    statusBadge.className = 'status-badge restored';
+
+    startViewportBtn.style.display = 'block';
+    translateAllBtn.style.display = 'none';
+    restoreBtn.style.display = 'none';
   } else {
+    // inactive
     statusBadge.textContent = '대기 중';
-    statusBadge.className = 'status-badge inactive';
+    statusBadge.className = 'status-badge';
+
+    startViewportBtn.style.display = 'block';
+    translateAllBtn.style.display = 'none';
+    restoreBtn.style.display = 'none';
   }
 
-  // 진행률 업데이트
-  const progress = totalTexts > 0 ? Math.round((translatedCount / totalTexts) * 100) : 0;
-  document.getElementById('progressBar').style.width = `${progress}%`;
-  document.getElementById('progressText').textContent = `${translatedCount} / ${totalTexts} 번역 완료`;
+  // 진행률 텍스트 업데이트
+  if (totalTexts > 0) {
+    const progress = Math.round((translatedCount / totalTexts) * 100);
+    document.getElementById('progressText').textContent = `${translatedCount} / ${totalTexts} 번역 완료 (${progress}%)`;
+  } else if (state === 'active') {
+    document.getElementById('progressText').textContent = '번역 준비 중...';
+  } else {
+    document.getElementById('progressText').textContent = '번역 대기 중';
+  }
 
   // 통계 업데이트
   document.getElementById('translatedCount').textContent = translatedCount.toLocaleString();
   document.getElementById('cachedCount').textContent = cachedCount.toLocaleString();
   document.getElementById('batchCount').textContent = batchCount.toLocaleString();
 
-  // 경과 시간 업데이트
-  if (startTime) {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  // 경과 시간 업데이트 (activeTime 사용 - 실제 번역 중인 시간만)
+  if (activeTime > 0) {
+    const elapsed = Math.floor(activeTime / 1000);
     document.getElementById('elapsedTime').textContent = formatTime(elapsed);
   } else {
     document.getElementById('elapsedTime').textContent = '0s';
@@ -121,19 +157,6 @@ function updateUI() {
     `).join('');
   } else {
     document.getElementById('batchInfo').style.display = 'none';
-  }
-
-  // 버튼 텍스트 업데이트
-  const toggleBtn = document.getElementById('toggleBtn');
-  if (state === 'active') {
-    toggleBtn.textContent = '⏸️ 번역 중지';
-    toggleBtn.style.background = 'linear-gradient(135deg, #f59e0b, #ef4444)';
-  } else if (state === 'paused') {
-    toggleBtn.textContent = '▶️ 번역 재개';
-    toggleBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-  } else {
-    toggleBtn.textContent = '▶️ 번역 시작';
-    toggleBtn.style.background = 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))';
   }
 }
 
@@ -162,17 +185,15 @@ async function ensureContentScriptReady(tabId) {
   }
 }
 
-// 토글 버튼 핸들러
-async function handleToggle() {
+// 뷰포트 번역 시작
+async function handleStartViewport() {
   if (!currentTabId) return;
-
-  const { state } = translationState;
 
   try {
     // 현재 탭 정보 확인
     const tab = await chrome.tabs.get(currentTabId);
 
-    // 특수 페이지 확인 (chrome://, about:, chrome-extension:// 등)
+    // 특수 페이지 확인
     if (tab.url.startsWith('chrome://') ||
         tab.url.startsWith('about:') ||
         tab.url.startsWith('chrome-extension://') ||
@@ -189,35 +210,75 @@ async function handleToggle() {
       return;
     }
 
-    if (state === 'active' || state === 'paused') {
-      // 번역 중지 (원본으로 복원)
-      await chrome.tabs.sendMessage(currentTabId, {
-        action: 'toggleTranslation'
-      });
-    } else {
-      // 번역 시작
-      const settings = await chrome.storage.local.get(['apiKey', 'model', 'autoPauseEnabled', 'autoPauseTimeout']);
+    // API 키 확인
+    const settings = await chrome.storage.local.get(['apiKey', 'model', 'autoPauseEnabled', 'autoPauseTimeout']);
 
-      if (!settings.apiKey) {
-        alert('먼저 설정에서 API Key를 입력해주세요.');
-        chrome.runtime.openOptionsPage();
-        return;
-      }
-
-      await chrome.tabs.sendMessage(currentTabId, {
-        action: 'toggleTranslation',
-        apiKey: settings.apiKey,
-        model: settings.model || 'openai/gpt-4o-mini',
-        autoPauseEnabled: settings.autoPauseEnabled !== false,
-        autoPauseTimeout: settings.autoPauseTimeout || 60
-      });
+    if (!settings.apiKey) {
+      alert('먼저 설정에서 API Key를 입력해주세요.');
+      chrome.runtime.openOptionsPage();
+      return;
     }
+
+    // 뷰포트 번역 시작
+    await chrome.tabs.sendMessage(currentTabId, {
+      action: 'startViewportTranslation',
+      apiKey: settings.apiKey,
+      model: settings.model || 'openai/gpt-4o-mini',
+      autoPauseEnabled: settings.autoPauseEnabled !== false,
+      autoPauseTimeout: settings.autoPauseTimeout || 60
+    });
 
     // 즉시 상태 업데이트
     setTimeout(updateStatus, 500);
   } catch (error) {
-    console.error('번역 토글 오류:', error);
+    console.error('번역 시작 오류:', error);
     alert('오류가 발생했습니다: ' + error.message + '\n페이지를 새로고침 한 후 다시 시도해주세요.');
+  }
+}
+
+// 전체 페이지 번역
+async function handleTranslateAll() {
+  if (!currentTabId) return;
+
+  try {
+    // API 키 확인
+    const settings = await chrome.storage.local.get(['apiKey', 'model']);
+
+    if (!settings.apiKey) {
+      alert('먼저 설정에서 API Key를 입력해주세요.');
+      chrome.runtime.openOptionsPage();
+      return;
+    }
+
+    // 전체 페이지 번역 시작
+    await chrome.tabs.sendMessage(currentTabId, {
+      action: 'translateFullPage',
+      apiKey: settings.apiKey,
+      model: settings.model || 'openai/gpt-4o-mini'
+    });
+
+    // 즉시 상태 업데이트
+    setTimeout(updateStatus, 500);
+  } catch (error) {
+    console.error('전체 번역 오류:', error);
+    alert('오류가 발생했습니다: ' + error.message);
+  }
+}
+
+// 원본 복원
+async function handleRestore() {
+  if (!currentTabId) return;
+
+  try {
+    await chrome.tabs.sendMessage(currentTabId, {
+      action: 'restoreOriginal'
+    });
+
+    // 즉시 상태 업데이트
+    setTimeout(updateStatus, 500);
+  } catch (error) {
+    console.error('원본 복원 오류:', error);
+    alert('오류가 발생했습니다: ' + error.message);
   }
 }
 
