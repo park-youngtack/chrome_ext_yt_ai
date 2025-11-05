@@ -137,6 +137,31 @@ function updateUI() {
   }
 }
 
+// Content script가 준비되었는지 확인하고 필요시 주입
+async function ensureContentScriptReady(tabId) {
+  try {
+    // 먼저 content script가 응답하는지 확인
+    const response = await chrome.tabs.sendMessage(tabId, {
+      action: 'getTranslationState'
+    });
+    return true;
+  } catch (error) {
+    // Content script가 없으면 주입 시도
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content.js']
+      });
+      // 주입 후 잠시 대기
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return true;
+    } catch (injectError) {
+      // 주입할 수 없는 페이지 (chrome://, about: 등)
+      return false;
+    }
+  }
+}
+
 // 토글 버튼 핸들러
 async function handleToggle() {
   if (!currentTabId) return;
@@ -144,6 +169,26 @@ async function handleToggle() {
   const { state } = translationState;
 
   try {
+    // 현재 탭 정보 확인
+    const tab = await chrome.tabs.get(currentTabId);
+
+    // 특수 페이지 확인 (chrome://, about:, chrome-extension:// 등)
+    if (tab.url.startsWith('chrome://') ||
+        tab.url.startsWith('about:') ||
+        tab.url.startsWith('chrome-extension://') ||
+        tab.url.startsWith('edge://') ||
+        tab.url.startsWith('devtools://')) {
+      alert('이 페이지에서는 번역 기능을 사용할 수 없습니다.\n일반 웹페이지에서 사용해주세요.');
+      return;
+    }
+
+    // Content script 준비 확인
+    const isReady = await ensureContentScriptReady(currentTabId);
+    if (!isReady) {
+      alert('이 페이지에서는 번역 기능을 사용할 수 없습니다.\n일반 웹페이지에서 사용해주세요.');
+      return;
+    }
+
     if (state === 'active' || state === 'paused') {
       // 번역 중지 (원본으로 복원)
       await chrome.tabs.sendMessage(currentTabId, {
@@ -172,7 +217,7 @@ async function handleToggle() {
     setTimeout(updateStatus, 500);
   } catch (error) {
     console.error('번역 토글 오류:', error);
-    alert('오류가 발생했습니다: ' + error.message);
+    alert('오류가 발생했습니다: ' + error.message + '\n페이지를 새로고침 한 후 다시 시도해주세요.');
   }
 }
 
