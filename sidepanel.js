@@ -35,13 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 주기적으로 상태 업데이트 (1초마다)
   updateInterval = setInterval(updateStatus, 1000);
-
-  // 패널 닫기 요청 감지
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.closePanelRequest) {
-      window.close();
-    }
-  });
 });
 
 // 상태 업데이트

@@ -3,27 +3,10 @@
 // 확장프로그램 설치 시
 chrome.runtime.onInstalled.addListener(() => {
   console.log('웹페이지 번역기가 설치되었습니다.');
-});
 
-// 아이콘 클릭 시 사이드 패널 토글
-chrome.action.onClicked.addListener(async (tab) => {
-  console.log('Extension icon clicked for tab:', tab.id);
-
-  try {
-    // 패널이 열려있는지 확인
-    const { sidePanelOpen } = await chrome.storage.local.get(['sidePanelOpen']);
-
-    if (sidePanelOpen) {
-      // 패널이 열려있으면 닫기 요청
-      await chrome.storage.local.set({ closePanelRequest: Date.now() });
-      console.log('Side panel close requested');
-    } else {
-      // 패널이 닫혀있으면 열기
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-      await chrome.storage.local.set({ sidePanelOpen: true });
-      console.log('Side panel opened successfully');
-    }
-  } catch (error) {
-    console.error('Error toggling side panel:', error);
-  }
+  // 아이콘 클릭 시 사이드 패널이 자동으로 열리고 토글되도록 설정
+  // 이렇게 하면 Chrome이 자동으로 패널 열기/닫기를 처리하여 user gesture 문제가 발생하지 않음
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error) => console.error('Error setting panel behavior:', error));
 });
