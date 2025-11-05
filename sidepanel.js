@@ -16,6 +16,9 @@ let updateInterval = null;
 
 // 초기화
 document.addEventListener('DOMContentLoaded', async () => {
+  // 패널이 열렸음을 표시
+  await chrome.storage.local.set({ sidePanelOpen: true });
+
   // 현재 활성 탭 가져오기
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
@@ -26,16 +29,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 버튼 이벤트
   document.getElementById('toggleBtn').addEventListener('click', handleToggle);
-  document.getElementById('startTranslationEmpty').addEventListener('click', handleToggle);
   document.getElementById('openSettings').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
-  });
-  document.getElementById('openSettingsEmpty').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
 
   // 주기적으로 상태 업데이트 (1초마다)
   updateInterval = setInterval(updateStatus, 1000);
+
+  // 패널 닫기 요청 감지
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.closePanelRequest) {
+      window.close();
+    }
+  });
 });
 
 // 상태 업데이트
@@ -61,16 +67,6 @@ async function updateStatus() {
 // UI 업데이트
 function updateUI() {
   const { state, totalTexts, translatedCount, cachedCount, batchCount, currentBatch, batches, startTime, logs } = translationState;
-
-  // 상태에 따라 화면 표시
-  if (state === 'inactive' && totalTexts === 0) {
-    document.getElementById('activeState').style.display = 'none';
-    document.getElementById('emptyState').style.display = 'block';
-    return;
-  }
-
-  document.getElementById('activeState').style.display = 'block';
-  document.getElementById('emptyState').style.display = 'none';
 
   // 상태 뱃지 업데이트
   const statusBadge = document.getElementById('statusBadge');
@@ -115,20 +111,6 @@ function updateUI() {
     `).join('');
   } else {
     document.getElementById('batchInfo').style.display = 'none';
-  }
-
-  // 로그 업데이트
-  if (logs && logs.length > 0) {
-    const logList = document.getElementById('logList');
-    logList.innerHTML = logs.slice(-10).reverse().map(log => `
-      <div class="log-item ${log.type}">
-        <span class="log-timestamp">[${new Date(log.timestamp).toLocaleTimeString()}]</span>
-        ${log.message}
-      </div>
-    `).join('');
-
-    // 자동 스크롤
-    logList.scrollTop = 0;
   }
 
   // 버튼 텍스트 업데이트
@@ -211,8 +193,10 @@ function formatTime(seconds) {
 }
 
 // 정리
-window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', async () => {
   if (updateInterval) {
     clearInterval(updateInterval);
   }
+  // 패널이 닫혔음을 표시
+  await chrome.storage.local.set({ sidePanelOpen: false });
 });

@@ -325,44 +325,6 @@
       animation: pulse 2s ease-in-out infinite;
     }
 
-    .log-container {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 12px;
-      margin-top: 16px;
-      max-height: 200px;
-      overflow-y: auto;
-      font-family: 'Consolas', 'Monaco', monospace;
-      font-size: 11px;
-    }
-
-    .log-item {
-      padding: 4px 0;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    .log-item.info {
-      color: var(--accent-primary);
-    }
-
-    .log-item.success {
-      color: var(--success);
-    }
-
-    .log-item.error {
-      color: var(--error);
-    }
-
-    .log-item.warning {
-      color: var(--warning);
-    }
-
-    .log-timestamp {
-      color: var(--text-secondary);
-      margin-right: 8px;
-    }
   </style>
 </head>
 <body>
@@ -371,7 +333,7 @@
     <p id="pageUrl">대기 중...</p>
   </div>
 
-  <div id="activeState" class="status-card" style="display: none;">
+  <div id="activeState" class="status-card">
     <div class="status-header">
       <span class="status-label">현재 상태</span>
       <span id="statusBadge" class="status-badge inactive">대기 중</span>
@@ -408,22 +370,8 @@
       <div id="batchList"></div>
     </div>
 
-    <div class="log-container">
-      <div id="logList"></div>
-    </div>
-
     <button id="toggleBtn" class="btn">번역 시작</button>
     <button id="openSettings" class="btn secondary">⚙️ 설정 열기</button>
-  </div>
-
-  <div id="emptyState" class="empty-state">
-    <div class="empty-state-icon">📖</div>
-    <div class="empty-state-text">
-      현재 페이지의 번역을 시작하려면<br>
-      아래 버튼을 클릭하세요.
-    </div>
-    <button id="startTranslationEmpty" class="btn" style="margin-top: 24px;">▶️ 번역 시작</button>
-    <button id="openSettingsEmpty" class="btn secondary">⚙️ 설정 열기</button>
   </div>
 
   <script src="sidepanel.js"></script>
