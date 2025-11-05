@@ -27,8 +27,8 @@ chrome.action.onClicked.addListener(async (tab) => {
         enabled: true
       });
 
-      // Side panel 열기
-      await chrome.sidePanel.open({ tabId: tab.id });
+      // Side panel 열기 (windowId를 사용해야 함)
+      await chrome.sidePanel.open({ windowId: tab.windowId });
       console.log(`Side panel opened for tab ${tab.id}`);
     }
   } catch (error) {
