@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 버튼 이벤트
   document.getElementById('toggleBtn').addEventListener('click', handleToggle);
+  document.getElementById('startTranslationEmpty').addEventListener('click', handleToggle);
   document.getElementById('openSettings').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
