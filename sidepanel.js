@@ -14,23 +14,37 @@ let translationState = {
 
 let updateInterval = null;
 
-// 초기화
-document.addEventListener('DOMContentLoaded', async () => {
-  // 패널이 열렸음을 표시
-  await chrome.storage.local.set({ sidePanelOpen: true });
-
-  // 현재 활성 탭 가져오기
+// 현재 탭 정보 업데이트
+async function updateCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
     currentTabId = tab.id;
     document.getElementById('pageUrl').textContent = tab.url;
     await updateStatus();
   }
+}
+
+// 초기화
+document.addEventListener('DOMContentLoaded', async () => {
+  // 패널이 열렸음을 표시
+  await chrome.storage.local.set({ sidePanelOpen: true });
+
+  // 현재 활성 탭 가져오기
+  await updateCurrentTab();
 
   // 버튼 이벤트
   document.getElementById('toggleBtn').addEventListener('click', handleToggle);
-  document.getElementById('openSettings').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+
+  // 탭 변경 감지 (사용자가 다른 탭으로 전환할 때)
+  chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    await updateCurrentTab();
+  });
+
+  // 탭 URL 변경 감지 (현재 탭에서 다른 페이지로 이동할 때)
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (tabId === currentTabId && changeInfo.url) {
+      document.getElementById('pageUrl').textContent = changeInfo.url;
+    }
   });
 
   // 주기적으로 상태 업데이트 (1초마다)
