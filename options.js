@@ -7,9 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'apiKey',
     'model',
     'autoPauseEnabled',
-    'autoPauseTimeout',
-    'uiMode',
-    'autoClosePopup'
+    'autoPauseTimeout'
   ]);
 
   // API 설정
@@ -19,17 +17,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (result.model) {
     document.getElementById('model').value = result.model;
-  }
-
-  // UI 모드 설정
-  const uiMode = result.uiMode || 'sidepanel';
-  document.querySelector(`input[name="uiMode"][value="${uiMode}"]`).checked = true;
-
-  // 자동 닫기 설정
-  if (result.autoClosePopup !== undefined) {
-    document.getElementById('autoClosePopup').checked = result.autoClosePopup;
-  } else {
-    document.getElementById('autoClosePopup').checked = true; // 기본값 true
   }
 
   // 자동 일시정지 설정
@@ -50,8 +37,6 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   const modelInput = document.getElementById('model').value.trim();
   const autoPauseEnabled = document.getElementById('autoPauseEnabled').checked;
   const autoPauseTimeout = parseInt(document.getElementById('autoPauseTimeout').value) || 60;
-  const uiMode = document.querySelector('input[name="uiMode"]:checked').value;
-  const autoClosePopup = document.getElementById('autoClosePopup').checked;
 
   // 모델이 비어있으면 기본 모델 사용
   const model = modelInput || DEFAULT_MODEL;
@@ -72,25 +57,14 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
       apiKey,
       model,
       autoPauseEnabled,
-      autoPauseTimeout,
-      uiMode,
-      autoClosePopup
+      autoPauseTimeout
     });
 
-    showStatus(`✅ 설정이 저장되었습니다! (모델: ${model}, UI: ${getUiModeLabel(uiMode)})`, 'success');
+    showStatus(`✅ 설정이 저장되었습니다! (모델: ${model})`, 'success');
   } catch (error) {
     showStatus('❌ 저장 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 });
-
-function getUiModeLabel(mode) {
-  const labels = {
-    'sidepanel': '사이드 패널',
-    'floating': '고정 팝업',
-    'minimal': '알림만'
-  };
-  return labels[mode] || mode;
-}
 
 function showStatus(message, type) {
   const statusEl = document.getElementById('status');
