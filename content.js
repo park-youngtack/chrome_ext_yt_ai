@@ -38,7 +38,8 @@ let pageContext = null;
 
 // 진행 상태 추적 (사이드 패널용)
 let progressStatus = {
-  state: 'inactive',
+  state: 'inactive', // 'inactive', 'active', 'paused', 'restored'
+  mode: null, // 'viewport' or 'fullpage'
   totalTexts: 0,
   translatedCount: 0,
   cachedCount: 0,
@@ -46,6 +47,8 @@ let progressStatus = {
   currentBatch: 0,
   batches: [],
   startTime: null,
+  activeTime: 0, // 실제 번역 작업 중인 시간 (밀리초)
+  lastActiveTimestamp: null, // 마지막 활성 상태 타임스탬프
   logs: []
 };
 
@@ -91,6 +94,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggleTranslation') {
     handleTranslationToggle(request.apiKey, request.model, request.autoPauseEnabled, request.autoPauseTimeout);
     sendResponse({ success: true });
+  } else if (request.action === 'startViewportTranslation') {
+    handleStartViewportTranslation(request.apiKey, request.model, request.autoPauseEnabled, request.autoPauseTimeout);
+    sendResponse({ success: true });
+  } else if (request.action === 'translateFullPage') {
+    handleTranslateFullPage(request.apiKey, request.model);
+    sendResponse({ success: true });
+  } else if (request.action === 'restoreOriginal') {
+    handleRestoreOriginal();
+    sendResponse({ success: true });
   } else if (request.action === 'resumeTranslation') {
     handleResumeTranslation();
     sendResponse({ success: true });
@@ -102,6 +114,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
   } else if (request.action === 'getProgressStatus') {
     // 사이드 패널용 진행 상태 반환
+    // activeTime 업데이트 (현재 active 상태인 경우)
+    if (translationState === 'active' && progressStatus.lastActiveTimestamp) {
+      progressStatus.activeTime += Date.now() - progressStatus.lastActiveTimestamp;
+      progressStatus.lastActiveTimestamp = Date.now();
+    }
     progressStatus.state = translationState;
     sendResponse(progressStatus);
   }
@@ -174,10 +191,209 @@ async function handleTranslationToggle(apiKey, model, autoPauseEnabled = true, a
   }
 }
 
+// 뷰포트 번역 시작 핸들러 (새 UI용)
+async function handleStartViewportTranslation(apiKey, model, autoPauseEnabled = true, autoPauseTimeout = 60) {
+  // API 키와 모델 저장
+  currentApiKey = apiKey;
+  currentModel = model;
+
+  // 자동 일시정지 설정 저장
+  if (autoPauseEnabled) {
+    idleTimeout = autoPauseTimeout * 1000;
+  } else {
+    idleTimeout = Infinity;
+  }
+
+  // 진행 상태 초기화
+  progressStatus = {
+    state: 'active',
+    mode: 'viewport',
+    totalTexts: 0,
+    translatedCount: 0,
+    cachedCount: 0,
+    batchCount: 0,
+    currentBatch: 0,
+    batches: [],
+    startTime: Date.now(),
+    activeTime: 0,
+    lastActiveTimestamp: Date.now(),
+    logs: []
+  };
+  addProgressLog('뷰포트 번역을 시작합니다...', 'info');
+
+  // 컨텍스트 분석 (최초 1회만)
+  if (!pageContext) {
+    showNotification('페이지 분석 중... (AI가 산업군 판단)', 'info');
+    addProgressLog('페이지 컨텍스트를 분석 중...', 'info');
+    await analyzePageContext(apiKey, model);
+    addProgressLog('페이지 컨텍스트 분석 완료', 'success');
+  }
+
+  // 번역 시작
+  await translateVisibleContent(apiKey, model);
+  setupScrollObserver();
+
+  if (autoPauseEnabled) {
+    startIdleDetection();
+  }
+
+  updateTranslationState('active');
+}
+
+// 전체 페이지 번역 핸들러
+async function handleTranslateFullPage(apiKey, model) {
+  // 전체 번역 모드로 전환
+  progressStatus.mode = 'fullpage';
+  progressStatus.lastActiveTimestamp = Date.now();
+
+  // 뷰포트 관찰 일시 중지 (전체 번역 중에는 비활성)
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+    scrollObserver = null;
+  }
+  stopIdleDetection();
+
+  addProgressLog('전체 페이지 번역을 시작합니다...', 'info');
+  showNotification('전체 페이지 번역 중...', 'info');
+
+  try {
+    // 전체 텍스트 노드 수집
+    const allTextNodes = getAllTextElements();
+    const { texts, elements } = extractTextsForTranslation(allTextNodes);
+
+    // 캐시 체크
+    const cachedElements = [];
+    const newTexts = [];
+    const newElements = [];
+    let alreadyTranslatedCount = 0;
+
+    elements.forEach((element, idx) => {
+      if (!translatedElements.has(element)) {
+        const originalText = texts[idx];
+        const cachedTranslation = getCachedTranslation(originalText);
+        if (cachedTranslation) {
+          cachedElements.push({ element, originalText, translation: cachedTranslation });
+        } else {
+          newTexts.push(originalText);
+          newElements.push(element);
+        }
+      } else {
+        alreadyTranslatedCount++;
+      }
+    });
+
+    progressStatus.totalTexts = texts.length;
+    progressStatus.translatedCount = alreadyTranslatedCount;
+    progressStatus.cachedCount = cachedElements.length;
+
+    // 캐시된 번역 적용
+    if (cachedElements.length > 0) {
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          cachedElements.forEach(({ element, originalText, translation }) => {
+            if (!originalTexts.has(element)) {
+              originalTexts.set(element, element.textContent);
+            }
+            element.textContent = translation;
+            translatedElements.add(element);
+          });
+          resolve();
+        });
+      });
+    }
+
+    // 신규 번역 처리
+    if (newTexts.length > 0) {
+      const batchSize = 50;
+      const batches = [];
+
+      for (let i = 0; i < newTexts.length; i += batchSize) {
+        batches.push({
+          texts: newTexts.slice(i, i + batchSize),
+          elements: newElements.slice(i, i + batchSize),
+          status: 'pending',
+          size: Math.min(batchSize, newTexts.length - i)
+        });
+      }
+
+      progressStatus.batches = batches;
+      progressStatus.batchCount = batches.length;
+
+      // 배치 처리
+      for (let i = 0; i < batches.length; i++) {
+        batches[i].status = 'processing';
+        progressStatus.currentBatch = i + 1;
+
+        try {
+          await processTranslationBatch(batches[i], {
+            batchIndex: i,
+            totalBatches: batches.length,
+            apiKey,
+            model
+          });
+          batches[i].status = 'completed';
+          progressStatus.translatedCount += batches[i].size;
+        } catch (error) {
+          batches[i].status = 'failed';
+          console.error(`배치 ${i + 1} 실패:`, error);
+        }
+      }
+    }
+
+    // 전체 번역 완료 후 타이머 일시정지
+    if (progressStatus.lastActiveTimestamp) {
+      progressStatus.activeTime += Date.now() - progressStatus.lastActiveTimestamp;
+      progressStatus.lastActiveTimestamp = null;
+    }
+
+    addProgressLog('전체 페이지 번역 완료', 'success');
+    showNotification('전체 페이지 번역 완료!', 'success');
+
+    // 뷰포트 모드로 복귀 (스크롤 관찰 재개)
+    progressStatus.mode = 'viewport';
+    setupScrollObserver();
+
+    if (idleTimeout !== Infinity) {
+      startIdleDetection();
+    }
+  } catch (error) {
+    if (progressStatus.lastActiveTimestamp) {
+      progressStatus.activeTime += Date.now() - progressStatus.lastActiveTimestamp;
+      progressStatus.lastActiveTimestamp = null;
+    }
+
+    addProgressLog(`전체 번역 오류: ${error.message}`, 'error');
+    showNotification('전체 번역 중 오류 발생', 'error');
+
+    progressStatus.mode = 'viewport';
+    setupScrollObserver();
+  }
+}
+
+// 원본 복원 핸들러
+async function handleRestoreOriginal() {
+  restoreOriginalTexts();
+  updateTranslationState('restored');
+
+  // 타이머 정지
+  if (progressStatus.lastActiveTimestamp) {
+    progressStatus.activeTime += Date.now() - progressStatus.lastActiveTimestamp;
+    progressStatus.lastActiveTimestamp = null;
+  }
+
+  progressStatus.state = 'restored';
+  addProgressLog('원본으로 복원되었습니다.', 'info');
+}
+
 // 번역 배치를 병렬 처리하기 위한 헬퍼 함수
 async function processTranslationBatch(batch, { batchIndex, totalBatches, apiKey, model }) {
   const displayIndex = batchIndex + 1;
   const batchStartTime = performance.now();
+
+  // 타이머 시작 (배치 처리 시작)
+  if (!progressStatus.lastActiveTimestamp && translationState === 'active') {
+    progressStatus.lastActiveTimestamp = Date.now();
+  }
 
   console.log(`\n[배치 ${displayIndex}/${totalBatches}] 처리 시작 - ${batch.texts.length}개 텍스트`);
 
@@ -1105,6 +1321,46 @@ function getVisibleTextElements() {
       nodes.push(node);
     }
   });
+
+  return nodes;
+}
+
+// 전체 페이지의 텍스트 요소 가져오기 (스크롤 위치 무관)
+function getAllTextElements() {
+  const nodes = [];
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        if (!node.parentElement) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        // 확장 UI 제외
+        if (isTranslatorUiElement(node.parentElement)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        // 제외할 태그
+        if (shouldSkipElement(node.parentElement) || hasExcludedAncestor(node.parentElement)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        const text = (node.textContent || '').trim();
+        if (!text) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+
+  let currentNode;
+  while (currentNode = walker.nextNode()) {
+    nodes.push(currentNode);
+  }
 
   return nodes;
 }
