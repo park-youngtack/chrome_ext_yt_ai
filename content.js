@@ -360,7 +360,19 @@ async function handleResumeTranslation() {
 // 번역 상태를 storage에 저장
 function updateTranslationState(state) {
   translationState = state;
-  chrome.storage.session.set({ translationState: state }).catch(() => {});
+
+  // Extension context가 유효한지 확인
+  try {
+    if (chrome?.runtime?.id) {
+      chrome.storage.session.set({ translationState: state }).catch(() => {
+        // 에러가 발생해도 무시 (extension이 reload된 경우)
+      });
+    }
+  } catch (error) {
+    // Extension context invalidated 에러 무시
+    console.log('Storage 저장 실패 (Extension context invalidated)');
+  }
+
   console.log('번역 상태 변경:', state);
 }
 
