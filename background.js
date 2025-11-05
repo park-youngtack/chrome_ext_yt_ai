@@ -3,35 +3,41 @@
 // 확장프로그램 설치 시
 chrome.runtime.onInstalled.addListener(() => {
   console.log('웹페이지 번역기가 설치되었습니다.');
+
+  // 사이드패널 자동 오픈 설정 (액션 클릭 시 자동으로 열림)
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+    .catch(error => console.error('사이드패널 동작 설정 오류:', error));
 });
 
 // 아이콘 클릭 시 해당 탭에서만 side panel 토글
 // 각 탭마다 독립적으로 패널을 열고 닫을 수 있음
+// 중복 호출 방지를 위한 디바운스
+let opening = false;
+
 chrome.action.onClicked.addListener(async (tab) => {
+  // 디바운스: 이미 처리 중이면 무시
+  if (opening) {
+    console.log('Side panel 처리 중, 중복 클릭 무시');
+    return;
+  }
+
+  opening = true;
+
   try {
-    // 현재 탭의 side panel 상태 확인
-    const panelOptions = await chrome.sidePanel.getOptions({ tabId: tab.id });
+    // setOptions만 설정 (open()은 호출하지 않음 - 자동 오픈이 처리)
+    await chrome.sidePanel.setOptions({
+      tabId: tab.id,
+      path: 'sidepanel.html',
+      enabled: true
+    });
 
-    if (panelOptions.enabled) {
-      // 이미 활성화되어 있으면 비활성화 (자동으로 닫힘)
-      await chrome.sidePanel.setOptions({
-        tabId: tab.id,
-        enabled: false
-      });
-      console.log(`Side panel disabled for tab ${tab.id}`);
-    } else {
-      // 비활성화되어 있으면 활성화 및 열기
-      await chrome.sidePanel.setOptions({
-        tabId: tab.id,
-        path: 'sidepanel.html',
-        enabled: true
-      });
-
-      // Side panel 열기 (windowId를 사용해야 함)
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-      console.log(`Side panel opened for tab ${tab.id}`);
-    }
+    console.log(`Side panel options set for tab ${tab.id}`);
   } catch (error) {
     console.error('Side panel toggle error:', error);
+  } finally {
+    // 300ms 후 디바운스 해제
+    setTimeout(() => {
+      opening = false;
+    }, 300);
   }
 });

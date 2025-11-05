@@ -699,49 +699,10 @@ function handleIdlePause() {
   showToast('활동이 없어 자동 일시정지되었습니다. 팝업에서 번역 작업 시작으로 재개하세요.');
 }
 
-// 토스트 메시지 표시 (더 긴 안내 메시지용, 자동 일시정지 전용)
+// 토스트 메시지 표시 (비활성화 - 사이드패널에서만 상태 표시)
 function showToast(message) {
-  // 기존 토스트 제거
-  const existing = document.getElementById('translation-toast');
-  if (existing) {
-    existing.remove();
-  }
-
-  // 새 토스트 생성
-  const toast = document.createElement('div');
-  toast.id = 'translation-toast';
-  toast.textContent = message;
-  markTranslatorUiElement(toast);
-
-  Object.assign(toast.style, {
-    position: 'fixed',
-    bottom: '20px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    padding: '15px 25px',
-    backgroundColor: '#FF9800',
-    color: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    zIndex: '999999',
-    fontSize: '14px',
-    fontFamily: 'Arial, sans-serif',
-    fontWeight: '500',
-    maxWidth: '500px',
-    textAlign: 'center',
-    lineHeight: '1.5',
-    transition: 'opacity 0.3s'
-  });
-
-  document.body.appendChild(toast);
-
-  // 5초 후 제거
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    setTimeout(() => {
-      toast.remove();
-    }, 300);
-  }, 5000);
+  // 페이지 위 오버레이 제거: 모든 상태는 사이드패널에서만 표시
+  // 이 함수는 호환성을 위해 유지하지만 아무 작업도 수행하지 않음
 }
 
 // 메모리 정리 함수
@@ -1910,50 +1871,8 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000); // 5분
 
-// 알림 표시
+// 알림 표시 (비활성화 - 사이드패널에서만 상태 표시)
 function showNotification(message, type) {
-  // 기존 알림 제거
-  const existing = document.getElementById('translation-notification');
-  if (existing) {
-    existing.remove();
-  }
-
-  // 새 알림 생성
-  const notification = document.createElement('div');
-  notification.id = 'translation-notification';
-  notification.textContent = message;
-  markTranslatorUiElement(notification);
-
-  const colors = {
-    info: '#2196F3',
-    success: '#4CAF50',
-    warning: '#FF9800',
-    error: '#F44336'
-  };
-
-  Object.assign(notification.style, {
-    position: 'fixed',
-    top: '20px',
-    right: '20px',
-    padding: '15px 25px',
-    backgroundColor: colors[type] || colors.info,
-    color: 'white',
-    borderRadius: '4px',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-    zIndex: '999999',
-    fontSize: '14px',
-    fontFamily: 'Arial, sans-serif',
-    fontWeight: '500',
-    transition: 'opacity 0.3s'
-  });
-
-  document.body.appendChild(notification);
-
-  // 3초 후 제거
-  setTimeout(() => {
-    notification.style.opacity = '0';
-    setTimeout(() => {
-      notification.remove();
-    }, 300);
-  }, 3000);
+  // 페이지 위 오버레이 제거: 모든 상태는 사이드패널에서만 표시
+  // 이 함수는 호환성을 위해 유지하지만 아무 작업도 수행하지 않음
 }
