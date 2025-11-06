@@ -755,58 +755,62 @@
 
           <!-- 메인 섹션 -->
           <div id="mainSection">
-            <div class="main-card">
-              <div class="status-header">
-                <span class="status-label">현재 상태</span>
-                <span id="statusBadge" class="status-badge">대기 중</span>
+            <!-- API Key 없을 때 안내 메시지 -->
+            <div id="noApiKeyMessage" class="permission-card" style="display: none;">
+              <div class="permission-icon">🔑</div>
+              <div class="permission-message">
+                번역 기능을 사용하려면 먼저 API Key를 설정해야 합니다.<br>
+                설정 탭에서 OpenRouter API Key를 입력해주세요.
               </div>
-
-              <div id="progressText" class="progress-text">번역 대기 중</div>
-
-              <div class="stats-grid">
-                <div class="stat-card">
-                  <div class="stat-label">번역된 텍스트</div>
-                  <div id="translatedCount" class="stat-value">0</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-label">캐시 사용</div>
-                  <div id="cachedCount" class="stat-value">0</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-label">배치 완료</div>
-                  <div id="batchCountText" class="stat-value">0</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-label">진행 시간</div>
-                  <div id="elapsedTime" class="stat-value">0s</div>
-                </div>
-              </div>
-
-              <div id="batchInfo" class="batch-info" style="display: none;">
-                <div class="batch-info-title">배치 진행 상황</div>
-                <div id="batchList"></div>
-              </div>
-
-              <div class="btn-group">
-                <button id="translateAllBtn" class="btn">현재 페이지 모두 번역 (빠른 모드)</button>
-              </div>
-
-              <div class="btn-group">
-                <button id="translateFreshBtn" class="btn">현재 페이지 모두 새로 번역</button>
-              </div>
-
-              <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
+              <button id="goToSettingsBtn" class="btn">설정으로 이동</button>
             </div>
 
-            <div class="guide-section">
-              <div class="guide-title">사용 가이드</div>
-              <ul class="guide-list">
-                <li>번역할 페이지에서 확장 프로그램 아이콘을 클릭</li>
-                <li>처음 방문하는 사이트는 권한 허용 필요 (1회만)</li>
-                <li><strong>현재 페이지 모두 번역 (빠른 모드)</strong>로 캐시 활용</li>
-                <li>원본으로 되돌리려면 <strong>원본 보기</strong></li>
-                <li>번역 중에는 진행 시간과 배치 상황이 실시간 업데이트</li>
-              </ul>
+            <!-- 번역 기능 (API Key 있을 때만 표시) -->
+            <div id="translateSection">
+              <div class="main-card">
+                <div class="status-header">
+                  <span class="status-label">현재 상태</span>
+                  <span id="statusBadge" class="status-badge">대기 중</span>
+                </div>
+
+                <div id="progressText" class="progress-text">번역 대기 중</div>
+
+                <div class="stats-grid">
+                  <div class="stat-card">
+                    <div class="stat-label">번역된 텍스트</div>
+                    <div id="translatedCount" class="stat-value">0</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">캐시 사용</div>
+                    <div id="cachedCount" class="stat-value">0</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">배치 완료</div>
+                    <div id="batchCountText" class="stat-value">0</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">진행 시간</div>
+                    <div id="elapsedTime" class="stat-value">0s</div>
+                  </div>
+                </div>
+
+                <div id="batchInfo" class="batch-info" style="display: none;">
+                  <div class="batch-info-title">배치 진행 상황</div>
+                  <div id="batchList"></div>
+                </div>
+
+                <div class="btn-group">
+                  <button id="translateAllBtn" class="btn">캐시 사용하여 번역</button>
+                  <div class="btn-help">이전에 번역한 내용을 재사용하여 빠르게 번역합니다</div>
+                </div>
+
+                <div class="btn-group">
+                  <button id="translateFreshBtn" class="btn">캐시 없이 새로 번역</button>
+                  <div class="btn-help">캐시를 무시하고 모든 텍스트를 새로 번역합니다</div>
+                </div>
+
+                <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
+              </div>
             </div>
           </div>
         </div>
