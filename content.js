@@ -1,54 +1,97 @@
-// 전역 상태
+/**
+ * Content Script - 웹페이지 번역 핵심 로직
+ *
+ * 주요 기능:
+ * - DOM 텍스트 노드 수집 및 번역
+ * - IndexedDB 기반 번역 캐시 관리 (TTL 60분 기본)
+ * - 배치 처리 (기본 50개 문장, 동시 3개 배치)
+ * - WeakMap 기반 원본 텍스트 복원
+ * - Port를 통한 실시간 진행 상태 푸시
+ *
+ * 아키텍처:
+ * - 번역 상태: inactive → translating → completed → restored
+ * - 캐시: SHA1 해시 기반, TTL 만료 자동 재번역
+ * - 대규모 변경: ≥20% 변경 시 자동 전면 재번역
+ *
+ * 참고: Content script는 ES6 모듈을 사용하지 않으므로 인라인 구현
+ */
+
+// ===== 전역 상태 =====
 let translationState = 'inactive'; // 'inactive', 'translating', 'completed', 'restored'
-let originalTexts = new WeakMap(); // 원본 텍스트 저장
+let originalTexts = new WeakMap(); // 원본 텍스트 저장 (GC 안전)
 let translatedElements = new Set(); // 번역된 요소 추적
 
-// IndexedDB 캐시 설정
+// ===== IndexedDB 캐시 설정 =====
 const DB_NAME = 'TranslationCache';
 const DB_VERSION = 1;
 const STORE_NAME = 'translations';
 const DEFAULT_TTL_MINUTES = 60;
 
 // ===== 로깅 시스템 =====
+// DEBUG 레벨은 설정에서 토글 가능, INFO/WARN/ERROR는 항상 출력
 const LEVEL_MAP = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 let currentLogLevel = 'INFO';
 
-// 초기화: storage에서 설정 로드
+/**
+ * 로거 초기화 - storage에서 디버그 설정 로드
+ */
 (async () => {
   try {
     const result = await chrome.storage.local.get(['debugLog']);
     currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
   } catch (error) {
-    // storage 접근 실패 시 기본값 유지
+    // storage 접근 실패 시 기본값(INFO) 유지
   }
 })();
 
-// 설정 변경 감지
+/**
+ * 디버그 설정 변경 감지
+ */
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.debugLog) {
     currentLogLevel = changes.debugLog.newValue ? 'DEBUG' : 'INFO';
   }
 });
 
-// 민감정보 마스킹
+/**
+ * 민감정보 마스킹
+ * - API 키: 앞 8자만 표시
+ * - 텍스트: 20자 초과 시 잘라내고 전체 길이 표시
+ * @param {object} data - 마스킹할 데이터 객체
+ * @returns {object} 마스킹된 데이터
+ */
 function maskSensitive(data) {
   if (!data || typeof data !== 'object') return data;
   const masked = { ...data };
-  if (masked.apiKey) masked.apiKey = masked.apiKey.substring(0, 8) + '***';
+
+  if (masked.apiKey) {
+    masked.apiKey = masked.apiKey.substring(0, 8) + '***';
+  }
+
   if (masked.text && typeof masked.text === 'string' && masked.text.length > 20) {
     masked.text = masked.text.substring(0, 20) + `...(${masked.text.length}자)`;
   }
+
   if (masked.texts && Array.isArray(masked.texts)) {
     masked.textCount = masked.texts.length;
     masked.texts = `[${masked.texts.length}개 항목]`;
   }
+
   if (masked.original && typeof masked.original === 'string' && masked.original.length > 20) {
     masked.original = masked.original.substring(0, 20) + `...(${masked.original.length}자)`;
   }
+
   return masked;
 }
 
-// 로그 출력
+/**
+ * 구조화된 로그 출력
+ * @param {string} level - DEBUG|INFO|WARN|ERROR
+ * @param {string} evt - 이벤트명 (대문자_스네이크_케이스)
+ * @param {string} msg - 사람이 읽기 쉬운 요약 메시지
+ * @param {object} data - 추가 데이터 (민감정보 자동 마스킹)
+ * @param {Error|string} err - 에러 객체 또는 메시지
+ */
 function log(level, evt, msg = '', data = {}, err = null) {
   if (level === 'DEBUG' && LEVEL_MAP[level] < LEVEL_MAP[currentLogLevel]) return;
 
@@ -87,33 +130,52 @@ function log(level, evt, msg = '', data = {}, err = null) {
   }
 }
 
+// 로깅 편의 함수
 const logDebug = (evt, msg, data, err) => log('DEBUG', evt, msg, data, err);
 const logInfo = (evt, msg, data, err) => log('INFO', evt, msg, data, err);
 const logWarn = (evt, msg, data, err) => log('WARN', evt, msg, data, err);
 const logError = (evt, msg, data, err) => log('ERROR', evt, msg, data, err);
 
-// 진행 상태
+// ===== 진행 상태 관리 =====
+/**
+ * 번역 진행 상태 (sidepanel로 실시간 푸시)
+ */
 let progressStatus = {
-  state: 'inactive',
-  totalTexts: 0,
-  translatedCount: 0,
-  cachedCount: 0,
-  batchCount: 0,
-  batchesDone: 0,
-  batches: [],
-  activeMs: 0
+  state: 'inactive',       // 번역 상태
+  totalTexts: 0,          // 전체 텍스트 수
+  translatedCount: 0,     // 번역 완료 수
+  cachedCount: 0,         // 캐시 사용 수
+  batchCount: 0,          // 전체 배치 수
+  batchesDone: 0,         // 완료 배치 수
+  batches: [],            // 배치 상세 정보
+  activeMs: 0             // 경과 시간 (ms)
 };
 
-// 타이머 관련
+// ===== 타이머 관리 =====
+/**
+ * 타이머 관련 변수
+ * - activeMs: 누적 경과 시간 (ms)
+ * - lastTick: 마지막 tick 시간 (performance.now)
+ * - timerId: setInterval ID
+ * - inflight: 현재 진행 중인 배치 수 (0이 되면 타이머 정지)
+ */
 let activeMs = 0;
 let lastTick = null;
 let timerId = null;
 let inflight = 0;
 
-// Port 연결
+// ===== Port 연결 관리 =====
+/**
+ * sidepanel과의 양방향 통신 채널
+ * - 진행 상태를 실시간으로 푸시 (1초마다)
+ * - 연결 끊김 시 자동으로 null 처리 (에러 방지)
+ */
 let port = null;
 
-// Port 연결 리스너
+/**
+ * Port 연결 리스너
+ * sidepanel이 열릴 때마다 연결되며, 현재 상태를 즉시 푸시
+ */
 chrome.runtime.onConnect.addListener((p) => {
   if (p.name === 'panel') {
     port = p;
@@ -137,22 +199,28 @@ chrome.runtime.onConnect.addListener((p) => {
   }
 });
 
-// 타이머 시작
+/**
+ * 타이머 시작
+ * 첫 번째 배치 시작 시 자동 호출
+ */
 function startTimer() {
-  if (timerId) return;
+  if (timerId) return; // 이미 실행 중
   lastTick = performance.now();
   timerId = setInterval(() => {
     const now = performance.now();
     activeMs += (now - lastTick);
     lastTick = now;
-    pushProgress(); // 1초마다 푸시
+    pushProgress(); // 1초마다 sidepanel로 푸시
   }, 1000);
   logDebug('TIMER_START', '번역 타이머 시작');
 }
 
-// 타이머 정지
+/**
+ * 타이머 정지
+ * 모든 배치 완료 시 자동 호출
+ */
 function stopTimer() {
-  if (!timerId) return;
+  if (!timerId) return; // 이미 정지됨
   clearInterval(timerId);
   if (lastTick) {
     activeMs += performance.now() - lastTick;
@@ -163,7 +231,10 @@ function stopTimer() {
   logDebug('TIMER_STOP', '번역 타이머 정지', { totalMs: Math.round(activeMs) });
 }
 
-// 배치 시작
+/**
+ * 배치 시작 콜백
+ * inflight 카운터 증가, 첫 배치 시 타이머 시작
+ */
 function onBatchStart() {
   inflight++;
   if (inflight === 1) {
@@ -171,7 +242,10 @@ function onBatchStart() {
   }
 }
 
-// 배치 완료
+/**
+ * 배치 완료 콜백
+ * inflight 카운터 감소, 모든 배치 완료 시 타이머 정지
+ */
 function onBatchEnd() {
   inflight--;
   if (inflight === 0) {
@@ -179,7 +253,10 @@ function onBatchEnd() {
   }
 }
 
-// 진행 상태 푸시
+/**
+ * 진행 상태 푸시
+ * port를 통해 sidepanel에 실시간 진행 상태 전송
+ */
 function pushProgress() {
   if (!port) return;
 
@@ -205,7 +282,18 @@ function pushProgress() {
   }
 }
 
-// 메시지 리스너
+// ===== 메시지 리스너 =====
+/**
+ * sidepanel 및 background로부터 메시지 수신
+ *
+ * 지원 액션:
+ * - PING: 준비 상태 확인
+ * - translateFullPage: 전체 페이지 번역 시작
+ * - restoreOriginal: 원본 텍스트 복원
+ * - getTranslationState: 현재 번역 상태 조회
+ * - clearAllCache: 전역 캐시 비우기
+ * - clearPageCache: 페이지 캐시 비우기
+ */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // PING: Content script 준비 상태 확인
   if (request.type === 'PING') {
@@ -231,7 +319,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// 전체 페이지 번역
+// ===== 번역 메인 로직 =====
+
+/**
+ * 전체 페이지 번역 핸들러
+ *
+ * 동작 흐름:
+ * 1. 텍스트 노드 수집
+ * 2. 캐시 확인 및 분류 (캐시 hit / miss)
+ * 3. 대규모 변경 감지 (≥20% 변경 시 전면 재번역)
+ * 4. 캐시 적용 (배치 단위로 DOM 업데이트)
+ * 5. 신규 번역 처리 (병렬 API 호출 → 순차 DOM 적용)
+ * 6. 완료 상태 업데이트
+ *
+ * @param {string} apiKey - OpenRouter API Key
+ * @param {string} model - AI 모델 (예: openai/gpt-4o-mini)
+ * @param {number} batchSize - 배치 크기 (기본 50)
+ * @param {number} concurrency - 동시 처리 개수 (기본 3)
+ * @param {boolean} useCache - 캐시 사용 여부 (기본 true)
+ */
 async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrency = 3, useCache = true) {
   // CONTENT_INIT 로깅
   const url = window.location.href;
@@ -525,7 +631,13 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
   }
 }
 
-// 배치 번역 (API 호출만)
+/**
+ * 배치 번역 (API 호출만, DOM 적용은 별도)
+ * @param {object} batch - 배치 객체 { texts, elements }
+ * @param {string} apiKey - OpenRouter API Key
+ * @param {string} model - AI 모델
+ * @returns {Promise<Array<string>>} 번역 결과 배열
+ */
 async function translateBatch(batch, apiKey, model) {
   const batchIdx = progressStatus.batchesDone;
 
@@ -545,7 +657,14 @@ async function translateBatch(batch, apiKey, model) {
   }
 }
 
-// DOM 적용 (순서 보장)
+/**
+ * DOM 적용 (순서 보장)
+ * requestAnimationFrame을 사용하여 위에서 아래로 순차 적용
+ * @param {object} batch - 배치 객체 { texts, elements, translations }
+ * @param {boolean} useCache - 캐시 저장 여부
+ * @param {number} batchIdx - 배치 인덱스 (로깅용)
+ * @param {string} model - AI 모델 (캐시 저장용)
+ */
 async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
   let applied = 0;
   let skipped = 0;
@@ -589,7 +708,20 @@ async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
   });
 }
 
-// OpenRouter API 번역
+// ===== OpenRouter API 통신 =====
+
+/**
+ * OpenRouter API를 사용한 배치 번역
+ *
+ * 프롬프트 형식:
+ * - 입력: [0] text1\n[1] text2\n...
+ * - 출력: [0] 번역1\n[1] 번역2\n...
+ *
+ * @param {Array<string>} texts - 번역할 텍스트 배열
+ * @param {string} apiKey - OpenRouter API Key
+ * @param {string} model - AI 모델 (예: openai/gpt-4o-mini)
+ * @returns {Promise<Array<string>>} 번역 결과 배열
+ */
 async function translateWithOpenRouter(texts, apiKey, model) {
   const reqId = Math.random().toString(36).substring(7);
   const batchIdx = progressStatus.batchesDone;
@@ -675,7 +807,15 @@ ${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
   }
 }
 
-// 번역 결과 파싱
+/**
+ * 번역 결과 파싱
+ * [0], [1] 형식의 출력을 배열로 변환
+ * 매핑 실패 시 fallback 적용 (50% 미만 매핑 시)
+ *
+ * @param {string} translatedText - API 응답 텍스트
+ * @param {number} expectedCount - 예상 결과 개수
+ * @returns {Array<string>} 번역 결과 배열 (실패 시 null 포함)
+ */
 function parseTranslationResult(translatedText, expectedCount) {
   const lines = translatedText.split('\n').filter(line => line.trim());
   const translationMap = new Map();
@@ -712,7 +852,12 @@ function parseTranslationResult(translatedText, expectedCount) {
   return translations;
 }
 
-// 원본 복원
+// ===== 원본 복원 =====
+
+/**
+ * 원본 텍스트 복원
+ * WeakMap에 저장된 원본 텍스트를 모든 번역 요소에 적용
+ */
 function handleRestoreOriginal() {
   log('Restoring original texts...');
 
@@ -733,7 +878,16 @@ function handleRestoreOriginal() {
   pushProgress();
 }
 
-// 텍스트 노드 수집
+// ===== DOM 텍스트 노드 수집 =====
+
+/**
+ * 페이지의 모든 번역 가능한 텍스트 노드 수집
+ *
+ * 제외 태그: SCRIPT, STYLE, NOSCRIPT, IFRAME, SVG, CANVAS, CODE, PRE
+ * 필터링: 빈 텍스트, 2000자 초과 텍스트
+ *
+ * @returns {Array<Node>} 텍스트 노드 배열
+ */
 function getAllTextNodes() {
   const EXCLUDE_TAGS = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS', 'CODE', 'PRE'];
   const nodes = [];
@@ -785,7 +939,11 @@ function getAllTextNodes() {
   return nodes;
 }
 
-// 텍스트 추출
+/**
+ * 텍스트 노드에서 텍스트 및 요소 추출
+ * @param {Array<Node>} textNodes - 텍스트 노드 배열
+ * @returns {{texts: Array<string>, elements: Array<Node>}}
+ */
 function extractTexts(textNodes) {
   const texts = [];
   const elements = [];
@@ -801,9 +959,25 @@ function extractTexts(textNodes) {
   return { texts, elements };
 }
 
-// ==================== IndexedDB 캐시 함수 ====================
+// ===== IndexedDB 캐시 시스템 =====
+/**
+ * 번역 캐시 시스템 (IndexedDB 기반)
+ *
+ * 구조:
+ * - 키: SHA1(normalize(text))
+ * - 값: { translation, ts, model }
+ * - TTL: 기본 60분 (설정 변경 가능)
+ *
+ * 특징:
+ * - 해시 재검증으로 DOM 변경 감지
+ * - 대규모 변경(≥20%) 시 자동 전면 재번역
+ * - 만료된 캐시는 자동 무시
+ */
 
-// IndexedDB 열기
+/**
+ * IndexedDB 열기
+ * @returns {Promise<IDBDatabase>}
+ */
 async function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -820,7 +994,11 @@ async function openDB() {
   });
 }
 
-// SHA1 해시 생성
+/**
+ * SHA1 해시 생성 (캐시 키로 사용)
+ * @param {string} text - 원본 텍스트
+ * @returns {Promise<string>} SHA1 해시 (hex)
+ */
 async function sha1Hash(text) {
   const normalized = normalizeText(text);
   const msgBuffer = new TextEncoder().encode(normalized);
@@ -829,7 +1007,11 @@ async function sha1Hash(text) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// 텍스트 정규화
+/**
+ * 텍스트 정규화 (공백 및 줄바꿈 처리)
+ * @param {string} text - 원본 텍스트
+ * @returns {string} 정규화된 텍스트
+ */
 function normalizeText(text) {
   return text
     .trim()
@@ -838,7 +1020,10 @@ function normalizeText(text) {
     .replace(/\r/g, '\n');
 }
 
-// TTL 가져오기
+/**
+ * TTL 가져오기 (storage에서 설정 로드)
+ * @returns {Promise<number>} TTL (밀리초)
+ */
 async function getTTL() {
   try {
     const result = await chrome.storage.local.get(['cacheTTL']);
@@ -849,7 +1034,12 @@ async function getTTL() {
   }
 }
 
-// 캐시 저장
+/**
+ * 캐시 저장
+ * @param {string} text - 원본 텍스트
+ * @param {string} translation - 번역 텍스트
+ * @param {string} model - AI 모델
+ */
 async function setCachedTranslation(text, translation, model) {
   try {
     const db = await openDB();
@@ -877,7 +1067,11 @@ async function setCachedTranslation(text, translation, model) {
   }
 }
 
-// 캐시 가져오기
+/**
+ * 캐시 가져오기 (TTL 검증 포함)
+ * @param {string} text - 원본 텍스트
+ * @returns {Promise<string|null>} 번역 텍스트 (캐시 없거나 만료 시 null)
+ */
 async function getCachedTranslation(text) {
   try {
     const db = await openDB();
@@ -911,7 +1105,10 @@ async function getCachedTranslation(text) {
   }
 }
 
-// 전역 캐시 비우기
+/**
+ * 전역 캐시 비우기
+ * @returns {Promise<boolean>}
+ */
 async function clearAllCache() {
   try {
     const db = await openDB();
@@ -934,10 +1131,16 @@ async function clearAllCache() {
   }
 }
 
-// 페이지 캐시 비우기 (현재는 전체 비우기와 동일)
+/**
+ * 페이지 캐시 비우기 (현재는 전체 비우기와 동일)
+ * TODO: 페이지별 캐시 구현
+ * @returns {Promise<boolean>}
+ */
 async function clearPageCache() {
   return await clearAllCache();
 }
+
+// ===== 초기화 =====
 
 logDebug('CONTENT_LOADED', 'Content script 로드 완료');
 

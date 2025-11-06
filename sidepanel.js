@@ -1,29 +1,56 @@
+/**
+ * Side Panel Script - UI 및 상태 관리
+ *
+ * 주요 기능:
+ * - 우측 세로 탭바 UI (번역|설정|닫기)
+ * - 실시간 번역 진행 상태 표시
+ * - 설정 관리 (API Key, 모델, 배치, 캐시)
+ * - 권한 관리 (http/https/file:// 스킴별 처리)
+ * - Port를 통한 content script와 양방향 통신
+ *
+ * 아키텍처:
+ * - 탭 전환: 패널 내부에서 처리, 새 탭/창 열지 않음
+ * - 딥링크: #translate, #settings 지원
+ * - 세션 복원: 마지막 탭 상태 저장/복원
+ * - 권한 체크: 번역 버튼 클릭 시 최종 검증
+ *
+ * 참고: ES6 모듈 사용 (logger.js, meta.js import)
+ */
+
 import { FOOTER_TEXT } from './meta.js';
 import { log, logInfo, logWarn, logError, logDebug, getLogs } from './logger.js';
 
-// 기본 설정
+// ===== 설정 상수 =====
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const SESSION_KEY = 'lastActiveTab';
 
-// 상태 관리
-let currentTabId = null;
-let port = null;
-let permissionGranted = false;
-let settingsChanged = false;
-let originalSettings = {};
+// ===== 전역 상태 =====
+let currentTabId = null;          // 현재 활성 탭 ID
+let port = null;                  // content script와의 통신 port
+let permissionGranted = false;    // 현재 탭의 권한 상태
+let settingsChanged = false;      // 설정 변경 여부 (저장 바 표시용)
+let originalSettings = {};        // 원본 설정 (취소 시 복원용)
 
+/**
+ * 번역 진행 상태 (content script에서 port로 수신)
+ */
 let translationState = {
-  state: 'inactive',
-  totalTexts: 0,
-  translatedCount: 0,
-  cachedCount: 0,
-  batchCount: 0,
-  batchesDone: 0,
-  batches: [],
-  activeMs: 0
+  state: 'inactive',       // 번역 상태
+  totalTexts: 0,          // 전체 텍스트 수
+  translatedCount: 0,     // 번역 완료 수
+  cachedCount: 0,         // 캐시 사용 수
+  batchCount: 0,          // 전체 배치 수
+  batchesDone: 0,         // 완료 배치 수
+  batches: [],            // 배치 상세 정보
+  activeMs: 0             // 경과 시간 (ms)
 };
 
-// 초기화
+// ===== 초기화 =====
+
+/**
+ * DOMContentLoaded 이벤트 핸들러
+ * 패널 초기화 및 이벤트 리스너 등록
+ */
 document.addEventListener('DOMContentLoaded', async () => {
   // 푸터 텍스트 설정
   const footerEl = document.getElementById('footerText');
@@ -90,12 +117,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
-// 메시지 핸들러 (필요 시 메시지 처리용, 현재 미사용)
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   // 향후 확장 가능
-// });
+// ===== 탭바 관리 =====
 
-// ===== 탭바 초기화 =====
+/**
+ * 탭바 초기화
+ * 버튼 클릭 이벤트 및 키보드 내비게이션 설정
+ */
 function initTabbar() {
   const tabButtons = document.querySelectorAll('.vertical-tabbar button[role="tab"]');
 
@@ -113,7 +140,11 @@ function initTabbar() {
   });
 }
 
-// 키보드 내비게이션 (화살표, Enter, Space)
+/**
+ * 키보드 내비게이션 핸들러
+ * 화살표(←→↑↓), Enter, Space 지원
+ * @param {KeyboardEvent} e - 키보드 이벤트
+ */
 function handleTabKeydown(e) {
   const tabButtons = Array.from(document.querySelectorAll('.vertical-tabbar button[role="tab"]'));
   const currentIndex = tabButtons.indexOf(e.target);
@@ -135,7 +166,11 @@ function handleTabKeydown(e) {
   }
 }
 
-// 탭 전환
+/**
+ * 탭 전환
+ * 탭 버튼 상태 업데이트 및 컨텐츠 전환
+ * @param {string} tabName - 'translate' | 'settings'
+ */
 async function switchTab(tabName) {
   // 탭 버튼 상태 업데이트
   const tabButtons = document.querySelectorAll('.vertical-tabbar button[role="tab"]');
@@ -171,7 +206,10 @@ async function switchTab(tabName) {
   }
 }
 
-// 세션 복원
+/**
+ * 세션 복원
+ * 마지막 활성 탭 상태를 session storage에서 복원
+ */
 async function restoreSession() {
   try {
     const result = await chrome.storage.session.get(SESSION_KEY);
@@ -185,7 +223,11 @@ async function restoreSession() {
   }
 }
 
-// 딥링크 처리 (#translate, #settings)
+/**
+ * 딥링크 처리
+ * URL 해시를 읽어서 해당 탭으로 전환
+ * 지원: #translate, #settings
+ */
 function handleDeepLink() {
   const hash = window.location.hash.slice(1); // # 제거
   if (hash === 'translate' || hash === 'settings') {
@@ -193,7 +235,12 @@ function handleDeepLink() {
   }
 }
 
-// ===== API Key UI 업데이트 =====
+// ===== API Key UI 관리 =====
+
+/**
+ * API Key UI 업데이트
+ * API Key 유무에 따라 번역 섹션 또는 안내 메시지 표시
+ */
 async function updateApiKeyUI() {
   try {
     const result = await chrome.storage.local.get(['apiKey']);
@@ -216,7 +263,12 @@ async function updateApiKeyUI() {
   }
 }
 
-// ===== 설정 탭 초기화 =====
+// ===== 설정 관리 =====
+
+/**
+ * 설정 탭 초기화
+ * 입력 필드 변경 감지 및 버튼 이벤트 등록
+ */
 function initSettingsTab() {
   // 입력 필드 변경 감지
   const inputs = document.querySelectorAll('#settingsTab input');
@@ -248,7 +300,10 @@ function initSettingsTab() {
   document.getElementById('copyLogsBtn')?.addEventListener('click', handleCopyLogs);
 }
 
-// 설정 로드
+/**
+ * 설정 로드
+ * storage에서 설정을 로드하여 폼에 적용
+ */
 async function loadSettings() {
   try {
     const result = await chrome.storage.local.get([
@@ -285,7 +340,10 @@ async function loadSettings() {
   }
 }
 
-// 설정 저장
+/**
+ * 설정 저장 핸들러
+ * 유효성 검사 후 storage에 저장
+ */
 async function handleSaveSettings() {
   const apiKey = document.getElementById('apiKey').value.trim();
   const modelInput = document.getElementById('model').value.trim();
@@ -357,7 +415,9 @@ async function handleSaveSettings() {
   }
 }
 
-// 저장 바 표시
+/**
+ * 저장 바 표시 (설정 변경 시)
+ */
 function showSaveBar() {
   const saveBar = document.getElementById('saveBar');
   if (saveBar) {
@@ -365,7 +425,9 @@ function showSaveBar() {
   }
 }
 
-// 저장 바 숨김
+/**
+ * 저장 바 숨김
+ */
 function hideSaveBar() {
   const saveBar = document.getElementById('saveBar');
   if (saveBar) {
@@ -373,7 +435,11 @@ function hideSaveBar() {
   }
 }
 
-// 토스트 표시 (2초)
+/**
+ * 토스트 메시지 표시 (2초)
+ * @param {string} message - 표시할 메시지
+ * @param {string} type - 'success' | 'error'
+ */
 function showToast(message, type = 'success') {
   const toast = document.getElementById('toast');
   if (!toast) return;
@@ -390,7 +456,9 @@ function showToast(message, type = 'success') {
   }, 2000);
 }
 
-// 전역 캐시 비우기
+/**
+ * 전역 캐시 비우기 핸들러
+ */
 async function handleClearAllCache() {
   if (!currentTabId) {
     showToast('활성 탭을 찾을 수 없습니다.', 'error');
@@ -406,9 +474,13 @@ async function handleClearAllCache() {
   }
 }
 
-// ===== 번역 기능 (기존 코드 유지) =====
+// ===== 번역 기능 =====
 
-// 지원 스킴 확인
+/**
+ * URL 지원 타입 확인
+ * @param {string} url - 확인할 URL
+ * @returns {'requestable' | 'file' | 'unsupported'}
+ */
 function getSupportType(url) {
   try {
     const u = new URL(url);
@@ -424,7 +496,10 @@ function getSupportType(url) {
   }
 }
 
-// 권한 확인 (조용히 체크만, UI 자동 변경 안 함)
+/**
+ * 권한 확인 (조용히 체크만, UI 자동 변경 안 함)
+ * @param {object} tab - 탭 객체
+ */
 async function checkPermissions(tab) {
   if (!tab || !tab.url) {
     permissionGranted = false;
@@ -462,12 +537,9 @@ async function checkPermissions(tab) {
   permissionGranted = true;
 }
 
-// 권한 UI 표시 (레거시 함수, 현재 미사용)
-function showPermissionUI(type, message = '') {
-  // UI는 항상 표시, 이 함수는 더 이상 사용되지 않음
-}
-
-// 권한 요청
+/**
+ * 권한 요청 핸들러 (file:// URL 전용)
+ */
 async function handleRequestPermission() {
   if (!currentTabId) return;
 
@@ -503,7 +575,14 @@ async function handleRequestPermission() {
   }
 }
 
-// Content script 준비 확인 (재시도 로직 강화)
+/**
+ * Content script 준비 확인 (재시도 로직 강화)
+ * 탭 전환 후 번역 시도 시 content script가 준비되지 않은 경우 재주입
+ *
+ * @param {number} tabId - 대상 탭 ID
+ * @param {number} maxRetries - 최대 재시도 횟수 (기본 5)
+ * @returns {Promise<boolean>} 준비 완료 여부
+ */
 async function ensureContentScriptReady(tabId, maxRetries = 5) {
   // 1단계: 이미 준비되어 있는지 확인
   try {
@@ -572,7 +651,12 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
   }
 }
 
-// Content script에 연결
+/**
+ * Content script에 port 연결
+ * 진행 상태를 실시간으로 수신하기 위해 port 사용
+ *
+ * @param {number} tabId - 대상 탭 ID
+ */
 function connectToContentScript(tabId) {
   try {
     // 기존 port 종료
@@ -635,7 +719,10 @@ function connectToContentScript(tabId) {
   }
 }
 
-// 전체 번역
+/**
+ * 전체 번역 핸들러
+ * @param {boolean} useCache - 캐시 사용 여부 (true: 빠른 모드, false: 새로 번역)
+ */
 async function handleTranslateAll(useCache = true) {
   const button = useCache ? 'fast-translate' : 'full-translate';
 
@@ -762,7 +849,9 @@ async function handleTranslateAll(useCache = true) {
   }
 }
 
-// 원본 복원
+/**
+ * 원본 복원 핸들러
+ */
 async function handleRestore() {
   if (!currentTabId) return;
 
@@ -825,7 +914,12 @@ async function handleRestore() {
   }
 }
 
-// UI 업데이트 (번역 상태에 따라서만 버튼 제어, 권한 체크 안 함)
+// ===== UI 업데이트 =====
+
+/**
+ * UI 업데이트 (번역 상태에 따라서만 버튼 제어, 권한 체크 안 함)
+ * Port로 수신한 진행 상태를 UI에 반영
+ */
 function updateUI() {
   const { state, totalTexts, translatedCount, cachedCount, batchCount, batchesDone, batches, activeMs } = translationState;
 
@@ -908,7 +1002,11 @@ function updateUI() {
   }
 }
 
-// 배치 상태 텍스트
+/**
+ * 배치 상태 텍스트 변환
+ * @param {string} status - 'pending' | 'processing' | 'completed' | 'failed'
+ * @returns {string} 한글 상태 텍스트
+ */
 function getBatchStatusText(status) {
   const statusMap = {
     'pending': '대기',
@@ -919,7 +1017,11 @@ function getBatchStatusText(status) {
   return statusMap[status] || status;
 }
 
-// 시간 포맷
+/**
+ * 시간 포맷 (초 → 읽기 쉬운 형식)
+ * @param {number} seconds - 초
+ * @returns {string} 포맷된 시간 (예: "2m 30s")
+ */
 function formatTime(seconds) {
   if (seconds < 60) {
     return `${seconds}s`;
@@ -934,14 +1036,12 @@ function formatTime(seconds) {
   }
 }
 
-// 번역 버튼 상태 업데이트 (레거시 함수, 더 이상 사용 안 함)
-// 버튼은 항상 활성화 상태 유지, 번역 상태에 따른 제어는 updateUI()에서만 수행
-function updateTranslateButtonState() {
-  // 이 함수는 더 이상 사용되지 않음
-  // 버튼 활성화/비활성화는 updateUI()에서 번역 상태에 따라서만 제어됨
-}
+// ===== 개발자 도구 =====
 
-// 로그 복사
+/**
+ * 로그 복사 핸들러
+ * 최근 500개 로그를 클립보드에 복사 (이슈 리포트용)
+ */
 async function handleCopyLogs() {
   try {
     logInfo('sidepanel', 'UI_CLICK', '로그 복사 버튼 클릭', { button: 'copy-logs' });
