@@ -70,6 +70,28 @@
       box-shadow: var(--shadow);
     }
 
+    .permission-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 30px 20px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
+    .permission-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .permission-message {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
     .status-header {
       display: flex;
       align-items: center;
@@ -153,11 +175,11 @@
       margin-bottom: 10px;
     }
 
-    .btn:hover {
+    .btn:hover:not(:disabled) {
       background: var(--btn-primary-hover);
     }
 
-    .btn:active {
+    .btn:active:not(:disabled) {
       transform: translateY(1px);
     }
 
@@ -167,26 +189,8 @@
       border: 1px solid var(--border-color);
     }
 
-    .btn.secondary:hover {
+    .btn.secondary:hover:not(:disabled) {
       background: var(--btn-secondary-hover);
-    }
-
-    .btn.warning {
-      background: var(--status-warning);
-      color: #FFFFFF;
-    }
-
-    .btn.warning:hover {
-      background: #d97706;
-    }
-
-    .btn.success {
-      background: var(--status-success);
-      color: #FFFFFF;
-    }
-
-    .btn.success:hover {
-      background: #059669;
     }
 
     .btn:disabled {
@@ -318,53 +322,64 @@
     <h1>AI 번역</h1>
   </div>
 
-  <div class="main-card">
-    <div class="status-header">
-      <span class="status-label">현재 상태</span>
-      <span id="statusBadge" class="status-badge">대기 중</span>
+  <!-- 권한 요청 섹션 -->
+  <div id="permissionSection" class="permission-card" style="display: none;">
+    <div class="permission-icon">🔒</div>
+    <div id="permissionMessage" class="permission-message">
+      이 사이트 번역을 사용하려면 권한이 필요합니다.
     </div>
-
-    <div id="progressText" class="progress-text">번역 대기 중</div>
-
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">번역된 텍스트</div>
-        <div id="translatedCount" class="stat-value">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">캐시 사용</div>
-        <div id="cachedCount" class="stat-value">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">배치 수</div>
-        <div id="batchCount" class="stat-value">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">진행 시간</div>
-        <div id="elapsedTime" class="stat-value">0s</div>
-      </div>
-    </div>
-
-    <div id="batchInfo" class="batch-info" style="display: none;">
-      <div class="batch-info-title">배치 진행 상황</div>
-      <div id="batchList"></div>
-    </div>
-
-    <button id="startViewportBtn" class="btn">화면에 보이는 영역 번역 시작</button>
-    <button id="translateAllBtn" class="btn secondary">현재 페이지 모두 번역하기</button>
-    <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
-    <button id="openSettings" class="btn secondary">⚙️ 설정</button>
+    <button id="requestPermissionBtn" class="btn">권한 허용</button>
   </div>
 
-  <div class="guide-section">
-    <div class="guide-title">사용 가이드</div>
-    <ul class="guide-list">
-      <li>번역할 페이지에서 웹페이지 번역기를 연다</li>
-      <li><strong>화면에 보이는 영역 번역 시작</strong>을 누르면 현재 보이는 영역만 번역</li>
-      <li>페이지 전체가 필요하면 <strong>현재 페이지 모두 번역하기</strong> 사용</li>
-      <li>원본으로 되돌리려면 <strong>원본 보기</strong></li>
-      <li>번역 중에는 통계 패널에서 진행 현황을 확인</li>
-    </ul>
+  <!-- 메인 섹션 -->
+  <div id="mainSection">
+    <div class="main-card">
+      <div class="status-header">
+        <span class="status-label">현재 상태</span>
+        <span id="statusBadge" class="status-badge">대기 중</span>
+      </div>
+
+      <div id="progressText" class="progress-text">번역 대기 중</div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">번역된 텍스트</div>
+          <div id="translatedCount" class="stat-value">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">캐시 사용</div>
+          <div id="cachedCount" class="stat-value">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">배치 완료</div>
+          <div id="batchCountText" class="stat-value">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">진행 시간</div>
+          <div id="elapsedTime" class="stat-value">0s</div>
+        </div>
+      </div>
+
+      <div id="batchInfo" class="batch-info" style="display: none;">
+        <div class="batch-info-title">배치 진행 상황</div>
+        <div id="batchList"></div>
+      </div>
+
+      <button id="translateAllBtn" class="btn">현재 페이지 모두 번역하기</button>
+      <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
+      <button id="openSettings" class="btn secondary">⚙️ 설정</button>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-title">사용 가이드</div>
+      <ul class="guide-list">
+        <li>번역할 페이지에서 확장 프로그램 아이콘을 클릭</li>
+        <li>처음 방문하는 사이트는 권한 허용 필요 (1회만)</li>
+        <li><strong>현재 페이지 모두 번역하기</strong>를 눌러 전체 번역</li>
+        <li>원본으로 되돌리려면 <strong>원본 보기</strong></li>
+        <li>번역 중에는 진행 시간과 배치 상황이 실시간 업데이트</li>
+      </ul>
+    </div>
   </div>
 
   <script src="sidepanel.js"></script>
