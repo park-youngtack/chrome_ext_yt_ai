@@ -181,21 +181,37 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     const newElements = [];
 
     if (useCache) {
-      for (let i = 0; i < texts.length; i++) {
-        const text = texts[i];
+      // 병렬로 캐시 조회
+      const cachePromises = texts.map((text, i) => {
         const element = elements[i];
 
         if (translatedElements.has(element)) {
           progressStatus.translatedCount++;
-          continue;
+          return null;
         }
 
-        const cached = getCachedTranslation(text);
-        if (cached) {
-          cachedItems.push({ element, text, translation: cached });
+        return getCachedTranslation(text).then(cached => ({
+          index: i,
+          element,
+          text,
+          cached
+        }));
+      });
+
+      const cacheResults = await Promise.all(cachePromises);
+
+      for (const result of cacheResults) {
+        if (!result) continue; // 이미 번역된 요소
+
+        if (result.cached) {
+          cachedItems.push({
+            element: result.element,
+            text: result.text,
+            translation: result.cached
+          });
         } else {
-          newTexts.push(text);
-          newElements.push(element);
+          newTexts.push(result.text);
+          newElements.push(result.element);
         }
       }
     } else {
@@ -234,48 +250,22 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       }
     }
 
-    // 캐시 검증 및 적용
+    // 캐시 적용
     if (cachedItems.length > 0) {
-      const verifiedItems = [];
-      const invalidItems = [];
-
-      // 캐시 검증
-      for (const item of cachedItems) {
-        const isValid = await verifyCachedTranslation(item.text, item.translation);
-        if (isValid) {
-          verifiedItems.push(item);
-        } else {
-          log('Cache verification failed, re-translating:', item.text.substring(0, 50));
-          invalidItems.push(item);
-        }
-      }
-
-      // 검증된 캐시 적용
-      if (verifiedItems.length > 0) {
-        await new Promise(resolve => {
-          requestAnimationFrame(() => {
-            verifiedItems.forEach(({ element, text, translation }) => {
-              if (!originalTexts.has(element)) {
-                originalTexts.set(element, element.textContent);
-              }
-              element.textContent = translation;
-              translatedElements.add(element);
-              progressStatus.translatedCount++;
-            });
-            pushProgress();
-            resolve();
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          cachedItems.forEach(({ element, text, translation }) => {
+            if (!originalTexts.has(element)) {
+              originalTexts.set(element, element.textContent);
+            }
+            element.textContent = translation;
+            translatedElements.add(element);
+            progressStatus.translatedCount++;
           });
+          pushProgress();
+          resolve();
         });
-      }
-
-      // 검증 실패 항목은 재번역 대상으로 추가
-      if (invalidItems.length > 0) {
-        invalidItems.forEach(({ element, text }) => {
-          newTexts.push(text);
-          newElements.push(element);
-        });
-        log(`${invalidItems.length} cached items failed verification, added to retranslation queue`);
-      }
+      });
     }
 
     // 신규 번역 처리
@@ -669,34 +659,6 @@ async function getCachedTranslation(text) {
   } catch (error) {
     console.error('Failed to get cache:', error);
     return null;
-  }
-}
-
-// 캐시 검증
-async function verifyCachedTranslation(text, translation) {
-  try {
-    const hash = await sha1Hash(text);
-    const db = await openDB();
-
-    const tx = db.transaction([STORE_NAME], 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-
-    const result = await new Promise((resolve, reject) => {
-      const request = store.get(hash);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-
-    db.close();
-
-    if (!result) {
-      return false;
-    }
-
-    return result.translation === translation;
-  } catch (error) {
-    console.error('Failed to verify cache:', error);
-    return false;
   }
 }
 
