@@ -154,12 +154,8 @@ chrome.action.onClicked.addListener(async (tab) => {
       return;
     }
 
-    // ⭐ Content script 준비 확인 및 주입
-    logDebug('PANEL_ENSURE_CONTENT', 'Content script 준비 확인 시작', { tabId: tab.id });
-    await ensureContentScript(tab.id);
-    logDebug('PANEL_ENSURE_CONTENT_DONE', 'Content script 준비 완료', { tabId: tab.id });
-
     // 해당 탭에서만 사이드패널 설정 및 활성화
+    // (registerContentScripts로 이미 자동 주입되므로 별도 확인 불필요)
     await chrome.sidePanel.setOptions({
       tabId: tab.id,
       path: 'sidepanel.html',
@@ -167,6 +163,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     });
 
     // 해당 탭에서만 사이드패널 열기
+    // (사용자 제스처 컨텍스트 유지를 위해 await 없이 즉시 호출)
     await chrome.sidePanel.open({ tabId: tab.id });
     logInfo('PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
   } catch (error) {
