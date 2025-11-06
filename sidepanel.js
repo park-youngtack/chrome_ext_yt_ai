@@ -1235,6 +1235,10 @@ async function handleTranslateAll(useCache = true) {
     const tab = await chrome.tabs.get(currentTabId);
     const supportType = getSupportType(tab.url);
 
+    // 새 탭 진입 직후 about:blank, chrome://newtab 등으로 판별되던 권한 상태를
+    // 실제 URL 기준으로 즉시 갱신하여 불필요한 권한 오류를 예방한다.
+    await checkPermissions(tab);
+
     // 지원하지 않는 URL 체크 (사용자 액션 시에만!)
     if (supportType === 'unsupported') {
       logInfo('sidepanel', 'UI_CLICK_BLOCKED', '지원하지 않는 URL', {
@@ -1360,6 +1364,9 @@ async function handleRestore() {
   try {
     const tab = await chrome.tabs.get(currentTabId);
     const supportType = getSupportType(tab.url);
+
+    // 탭 로딩 완료 후 실제 URL 기준으로 권한 상태를 동기화한다.
+    await checkPermissions(tab);
 
     if (supportType === 'unsupported') {
       logInfo('sidepanel', 'UI_CLICK_BLOCKED', '지원하지 않는 URL에서 원본 보기 시도', {
