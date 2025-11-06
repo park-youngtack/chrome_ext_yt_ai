@@ -332,21 +332,54 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       }
     }
 
-    // 캐시 적용
+    // 캐시 적용 (배치로 나눠서 진행 상황 표시)
     if (cachedItems.length > 0) {
-      await new Promise(resolve => {
-        requestAnimationFrame(() => {
-          cachedItems.forEach(({ element, text, translation }) => {
-            if (!originalTexts.has(element)) {
-              originalTexts.set(element, element.textContent);
-            }
-            element.textContent = translation;
-            translatedElements.add(element);
-            progressStatus.translatedCount++;
-          });
-          pushProgress();
-          resolve();
+      // 캐시도 배치로 분할
+      const cacheBatches = [];
+      for (let i = 0; i < cachedItems.length; i += batchSize) {
+        cacheBatches.push({
+          items: cachedItems.slice(i, i + batchSize),
+          status: 'pending',
+          size: Math.min(batchSize, cachedItems.length - i)
         });
+      }
+
+      // 전체 배치 계획에 추가
+      const totalBatches = cacheBatches.length + Math.ceil(newTexts.length / batchSize);
+      progressStatus.batchCount = totalBatches;
+      progressStatus.batches = cacheBatches.map((b, i) => ({
+        index: i,
+        size: b.size,
+        status: 'pending'
+      }));
+
+      // 캐시 배치 적용
+      for (let i = 0; i < cacheBatches.length; i++) {
+        progressStatus.batches[i].status = 'processing';
+        pushProgress();
+
+        await new Promise(resolve => {
+          requestAnimationFrame(() => {
+            cacheBatches[i].items.forEach(({ element, text, translation }) => {
+              if (!originalTexts.has(element)) {
+                originalTexts.set(element, element.textContent);
+              }
+              element.textContent = translation;
+              translatedElements.add(element);
+              progressStatus.translatedCount++;
+            });
+
+            progressStatus.batches[i].status = 'completed';
+            progressStatus.batchesDone++;
+            pushProgress();
+            resolve();
+          });
+        });
+      }
+
+      logInfo('CACHE_APPLY', '캐시 적용 완료', {
+        batches: cacheBatches.length,
+        items: cachedItems.length
       });
     }
 
@@ -363,12 +396,19 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         });
       }
 
-      progressStatus.batchCount = batches.length;
-      progressStatus.batches = batches.map((b, i) => ({
-        index: i,
+      // 캐시 배치 인덱스 오프셋 계산
+      const cacheOffset = progressStatus.batches.length;
+
+      // 전체 배치 수 업데이트
+      progressStatus.batchCount = cacheOffset + batches.length;
+
+      // 신규 번역 배치를 기존 배치 배열에 추가
+      const newBatchInfo = batches.map((b, i) => ({
+        index: cacheOffset + i,
         size: b.size,
         status: 'pending'
       }));
+      progressStatus.batches.push(...newBatchInfo);
       pushProgress();
 
       // BATCH_PLAN 로깅
@@ -379,28 +419,32 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         batches: batches.length
       });
 
-      // 병렬 배치 처리
+      // 병렬 배치 처리 (API 호출만)
       const processQueue = async () => {
         let index = 0;
 
         const worker = async () => {
           while (index < batches.length) {
-            const batchIndex = index++;
-            const batch = batches[batchIndex];
+            const localIndex = index++;
+            const batch = batches[localIndex];
+            const globalIndex = cacheOffset + localIndex; // 전역 배치 인덱스
 
             // 배치 상태 업데이트
-            progressStatus.batches[batchIndex].status = 'processing';
+            progressStatus.batches[globalIndex].status = 'processing';
             pushProgress();
 
             onBatchStart();
 
             try {
-              await processBatch(batch, apiKey, model, useCache);
-              progressStatus.batches[batchIndex].status = 'completed';
+              // API 호출만 수행, DOM 적용은 나중에
+              const translations = await translateBatch(batch, apiKey, model);
+              batch.translations = translations; // 결과 저장
+              progressStatus.batches[globalIndex].status = 'completed';
               progressStatus.batchesDone++;
             } catch (error) {
-              console.error(`Batch ${batchIndex + 1} failed:`, error);
-              progressStatus.batches[batchIndex].status = 'failed';
+              console.error(`Batch ${globalIndex + 1} failed:`, error);
+              batch.translations = null; // 실패 표시
+              progressStatus.batches[globalIndex].status = 'failed';
               progressStatus.batchesDone++;
             }
 
@@ -414,6 +458,16 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       };
 
       await processQueue();
+
+      // 순차적으로 DOM 적용 (위에서 아래로)
+      for (let localIndex = 0; localIndex < batches.length; localIndex++) {
+        const batch = batches[localIndex];
+        const globalIndex = cacheOffset + localIndex;
+
+        if (batch.translations) {
+          await applyTranslationsToDom(batch, useCache, globalIndex, model);
+        }
+      }
     }
 
     // 완료
@@ -442,11 +496,11 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
   }
 }
 
-// 배치 처리
-async function processBatch(batch, apiKey, model, useCache) {
+// 배치 번역 (API 호출만)
+async function translateBatch(batch, apiKey, model) {
   const batchIdx = progressStatus.batchesDone;
 
-  logDebug('BATCH_START', '배치 처리 시작', {
+  logDebug('BATCH_START', '배치 번역 시작', {
     batchIdx,
     count: batch.texts.length
   });
@@ -454,52 +508,56 @@ async function processBatch(batch, apiKey, model, useCache) {
   try {
     // API 호출
     const translations = await translateWithOpenRouter(batch.texts, apiKey, model);
-
-    // DOM 적용
-    let applied = 0;
-    let skipped = 0;
-
-    await new Promise(resolve => {
-      requestAnimationFrame(() => {
-        batch.elements.forEach((element, idx) => {
-          const translation = translations[idx];
-          if (translation && translation !== null) {
-            const originalText = batch.texts[idx];
-
-            if (!originalTexts.has(element)) {
-              originalTexts.set(element, element.textContent);
-            }
-
-            element.textContent = translation;
-            applied++;
-            translatedElements.add(element);
-            progressStatus.translatedCount++;
-
-            // 캐시에 저장
-            if (useCache) {
-              setCachedTranslation(originalText, translation, model);
-            }
-          } else {
-            skipped++;
-          }
-        });
-
-        // DOM_APPLY 로깅
-        logDebug('DOM_APPLY', '번역 DOM 적용 완료', {
-          batchIdx,
-          applied,
-          skipped,
-          mode: useCache ? 'fast' : 'fresh'
-        });
-
-        resolve();
-      });
-    });
+    return translations;
 
   } catch (error) {
-    logError('BATCH_ERROR', '배치 처리 실패', { batchIdx }, error);
+    logError('BATCH_ERROR', '배치 번역 실패', { batchIdx }, error);
     throw error;
   }
+}
+
+// DOM 적용 (순서 보장)
+async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
+  let applied = 0;
+  let skipped = 0;
+
+  await new Promise(resolve => {
+    requestAnimationFrame(() => {
+      batch.elements.forEach((element, idx) => {
+        const translation = batch.translations[idx];
+        if (translation && translation !== null) {
+          const originalText = batch.texts[idx];
+
+          if (!originalTexts.has(element)) {
+            originalTexts.set(element, element.textContent);
+          }
+
+          element.textContent = translation;
+          applied++;
+          translatedElements.add(element);
+          progressStatus.translatedCount++;
+
+          // 캐시에 저장
+          if (useCache) {
+            setCachedTranslation(originalText, translation, model);
+          }
+        } else {
+          skipped++;
+        }
+      });
+
+      // DOM_APPLY 로깅
+      logDebug('DOM_APPLY', '번역 DOM 적용 완료', {
+        batchIdx,
+        applied,
+        skipped,
+        mode: useCache ? 'fast' : 'fresh'
+      });
+
+      pushProgress();
+      resolve();
+    });
+  });
 }
 
 // OpenRouter API 번역
