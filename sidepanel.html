@@ -207,6 +207,174 @@
       display: block;
     }
 
+    /* ===== 히스토리 탭 스타일 ===== */
+    .history-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .history-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .history-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .history-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .history-clear-btn {
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .history-clear-btn:hover:not(:disabled) {
+      background: var(--btn-secondary-hover);
+      color: var(--text-primary);
+    }
+
+    .history-clear-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      outline: none;
+    }
+
+    .history-item:hover {
+      background: rgba(42, 108, 240, 0.12);
+      border-color: rgba(42, 108, 240, 0.4);
+    }
+
+    .history-item:focus-visible {
+      outline: 2px solid rgba(42, 108, 240, 0.6);
+      outline-offset: 2px;
+    }
+
+    .history-item-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow: hidden;
+    }
+
+    .history-item-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-item-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-item-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .history-item-meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .history-item-delete {
+      width: 32px;
+      height: 32px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .history-item-delete:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .history-empty {
+      padding: 32px 20px;
+      border-radius: var(--radius-md);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(18, 20, 24, 0.8);
+      text-align: center;
+      color: var(--text-secondary);
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .history-empty-icon {
+      font-size: 36px;
+    }
+
+    .history-empty p {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
     /* 카드 스타일 */
     .main-card {
       background: var(--bg-card);
@@ -815,6 +983,27 @@
           </div>
         </div>
 
+        <!-- 히스토리 탭 -->
+        <div id="historyTab" class="tab-content">
+          <div class="history-card">
+            <div class="history-header">
+              <div>
+                <div class="history-title">번역 히스토리</div>
+                <div class="history-subtitle">최근 번역한 페이지 목록입니다. 항목을 선택하면 동일한 조건으로 번역을 다시 실행합니다.</div>
+              </div>
+              <button id="historyClearBtn" class="history-clear-btn" type="button">전체 삭제</button>
+            </div>
+
+            <div id="historyEmpty" class="history-empty" role="status">
+              <div class="history-empty-icon">🗒️</div>
+              <p>아직 저장된 번역 기록이 없습니다. 페이지를 번역하면 목록이 자동으로 채워집니다.</p>
+              <button id="historyEmptyAction" class="btn secondary" type="button">지금 번역 시작</button>
+            </div>
+
+            <div id="historyList" class="history-list" aria-live="polite"></div>
+          </div>
+        </div>
+
         <!-- 설정 탭 -->
         <div id="settingsTab" class="tab-content">
           <!-- API 설정 -->
@@ -940,6 +1129,13 @@
           <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
         </svg>
         <span>AI 번역</span>
+      </button>
+
+      <button role="tab" data-tab="history" aria-selected="false" title="히스토리">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7 6.93 6.93 0 01-4.9-2H7.62A9 9 0 1013 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/>
+        </svg>
+        <span>히스토리</span>
       </button>
 
       <button role="tab" data-tab="settings" aria-selected="false" title="설정">

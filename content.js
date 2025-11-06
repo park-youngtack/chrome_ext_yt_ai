@@ -294,6 +294,7 @@ function pushProgress() {
  * - translateFullPage: 전체 페이지 번역 시작
  * - restoreOriginal: 원본 텍스트 복원
  * - getTranslationState: 현재 번역 상태 조회
+ * - getTranslatedTitle: 번역된 제목 조회
  * - clearAllCache: 전역 캐시 비우기
  * - clearPageCache: 페이지 캐시 비우기
  */
@@ -312,6 +313,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   } else if (request.action === 'getTranslationState') {
     sendResponse({ state: translationState });
+  } else if (request.action === 'getTranslatedTitle') {
+    sendResponse({ title: document.title });
   } else if (request.action === 'clearAllCache') {
     clearAllCache().then(() => sendResponse({ success: true }));
     return true;

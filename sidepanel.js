@@ -23,6 +23,8 @@ import { log, logInfo, logWarn, logError, logDebug, getLogs } from './logger.js'
 // ===== 설정 상수 =====
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const SESSION_KEY = 'lastActiveTab';
+const HISTORY_STORAGE_KEY = 'translationHistory';
+const HISTORY_MAX_ITEMS = 100;
 
 // ===== 전역 상태 =====
 let currentTabId = null;          // 현재 활성 탭 ID
@@ -30,6 +32,9 @@ let port = null;                  // content script와의 통신 port
 let permissionGranted = false;    // 현재 탭의 권한 상태
 let settingsChanged = false;      // 설정 변경 여부 (저장 바 표시용)
 let originalSettings = {};        // 원본 설정 (취소 시 복원용)
+let lastTranslateMode = 'cache';  // 마지막 번역 모드 기록
+let lastHistoryCompletionMeta = { signature: null, ts: 0 }; // 직전 히스토리 저장 메타
+const translateModeByTab = new Map(); // 탭별 마지막 번역 모드 추적
 
 /**
  * 번역 진행 상태 (content script에서 port로 수신)
@@ -104,6 +109,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 히스토리 탭 초기화
+  await initHistoryTab();
+
   // 설정 탭 이벤트
   initSettingsTab();
 
@@ -169,7 +177,7 @@ function handleTabKeydown(e) {
 /**
  * 탭 전환
  * 탭 버튼 상태 업데이트 및 컨텐츠 전환
- * @param {string} tabName - 'translate' | 'settings'
+ * @param {string} tabName - 'translate' | 'history' | 'settings'
  */
 async function switchTab(tabName) {
   // 탭 버튼 상태 업데이트
@@ -204,6 +212,11 @@ async function switchTab(tabName) {
   if (tabName === 'settings') {
     await loadSettings();
   }
+
+  // 히스토리 탭으로 전환 시 목록 새로고침
+  if (tabName === 'history') {
+    await renderHistoryList();
+  }
 }
 
 /**
@@ -215,7 +228,7 @@ async function restoreSession() {
     const result = await chrome.storage.session.get(SESSION_KEY);
     const lastTab = result[SESSION_KEY];
 
-    if (lastTab && (lastTab === 'translate' || lastTab === 'settings')) {
+    if (lastTab && (lastTab === 'translate' || lastTab === 'settings' || lastTab === 'history')) {
       switchTab(lastTab);
     }
   } catch (error) {
@@ -230,7 +243,7 @@ async function restoreSession() {
  */
 function handleDeepLink() {
   const hash = window.location.hash.slice(1); // # 제거
-  if (hash === 'translate' || hash === 'settings') {
+  if (hash === 'translate' || hash === 'settings' || hash === 'history') {
     switchTab(hash);
   }
 }
@@ -260,6 +273,404 @@ async function updateApiKeyUI() {
     }
   } catch (error) {
     logError('sidepanel', 'API_KEY_CHECK_ERROR', 'API Key 확인 실패', {}, error);
+  }
+}
+
+// ===== 히스토리 관리 =====
+
+/**
+ * 히스토리 탭 초기화
+ * 버튼 이벤트를 연결하고 최초 렌더링을 수행한다.
+ */
+async function initHistoryTab() {
+  const clearBtn = document.getElementById('historyClearBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      await clearHistory();
+    });
+  }
+
+  const emptyActionBtn = document.getElementById('historyEmptyAction');
+  if (emptyActionBtn) {
+    emptyActionBtn.addEventListener('click', () => {
+      switchTab('translate');
+    });
+  }
+
+  await renderHistoryList();
+}
+
+/**
+ * 히스토리 항목 목록을 렌더링한다.
+ * @param {Array<object>} prefetchedEntries - 이미 조회된 히스토리 배열 (선택 사항)
+ */
+async function renderHistoryList(prefetchedEntries) {
+  try {
+    const listEl = document.getElementById('historyList');
+    const emptyEl = document.getElementById('historyEmpty');
+    const clearBtn = document.getElementById('historyClearBtn');
+
+    if (!listEl || !emptyEl || !clearBtn) {
+      return;
+    }
+
+    const entries = Array.isArray(prefetchedEntries) ? prefetchedEntries : await loadHistoryEntries();
+
+    listEl.innerHTML = '';
+
+    if (!entries || entries.length === 0) {
+      emptyEl.style.display = 'flex';
+      clearBtn.disabled = true;
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    clearBtn.disabled = false;
+
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry) => {
+      fragment.appendChild(createHistoryItemElement(entry));
+    });
+
+    listEl.appendChild(fragment);
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_RENDER_ERROR', '히스토리 목록 렌더링 실패', {}, error);
+  }
+}
+
+/**
+ * 히스토리 데이터를 storage에서 불러온다.
+ * @returns {Promise<Array<object>>} 최신순으로 정렬된 히스토리 배열
+ */
+async function loadHistoryEntries() {
+  try {
+    const result = await chrome.storage.local.get([HISTORY_STORAGE_KEY]);
+    const history = Array.isArray(result[HISTORY_STORAGE_KEY]) ? result[HISTORY_STORAGE_KEY] : [];
+    return history
+      .map((item) => ({ ...item }))
+      .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_LOAD_ERROR', '히스토리 불러오기 실패', {}, error);
+    return [];
+  }
+}
+
+/**
+ * 히스토리 항목 DOM 요소를 생성한다.
+ * @param {object} entry - 히스토리 데이터
+ * @returns {HTMLDivElement} 렌더링된 항목 요소
+ */
+function createHistoryItemElement(entry) {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.dataset.id = entry.id;
+  item.setAttribute('role', 'button');
+  item.tabIndex = 0;
+
+  const body = document.createElement('div');
+  body.className = 'history-item-body';
+
+  const title = document.createElement('div');
+  title.className = 'history-item-title';
+  title.textContent = entry.translatedTitle || entry.originalTitle || entry.url;
+  body.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.className = 'history-item-subtitle';
+  if (entry.originalTitle && entry.originalTitle !== entry.translatedTitle) {
+    subtitle.textContent = `원본: ${entry.originalTitle}`;
+  } else {
+    subtitle.textContent = entry.originalTitle || '원본 제목 없음';
+  }
+  body.appendChild(subtitle);
+
+  const meta = document.createElement('div');
+  meta.className = 'history-item-meta';
+
+  const urlSpan = document.createElement('span');
+  urlSpan.textContent = entry.url;
+  meta.appendChild(urlSpan);
+
+  const timeSpan = document.createElement('span');
+  timeSpan.textContent = formatHistoryTime(entry.completedAt);
+  meta.appendChild(timeSpan);
+
+  const modeSpan = document.createElement('span');
+  modeSpan.textContent = formatHistoryMode(entry.mode);
+  meta.appendChild(modeSpan);
+
+  body.appendChild(meta);
+  item.appendChild(body);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'history-item-delete';
+  deleteBtn.type = 'button';
+  deleteBtn.setAttribute('aria-label', '히스토리 항목 삭제');
+  deleteBtn.textContent = '✕';
+  deleteBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    deleteHistoryEntry(entry.id);
+  });
+  item.appendChild(deleteBtn);
+
+  item.addEventListener('click', () => {
+    handleHistoryItemOpen(entry);
+  });
+
+  item.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleHistoryItemOpen(entry);
+    }
+  });
+
+  return item;
+}
+
+/**
+ * 히스토리 항목 저장 헬퍼
+ * @param {object} entry - 저장할 히스토리 데이터
+ */
+async function saveHistoryEntry(entry) {
+  try {
+    const result = await chrome.storage.local.get([HISTORY_STORAGE_KEY]);
+    const history = Array.isArray(result[HISTORY_STORAGE_KEY]) ? result[HISTORY_STORAGE_KEY] : [];
+
+    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `history-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const normalized = {
+      id,
+      url: entry.url,
+      originalTitle: entry.originalTitle,
+      translatedTitle: entry.translatedTitle,
+      completedAt: entry.completedAt,
+      mode: entry.mode
+    };
+
+    const next = [normalized, ...history].slice(0, HISTORY_MAX_ITEMS);
+    await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: next });
+
+    logInfo('sidepanel', 'HISTORY_SAVED', '번역 히스토리 저장', {
+      url: normalized.url,
+      mode: normalized.mode
+    });
+
+    if (isHistoryTabActive()) {
+      await renderHistoryList(next);
+    }
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_SAVE_ERROR', '히스토리 저장 실패', { url: entry.url }, error);
+  }
+}
+
+/**
+ * 단일 히스토리 항목을 삭제한다.
+ * @param {string} entryId - 삭제할 항목 ID
+ */
+async function deleteHistoryEntry(entryId) {
+  try {
+    const entries = await loadHistoryEntries();
+    const filtered = entries.filter((item) => item.id !== entryId);
+    await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: filtered });
+
+    if (isHistoryTabActive()) {
+      await renderHistoryList(filtered);
+    }
+
+    showToast('선택한 기록을 삭제했습니다.');
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_DELETE_ERROR', '히스토리 항목 삭제 실패', { entryId }, error);
+    showToast('히스토리 삭제 중 오류가 발생했습니다.', 'error');
+  }
+}
+
+/**
+ * 전체 히스토리를 초기화한다.
+ */
+async function clearHistory() {
+  try {
+    await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: [] });
+    await renderHistoryList([]);
+    showToast('모든 번역 기록을 삭제했습니다.');
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_CLEAR_ERROR', '히스토리 전체 삭제 실패', {}, error);
+    showToast('히스토리를 초기화하는 중 문제가 발생했습니다.', 'error');
+  }
+}
+
+/**
+ * 히스토리 탭 활성 여부를 확인한다.
+ * @returns {boolean} 히스토리 탭 활성 상태
+ */
+function isHistoryTabActive() {
+  const historyTab = document.getElementById('historyTab');
+  return historyTab ? historyTab.classList.contains('active') : false;
+}
+
+/**
+ * 히스토리 항목을 클릭했을 때 페이지를 열고 번역을 재실행한다.
+ * @param {object} entry - 실행할 히스토리 데이터
+ */
+async function handleHistoryItemOpen(entry) {
+  try {
+    logInfo('sidepanel', 'HISTORY_OPEN', '히스토리 항목 실행', {
+      url: entry.url,
+      mode: entry.mode
+    });
+
+    let targetTabId = currentTabId;
+
+    if (!targetTabId) {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab) {
+        targetTabId = activeTab.id;
+      }
+    }
+
+    let updatedTab;
+    if (targetTabId) {
+      updatedTab = await chrome.tabs.update(targetTabId, { url: entry.url, active: true });
+    } else {
+      updatedTab = await chrome.tabs.create({ url: entry.url, active: true });
+      targetTabId = updatedTab.id;
+    }
+
+    currentTabId = updatedTab.id;
+
+    try {
+      const tabInfo = await chrome.tabs.get(updatedTab.id);
+      if (!tabInfo || tabInfo.status !== 'complete') {
+        await waitForTabLoad(updatedTab.id).catch(() => {
+          // 로딩 상태를 감지하지 못하면 바로 진행 (일부 사이트는 status 이벤트가 제한됨)
+        });
+      }
+    } catch (error) {
+      logDebug('sidepanel', 'HISTORY_WAIT_FALLBACK', '탭 상태 확인 실패, 바로 번역 실행', {
+        tabId: updatedTab.id,
+        reason: error?.message || '알 수 없음'
+      });
+    }
+
+    lastTranslateMode = entry.mode === 'fresh' ? 'fresh' : 'cache';
+    await handleTranslateAll(entry.mode !== 'fresh');
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_OPEN_ERROR', '히스토리 항목 실행 실패', { url: entry.url }, error);
+    showToast('히스토리 항목을 여는 중 문제가 발생했습니다.', 'error');
+  }
+}
+
+/**
+ * 탭 로딩 완료를 대기하는 헬퍼
+ * @param {number} tabId - 대상 탭 ID
+ * @param {number} timeoutMs - 최대 대기 시간 (기본 20000ms)
+ * @returns {Promise<void>} 로딩 완료 시 resolve
+ */
+function waitForTabLoad(tabId, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const timeoutId = setTimeout(() => {
+      if (!finished) {
+        chrome.tabs.onUpdated.removeListener(listener);
+        reject(new Error('TAB_LOAD_TIMEOUT'));
+      }
+    }, timeoutMs);
+
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        finished = true;
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+/**
+ * 완료 시각을 사용자 친화적인 문자열로 변환한다.
+ * @param {string} isoString - ISO 포맷 문자열
+ * @returns {string} 포맷된 시각 텍스트
+ */
+function formatHistoryTime(isoString) {
+  try {
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) {
+      return '시간 정보 없음';
+    }
+    return new Intl.DateTimeFormat('ko-KR', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(date);
+  } catch (error) {
+    return '시간 정보 없음';
+  }
+}
+
+/**
+ * 모드 값을 사용자에게 친숙한 표현으로 변환한다.
+ * @param {string} mode - 'cache' 또는 'fresh'
+ * @returns {string} 한글 라벨
+ */
+function formatHistoryMode(mode) {
+  if (mode === 'fresh') {
+    return '새로 번역';
+  }
+  return '빠른 모드';
+}
+
+/**
+ * 번역 완료 이벤트를 히스토리에 반영한다.
+ * @param {number} tabId - 번역이 완료된 탭 ID
+ * @param {object} data - content script 진행 데이터
+ */
+async function handleTranslationCompletedForHistory(tabId, data) {
+  try {
+    const signature = `${tabId}-${data.totalTexts}-${data.translatedCount}-${data.activeMs}`;
+    const now = Date.now();
+
+    if (lastHistoryCompletionMeta.signature === signature && now - lastHistoryCompletionMeta.ts < 2000) {
+      return;
+    }
+
+    lastHistoryCompletionMeta = { signature, ts: now };
+
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !tab.url) {
+      return;
+    }
+
+    const originalTitle = tab.title || '제목 없음';
+    let translatedTitle = originalTitle;
+
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { action: 'getTranslatedTitle' });
+      if (response && typeof response.title === 'string' && response.title.trim().length > 0) {
+        translatedTitle = response.title.trim();
+      }
+    } catch (error) {
+      logDebug('sidepanel', 'HISTORY_TITLE_FALLBACK', '번역 제목 요청 실패, 원본 제목 사용', {
+        tabId,
+        reason: error?.message || '알 수 없음'
+      });
+    }
+
+    const mode = translateModeByTab.get(tabId) || lastTranslateMode;
+
+    await saveHistoryEntry({
+      url: tab.url,
+      originalTitle,
+      translatedTitle,
+      completedAt: new Date().toISOString(),
+      mode
+    });
+
+    translateModeByTab.delete(tabId);
+  } catch (error) {
+    logError('sidepanel', 'HISTORY_CAPTURE_ERROR', '번역 완료 히스토리 기록 실패', { tabId }, error);
   }
 }
 
@@ -696,6 +1107,8 @@ function connectToContentScript(tabId) {
             elapsedMs: msg.data.activeMs,
             batches: msg.data.batchCount
           });
+
+          void handleTranslationCompletedForHistory(tabId, msg.data);
         }
       }
     });
@@ -726,10 +1139,15 @@ function connectToContentScript(tabId) {
 async function handleTranslateAll(useCache = true) {
   const button = useCache ? 'fast-translate' : 'full-translate';
 
+  // 마지막 번역 모드를 기록하여 히스토리에 활용
+  lastTranslateMode = useCache ? 'cache' : 'fresh';
+
   if (!currentTabId) {
     showToast('활성 탭을 찾을 수 없습니다.', 'error');
     return;
   }
+
+  translateModeByTab.set(currentTabId, lastTranslateMode);
 
   // 현재 탭 정보 가져오기
   try {
