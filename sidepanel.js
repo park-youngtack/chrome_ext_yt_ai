@@ -385,18 +385,20 @@ function getSupportType(url) {
   }
 }
 
-// 권한 확인
+// 권한 확인 (조용히 체크만, UI는 항상 표시)
 async function checkPermissions(tab) {
   if (!tab || !tab.url) {
-    showPermissionUI('unsupported', '유효하지 않은 탭입니다.');
+    permissionGranted = false;
+    updateTranslateButtonState();
     return;
   }
 
   const supportType = getSupportType(tab.url);
 
-  // 지원 불가 스킴
+  // 지원 불가 스킴 - 권한 없음으로 표시만
   if (supportType === 'unsupported') {
-    showPermissionUI('unsupported', '이 페이지는 브라우저 정책상 번역을 지원하지 않습니다. 일반 웹페이지에서 사용해주세요.');
+    permissionGranted = false;
+    updateTranslateButtonState();
     return;
   }
 
@@ -410,17 +412,12 @@ async function checkPermissions(tab) {
         origins: [origin]
       });
 
-      if (hasPermission) {
-        permissionGranted = true;
-        showPermissionUI('granted');
-        updateTranslateButtonState();
-      } else {
-        permissionGranted = false;
-        showPermissionUI('file', '파일 URL 접근 허용을 켜야 번역할 수 있습니다.');
-      }
+      permissionGranted = hasPermission;
+      updateTranslateButtonState();
     } catch (error) {
       console.error('File permission check failed:', error);
-      showPermissionUI('file', '파일 URL 접근 허용을 켜야 번역할 수 있습니다.');
+      permissionGranted = false;
+      updateTranslateButtonState();
     }
     return;
   }
@@ -435,58 +432,18 @@ async function checkPermissions(tab) {
       origins: [origin]
     });
 
-    if (hasPermission) {
-      permissionGranted = true;
-      showPermissionUI('granted');
-      updateTranslateButtonState();
-    } else {
-      permissionGranted = false;
-      showPermissionUI('requestable', '이 사이트를 번역하려면 접근 권한이 필요합니다.');
-    }
+    permissionGranted = hasPermission;
+    updateTranslateButtonState();
   } catch (error) {
     console.error('Permission check failed:', error);
-    showPermissionUI('requestable', '권한 확인 중 오류가 발생했습니다.');
+    permissionGranted = false;
+    updateTranslateButtonState();
   }
 }
 
-// 권한 UI 표시
+// 권한 UI 표시 (레거시 함수, 현재 미사용)
 function showPermissionUI(type, message = '') {
-  const permissionSection = document.getElementById('permissionSection');
-  const mainSection = document.getElementById('mainSection');
-  const permissionMessage = document.getElementById('permissionMessage');
-  const permissionBtn = document.getElementById('requestPermissionBtn');
-  const settingsBtn = document.getElementById('openSettingsBtn');
-
-  if (type === 'granted') {
-    // 권한 있음 - 메인 섹션 표시
-    permissionSection.style.display = 'none';
-    mainSection.style.display = 'block';
-  } else if (type === 'unsupported') {
-    // 지원 불가 스킴 - 권한 버튼 숨김, 안내만 표시
-    permissionSection.style.display = 'block';
-    mainSection.style.display = 'none';
-    permissionMessage.textContent = message;
-    permissionBtn.style.display = 'none';
-    if (settingsBtn) settingsBtn.style.display = 'none';
-  } else if (type === 'file') {
-    // file:// - 설정 열기 버튼 표시
-    permissionSection.style.display = 'block';
-    mainSection.style.display = 'none';
-    permissionMessage.textContent = message;
-    permissionBtn.style.display = 'none';
-    if (settingsBtn) {
-      settingsBtn.style.display = 'block';
-      settingsBtn.textContent = '설정 열기';
-    }
-  } else if (type === 'requestable') {
-    // http/https 권한 없음 - 권한 허용 버튼 표시
-    permissionSection.style.display = 'block';
-    mainSection.style.display = 'none';
-    permissionMessage.textContent = message;
-    permissionBtn.style.display = 'block';
-    permissionBtn.textContent = '권한 허용';
-    if (settingsBtn) settingsBtn.style.display = 'none';
-  }
+  // UI는 항상 표시, 이 함수는 더 이상 사용되지 않음
 }
 
 // 권한 요청
@@ -515,12 +472,13 @@ async function handleRequestPermission() {
 
       // 권한 UI 업데이트
       await checkPermissions(tab);
+      showToast('권한이 허용되었습니다!');
     } else {
-      showPermissionUI(false, '권한이 거부되었습니다.');
+      showToast('권한이 거부되었습니다.', 'error');
     }
   } catch (error) {
     console.error('Permission request failed:', error);
-    showPermissionUI(false, '권한 요청 중 오류가 발생했습니다.');
+    showToast('권한 요청 중 오류가 발생했습니다.', 'error');
   }
 }
 
@@ -651,9 +609,50 @@ function connectToContentScript(tabId) {
 async function handleTranslateAll(useCache = true) {
   const button = useCache ? 'fast-translate' : 'full-translate';
 
-  if (!currentTabId || !permissionGranted) {
-    logWarn('sidepanel', 'UI_CLICK_BLOCKED', '권한 미허용', { button, tabId: currentTabId, permissionGranted });
-    showToast('권한을 먼저 허용해주세요.', 'error');
+  if (!currentTabId) {
+    showToast('활성 탭을 찾을 수 없습니다.', 'error');
+    return;
+  }
+
+  // 현재 탭 정보 가져오기
+  try {
+    const tab = await chrome.tabs.get(currentTabId);
+    const supportType = getSupportType(tab.url);
+
+    // 지원하지 않는 URL 체크 (사용자 액션 시에만!)
+    if (supportType === 'unsupported') {
+      logWarn('sidepanel', 'UI_CLICK_BLOCKED', '지원하지 않는 URL', {
+        button,
+        tabId: currentTabId,
+        url: tab.url
+      });
+      showToast('이 페이지는 브라우저 정책상 번역을 지원하지 않습니다. 일반 웹페이지에서 사용해주세요.', 'error');
+      return;
+    }
+
+    // file:// URL 권한 체크
+    if (supportType === 'file' && !permissionGranted) {
+      logWarn('sidepanel', 'UI_CLICK_BLOCKED', 'file:// 권한 없음', {
+        button,
+        tabId: currentTabId
+      });
+      showToast('파일 URL 접근 권한을 허용해야 번역할 수 있습니다. Chrome 확장 프로그램 설정에서 "파일 URL에 대한 액세스 허용"을 켜주세요.', 'error');
+      return;
+    }
+
+    // http/https URL 권한 체크
+    if (supportType === 'requestable' && !permissionGranted) {
+      logWarn('sidepanel', 'UI_CLICK_BLOCKED', '권한 미허용', {
+        button,
+        tabId: currentTabId,
+        permissionGranted
+      });
+      showToast('이 사이트를 번역하려면 접근 권한이 필요합니다. 권한 허용 후 다시 시도해주세요.', 'error');
+      return;
+    }
+  } catch (error) {
+    logError('sidepanel', 'TAB_INFO_ERROR', '탭 정보 가져오기 실패', { tabId: currentTabId }, error);
+    showToast('탭 정보를 가져올 수 없습니다.', 'error');
     return;
   }
 
