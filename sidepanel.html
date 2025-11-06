@@ -891,18 +891,26 @@
 
           <!-- 디버그 설정 -->
           <div class="settings-section">
-            <div class="settings-title">디버그 설정</div>
+            <div class="settings-title">고급 (개발자용)</div>
 
             <div class="form-group">
               <div class="toggle-group">
-                <label for="enableConsoleLog">콘솔 로그 출력</label>
+                <label for="debugLog">디버그 로그 (DEBUG)</label>
                 <label class="toggle-switch">
-                  <input type="checkbox" id="enableConsoleLog">
+                  <input type="checkbox" id="debugLog">
                   <span class="toggle-slider"></span>
                 </label>
               </div>
               <div class="form-help">
-                활성화하면 확장 프로그램의 동작 로그가 콘솔에 출력됩니다. (기본값: 비활성)
+                ON: 상세 DEBUG 로그 출력 | OFF: INFO/WARN/ERROR만 출력 (기본값: OFF)
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>개발자 도구</label>
+              <button id="copyLogsBtn" class="btn secondary">최근 로그 복사 (개발자용)</button>
+              <div class="form-help">
+                최근 500개 로그를 클립보드에 복사합니다. 이슈 리포트 시 유용합니다.
               </div>
             </div>
           </div>

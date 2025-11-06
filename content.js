@@ -9,22 +9,77 @@ const DB_VERSION = 1;
 const STORE_NAME = 'translations';
 const DEFAULT_TTL_MINUTES = 60;
 
-// 로거 함수 (설정에 따라 로그 출력)
-async function log(...args) {
+// ===== 로깅 시스템 =====
+const LEVEL_MAP = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+let currentLogLevel = 'INFO';
+
+// 초기화: storage에서 설정 로드
+(async () => {
   try {
-    const result = await chrome.storage.local.get(['enableConsoleLog']);
-    if (result.enableConsoleLog) {
-      console.log('[번역 확장]', ...args);
-    }
+    const result = await chrome.storage.local.get(['debugLog']);
+    currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
   } catch (error) {
-    // 설정 로드 실패 시 로그 출력 안 함
+    // storage 접근 실패 시 기본값 유지
   }
+})();
+
+// 설정 변경 감지
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.debugLog) {
+    currentLogLevel = changes.debugLog.newValue ? 'DEBUG' : 'INFO';
+  }
+});
+
+// 민감정보 마스킹
+function maskSensitive(data) {
+  if (!data || typeof data !== 'object') return data;
+  const masked = { ...data };
+  if (masked.apiKey) masked.apiKey = masked.apiKey.substring(0, 8) + '***';
+  if (masked.text && typeof masked.text === 'string' && masked.text.length > 20) {
+    masked.text = masked.text.substring(0, 20) + `...(${masked.text.length}자)`;
+  }
+  if (masked.texts && Array.isArray(masked.texts)) {
+    masked.textCount = masked.texts.length;
+    masked.texts = `[${masked.texts.length}개 항목]`;
+  }
+  if (masked.original && typeof masked.original === 'string' && masked.original.length > 20) {
+    masked.original = masked.original.substring(0, 20) + `...(${masked.original.length}자)`;
+  }
+  return masked;
 }
 
-async function logError(...args) {
-  // 에러는 항상 출력
-  console.error('[번역 확장 오류]', ...args);
+// 로그 출력
+function log(level, evt, msg = '', data = {}, err = null) {
+  if (level === 'DEBUG' && LEVEL_MAP[level] < LEVEL_MAP[currentLogLevel]) return;
+
+  const masked = maskSensitive(data);
+  const record = { ts: new Date().toISOString(), level, ns: 'content', evt, msg, ...masked };
+
+  if (err) {
+    if (err instanceof Error) {
+      record.err = err.message;
+      record.stack = err.stack;
+    } else {
+      record.err = String(err);
+    }
+  }
+
+  const prefix = `%c[WPT]%c content %c${level}%c ${evt}`;
+  const css = [
+    'color:#8ab4f8;font-weight:bold',
+    'color:#9aa0a6',
+    `color:${level === 'ERROR' ? '#f28b82' : level === 'WARN' ? '#fbbc05' : level === 'DEBUG' ? '#81c995' : '#e8eaed'};font-weight:bold`,
+    'color:#e8eaed'
+  ];
+
+  const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
+  console[consoleMethod](prefix, ...css, record);
 }
+
+const logDebug = (evt, msg, data, err) => log('DEBUG', evt, msg, data, err);
+const logInfo = (evt, msg, data, err) => log('INFO', evt, msg, data, err);
+const logWarn = (evt, msg, data, err) => log('WARN', evt, msg, data, err);
+const logError = (evt, msg, data, err) => log('ERROR', evt, msg, data, err);
 
 // 진행 상태
 let progressStatus = {
@@ -73,6 +128,7 @@ function startTimer() {
     lastTick = now;
     pushProgress(); // 1초마다 푸시
   }, 1000);
+  logDebug('TIMER_START', '번역 타이머 시작');
 }
 
 // 타이머 정지
@@ -85,6 +141,7 @@ function stopTimer() {
   timerId = null;
   lastTick = null;
   pushProgress();
+  logDebug('TIMER_STOP', '번역 타이머 정지', { totalMs: Math.round(activeMs) });
 }
 
 // 배치 시작
@@ -142,7 +199,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 전체 페이지 번역
 async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrency = 3, useCache = true) {
-  log('Starting full page translation...', {
+  // CONTENT_INIT 로깅
+  const url = window.location.href;
+  logInfo('CONTENT_INIT', '번역 시작', {
+    url,
     batchSize,
     concurrency,
     useCache,
@@ -171,6 +231,11 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     // 텍스트 노드 수집
     const textNodes = getAllTextNodes();
     const { texts, elements } = extractTexts(textNodes);
+
+    logDebug('TEXT_NODES_COLLECTED', '텍스트 노드 수집 완료', {
+      textNodes: textNodes.length,
+      texts: texts.length
+    });
 
     progressStatus.totalTexts = texts.length;
     pushProgress();
@@ -228,11 +293,23 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     progressStatus.cachedCount = cachedItems.length;
     pushProgress();
 
+    // CACHE_STATS 로깅
+    logInfo('CACHE_STATS', '캐시 조회 완료', {
+      hits: cachedItems.length,
+      misses: newTexts.length,
+      total: texts.length,
+      ttlMin: await getTTL()
+    });
+
     // 대규모 변경 확인 (≥20% 변경 시 자동 전면 재번역)
     if (useCache && texts.length > 0) {
       const changeRate = newTexts.length / texts.length;
       if (changeRate >= 0.20) {
-        log(`Large page change detected (${Math.round(changeRate * 100)}%), forcing full retranslation`);
+        logWarn('AUTO_FULL_RETRANSLATE', '대규모 페이지 변경 감지, 전면 재번역', {
+          changeRate: Math.round(changeRate * 100) / 100,
+          threshold: 0.2
+        });
+
         // 전면 재번역으로 전환
         newTexts.length = 0;
         newElements.length = 0;
@@ -289,6 +366,14 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       }));
       pushProgress();
 
+      // BATCH_PLAN 로깅
+      logInfo('BATCH_PLAN', '배치 계획 생성', {
+        totalTexts: newTexts.length,
+        batchSize,
+        concurrency,
+        batches: batches.length
+      });
+
       // 병렬 배치 처리
       const processQueue = async () => {
         let index = 0;
@@ -331,15 +416,21 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     progressStatus.state = 'completed';
     pushProgress();
 
-    log('Translation completed:', {
-      total: progressStatus.totalTexts,
+    // 완료 요약 로깅
+    logInfo('TRANSLATION_COMPLETED', '번역 완료', {
+      totalTexts: progressStatus.totalTexts,
       translated: progressStatus.translatedCount,
-      cached: progressStatus.cachedCount,
-      time: Math.round(activeMs / 1000) + 's'
+      cacheHits: progressStatus.cachedCount,
+      elapsedMs: Math.round(activeMs),
+      batches: progressStatus.batchCount
     });
 
   } catch (error) {
-    logError('Translation failed:', error);
+    logError('TRANSLATION_ERROR', '번역 실패', {
+      totalTexts: progressStatus.totalTexts,
+      translated: progressStatus.translatedCount
+    }, error);
+
     translationState = 'inactive';
     progressStatus.state = 'error';
     pushProgress();
@@ -348,13 +439,21 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
 // 배치 처리
 async function processBatch(batch, apiKey, model, useCache) {
-  log(`Processing batch: ${batch.texts.length} texts`);
+  const batchIdx = progressStatus.batchesDone;
+
+  logDebug('BATCH_START', '배치 처리 시작', {
+    batchIdx,
+    count: batch.texts.length
+  });
 
   try {
     // API 호출
     const translations = await translateWithOpenRouter(batch.texts, apiKey, model);
 
     // DOM 적용
+    let applied = 0;
+    let skipped = 0;
+
     await new Promise(resolve => {
       requestAnimationFrame(() => {
         batch.elements.forEach((element, idx) => {
@@ -367,6 +466,7 @@ async function processBatch(batch, apiKey, model, useCache) {
             }
 
             element.textContent = translation;
+            applied++;
             translatedElements.add(element);
             progressStatus.translatedCount++;
 
@@ -374,20 +474,45 @@ async function processBatch(batch, apiKey, model, useCache) {
             if (useCache) {
               setCachedTranslation(originalText, translation, model);
             }
+          } else {
+            skipped++;
           }
         });
+
+        // DOM_APPLY 로깅
+        logDebug('DOM_APPLY', '번역 DOM 적용 완료', {
+          batchIdx,
+          applied,
+          skipped,
+          mode: useCache ? 'fast' : 'fresh'
+        });
+
         resolve();
       });
     });
 
   } catch (error) {
-    logError('Batch processing failed:', error);
+    logError('BATCH_ERROR', '배치 처리 실패', { batchIdx }, error);
     throw error;
   }
 }
 
 // OpenRouter API 번역
 async function translateWithOpenRouter(texts, apiKey, model) {
+  const reqId = Math.random().toString(36).substring(7);
+  const batchIdx = progressStatus.batchesDone;
+  const tokenEstimate = texts.join(' ').length / 4; // 대략적인 토큰 추정
+
+  // API_REQUEST_START 로깅
+  const startTime = performance.now();
+  logInfo('API_REQUEST_START', 'API 요청 시작', {
+    reqId,
+    batchIdx,
+    count: texts.length,
+    tokenEstimate: Math.round(tokenEstimate),
+    model
+  });
+
   const prompt = `다음 텍스트들을 한국어로 번역해주세요.
 
 번역할 텍스트:
@@ -399,31 +524,63 @@ ${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
 - 번역만 제공하고 다른 설명은 추가하지 마세요.
 - HTML 태그가 있다면 그대로 유지해주세요.`;
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.href,
-      'X-Title': 'Web Page Translator'
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
-    })
-  });
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.href,
+        'X-Title': 'Web Page Translator'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
+      })
+    });
 
-  if (!response.ok) {
-    throw new Error(`API error: ${response.statusText}`);
+    const durationMs = Math.round(performance.now() - startTime);
+
+    if (!response.ok) {
+      // API_REQUEST_END (실패)
+      logError('API_REQUEST_END', 'API 요청 실패', {
+        reqId,
+        batchIdx,
+        status: response.status,
+        durationMs
+      }, new Error(`API error: ${response.statusText}`));
+
+      throw new Error(`API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const translatedText = data.choices?.[0]?.message?.content || '';
+
+    // API_REQUEST_END (성공)
+    logInfo('API_REQUEST_END', 'API 요청 완료', {
+      reqId,
+      batchIdx,
+      status: 200,
+      durationMs
+    });
+
+    return parseTranslationResult(translatedText, texts.length);
+
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - startTime);
+
+    // API_REQUEST_END (에러)
+    logError('API_REQUEST_END', 'API 요청 에러', {
+      reqId,
+      batchIdx,
+      durationMs
+    }, error);
+
+    throw error;
   }
-
-  const data = await response.json();
-  const translatedText = data.choices?.[0]?.message?.content || '';
-
-  return parseTranslationResult(translatedText, texts.length);
 }
 
 // 번역 결과 파싱
