@@ -726,12 +726,50 @@ async function handleRestore() {
 
   logInfo('sidepanel', 'UI_CLICK', '원본 복원 버튼 클릭', { button: 'restore', tabId: currentTabId });
 
+  // URL 체크 (지원하지 않는 페이지에서는 원본 보기 불가)
+  try {
+    const tab = await chrome.tabs.get(currentTabId);
+    const supportType = getSupportType(tab.url);
+
+    if (supportType === 'unsupported') {
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', '지원하지 않는 URL에서 원본 보기 시도', {
+        button: 'restore',
+        tabId: currentTabId,
+        url: tab.url
+      });
+      showToast('이 페이지는 브라우저 정책상 원본 보기를 지원하지 않습니다.', 'error');
+      return;
+    }
+
+    if (supportType === 'file' && !permissionGranted) {
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', 'file:// 권한 없음 (원본 보기)', {
+        button: 'restore',
+        tabId: currentTabId
+      });
+      showToast('파일 URL 접근 권한이 필요합니다.', 'error');
+      return;
+    }
+
+    if (supportType === 'requestable' && !permissionGranted) {
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', '권한 미허용 (원본 보기)', {
+        button: 'restore',
+        tabId: currentTabId
+      });
+      showToast('이 사이트에 대한 접근 권한이 필요합니다.', 'error');
+      return;
+    }
+  } catch (error) {
+    logError('sidepanel', 'TAB_INFO_ERROR', '탭 정보 가져오기 실패 (원본 보기)', { tabId: currentTabId }, error);
+    showToast('탭 정보를 가져올 수 없습니다.', 'error');
+    return;
+  }
+
   try {
     // Content script 준비 확인
     const isReady = await ensureContentScriptReady(currentTabId);
     if (!isReady) {
-      logError('sidepanel', 'CONTENT_NOT_READY', 'Content script 준비 실패', { tabId: currentTabId });
-      showToast('페이지 준비 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      logInfo('sidepanel', 'CONTENT_NOT_READY', 'Content script 준비 실패 (원본 보기)', { tabId: currentTabId });
+      showToast('페이지 준비 중 문제가 발생했습니다. 페이지를 새로고침 후 다시 시도해주세요.', 'error');
       return;
     }
 
