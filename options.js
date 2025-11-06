@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'model',
     'batchSize',
     'concurrency',
-    'useCache'
+    'cacheTTL'
   ]);
 
   // API 설정
@@ -41,11 +41,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('concurrency').value = 3;
   }
 
-  if (result.useCache !== undefined) {
-    document.getElementById('useCache').checked = result.useCache;
+  // 캐시 설정
+  if (result.cacheTTL) {
+    document.getElementById('cacheTTL').value = result.cacheTTL;
   } else {
-    document.getElementById('useCache').checked = true; // 기본값 true
+    document.getElementById('cacheTTL').value = 60;
   }
+
+  // 캐시 비우기 버튼
+  document.getElementById('clearPageCacheBtn').addEventListener('click', handleClearPageCache);
+  document.getElementById('clearAllCacheBtn').addEventListener('click', handleClearAllCache);
 });
 
 // 설정 저장
@@ -54,7 +59,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   const modelInput = document.getElementById('model').value.trim();
   const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
   const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
-  const useCache = document.getElementById('useCache').checked;
+  const cacheTTL = parseInt(document.getElementById('cacheTTL').value) || 60;
 
   // 모델이 비어있으면 기본 모델 사용
   const model = modelInput || DEFAULT_MODEL;
@@ -76,20 +81,60 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     return;
   }
 
+  // 캐시 TTL 유효성 검사
+  if (cacheTTL < 5 || cacheTTL > 1440) {
+    showStatus('캐시 만료 시간은 5~1440분 사이여야 합니다.', 'error');
+    return;
+  }
+
   try {
     await chrome.storage.local.set({
       apiKey,
       model,
       batchSize,
       concurrency,
-      useCache
+      cacheTTL
     });
 
-    showStatus(`✅ 설정이 저장되었습니다! (모델: ${model})`, 'success');
+    showStatus(`✅ 설정이 저장되었습니다! (모델: ${model}, 캐시 TTL: ${cacheTTL}분)`, 'success');
   } catch (error) {
     showStatus('❌ 저장 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 });
+
+// 페이지 캐시 비우기
+async function handleClearPageCache() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) {
+      showStatus('❌ 활성 탭을 찾을 수 없습니다.', 'error');
+      return;
+    }
+
+    await chrome.tabs.sendMessage(tab.id, { action: 'clearPageCache' });
+    showStatus('✅ 이 페이지의 캐시가 삭제되었습니다.', 'success');
+  } catch (error) {
+    console.error('Failed to clear page cache:', error);
+    showStatus('❌ 캐시 삭제 중 오류가 발생했습니다: ' + error.message, 'error');
+  }
+}
+
+// 전역 캐시 비우기
+async function handleClearAllCache() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) {
+      showStatus('❌ 활성 탭을 찾을 수 없습니다.', 'error');
+      return;
+    }
+
+    await chrome.tabs.sendMessage(tab.id, { action: 'clearAllCache' });
+    showStatus('✅ 모든 캐시가 삭제되었습니다.', 'success');
+  } catch (error) {
+    console.error('Failed to clear all cache:', error);
+    showStatus('❌ 캐시 삭제 중 오류가 발생했습니다: ' + error.message, 'error');
+  }
+}
 
 function showStatus(message, type) {
   const statusEl = document.getElementById('status');

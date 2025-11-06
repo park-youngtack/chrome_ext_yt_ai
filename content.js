@@ -3,10 +3,11 @@ let translationState = 'inactive'; // 'inactive', 'translating', 'completed', 'r
 let originalTexts = new WeakMap(); // 원본 텍스트 저장
 let translatedElements = new Set(); // 번역된 요소 추적
 
-// 캐시 설정
-const MAX_CACHE_SIZE = 1000;
-let translationCache = new Map();
-let cacheAccessOrder = [];
+// IndexedDB 캐시 설정
+const DB_NAME = 'TranslationCache';
+const DB_VERSION = 1;
+const STORE_NAME = 'translations';
+const DEFAULT_TTL_MINUTES = 60;
 
 // 진행 상태
 let progressStatus = {
@@ -112,6 +113,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   } else if (request.action === 'getTranslationState') {
     sendResponse({ state: translationState });
+  } else if (request.action === 'clearAllCache') {
+    clearAllCache().then(() => sendResponse({ success: true }));
+    return true;
+  } else if (request.action === 'clearPageCache') {
+    clearPageCache().then(() => sendResponse({ success: true }));
+    return true;
   }
   return true;
 });
@@ -183,22 +190,70 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     progressStatus.cachedCount = cachedItems.length;
     pushProgress();
 
-    // 캐시된 번역 즉시 적용
+    // 대규모 변경 확인 (≥20% 변경 시 자동 전면 재번역)
+    if (useCache && texts.length > 0) {
+      const changeRate = newTexts.length / texts.length;
+      if (changeRate >= 0.20) {
+        console.log(`Large page change detected (${Math.round(changeRate * 100)}%), forcing full retranslation`);
+        // 전면 재번역으로 전환
+        newTexts.length = 0;
+        newElements.length = 0;
+        cachedItems.length = 0;
+
+        for (let i = 0; i < texts.length; i++) {
+          if (!translatedElements.has(elements[i])) {
+            newTexts.push(texts[i]);
+            newElements.push(elements[i]);
+          }
+        }
+
+        progressStatus.cachedCount = 0;
+        pushProgress();
+      }
+    }
+
+    // 캐시 검증 및 적용
     if (cachedItems.length > 0) {
-      await new Promise(resolve => {
-        requestAnimationFrame(() => {
-          cachedItems.forEach(({ element, text, translation }) => {
-            if (!originalTexts.has(element)) {
-              originalTexts.set(element, element.textContent);
-            }
-            element.textContent = translation;
-            translatedElements.add(element);
-            progressStatus.translatedCount++;
+      const verifiedItems = [];
+      const invalidItems = [];
+
+      // 캐시 검증
+      for (const item of cachedItems) {
+        const isValid = await verifyCachedTranslation(item.text, item.translation);
+        if (isValid) {
+          verifiedItems.push(item);
+        } else {
+          console.log('Cache verification failed, re-translating:', item.text.substring(0, 50));
+          invalidItems.push(item);
+        }
+      }
+
+      // 검증된 캐시 적용
+      if (verifiedItems.length > 0) {
+        await new Promise(resolve => {
+          requestAnimationFrame(() => {
+            verifiedItems.forEach(({ element, text, translation }) => {
+              if (!originalTexts.has(element)) {
+                originalTexts.set(element, element.textContent);
+              }
+              element.textContent = translation;
+              translatedElements.add(element);
+              progressStatus.translatedCount++;
+            });
+            pushProgress();
+            resolve();
           });
-          pushProgress();
-          resolve();
         });
-      });
+      }
+
+      // 검증 실패 항목은 재번역 대상으로 추가
+      if (invalidItems.length > 0) {
+        invalidItems.forEach(({ element, text }) => {
+          newTexts.push(text);
+          newElements.push(element);
+        });
+        console.log(`${invalidItems.length} cached items failed verification, added to retranslation queue`);
+      }
     }
 
     // 신규 번역 처리
@@ -305,7 +360,7 @@ async function processBatch(batch, apiKey, model, useCache) {
 
             // 캐시에 저장
             if (useCache) {
-              setCachedTranslation(originalText, translation);
+              setCachedTranslation(originalText, translation, model);
             }
           }
         });
@@ -485,40 +540,170 @@ function extractTexts(textNodes) {
   return { texts, elements };
 }
 
-// 캐시 저장 (LRU)
-function setCachedTranslation(original, translation) {
-  if (translationCache.has(original)) {
-    const index = cacheAccessOrder.indexOf(original);
-    if (index > -1) {
-      cacheAccessOrder.splice(index, 1);
-    }
-    cacheAccessOrder.push(original);
-    translationCache.set(original, translation);
-    return;
-  }
+// ==================== IndexedDB 캐시 함수 ====================
 
-  if (translationCache.size >= MAX_CACHE_SIZE) {
-    const oldest = cacheAccessOrder.shift();
-    if (oldest) {
-      translationCache.delete(oldest);
-    }
-  }
+// IndexedDB 열기
+async function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-  translationCache.set(original, translation);
-  cacheAccessOrder.push(original);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'hash' });
+      }
+    };
+  });
+}
+
+// SHA1 해시 생성
+async function sha1Hash(text) {
+  const normalized = normalizeText(text);
+  const msgBuffer = new TextEncoder().encode(normalized);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 텍스트 정규화
+function normalizeText(text) {
+  return text
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+}
+
+// TTL 가져오기
+async function getTTL() {
+  try {
+    const result = await chrome.storage.local.get(['cacheTTL']);
+    return (result.cacheTTL || DEFAULT_TTL_MINUTES) * 60 * 1000;
+  } catch (error) {
+    console.error('Failed to get TTL:', error);
+    return DEFAULT_TTL_MINUTES * 60 * 1000;
+  }
+}
+
+// 캐시 저장
+async function setCachedTranslation(text, translation, model) {
+  try {
+    const db = await openDB();
+    const hash = await sha1Hash(text);
+    const ts = Date.now();
+
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+
+    await store.put({
+      hash,
+      translation,
+      ts,
+      model
+    });
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+
+    db.close();
+  } catch (error) {
+    console.error('Failed to set cache:', error);
+  }
 }
 
 // 캐시 가져오기
-function getCachedTranslation(original) {
-  if (translationCache.has(original)) {
-    const index = cacheAccessOrder.indexOf(original);
-    if (index > -1) {
-      cacheAccessOrder.splice(index, 1);
-      cacheAccessOrder.push(original);
+async function getCachedTranslation(text) {
+  try {
+    const db = await openDB();
+    const hash = await sha1Hash(text);
+    const ttl = await getTTL();
+
+    const tx = db.transaction([STORE_NAME], 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+
+    const result = await new Promise((resolve, reject) => {
+      const request = store.get(hash);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    db.close();
+
+    if (!result) {
+      return null;
     }
-    return translationCache.get(original);
+
+    const now = Date.now();
+    if (now - result.ts > ttl) {
+      return null; // 만료
+    }
+
+    return result.translation;
+  } catch (error) {
+    console.error('Failed to get cache:', error);
+    return null;
   }
-  return null;
+}
+
+// 캐시 검증
+async function verifyCachedTranslation(text, translation) {
+  try {
+    const hash = await sha1Hash(text);
+    const db = await openDB();
+
+    const tx = db.transaction([STORE_NAME], 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+
+    const result = await new Promise((resolve, reject) => {
+      const request = store.get(hash);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    db.close();
+
+    if (!result) {
+      return false;
+    }
+
+    return result.translation === translation;
+  } catch (error) {
+    console.error('Failed to verify cache:', error);
+    return false;
+  }
+}
+
+// 전역 캐시 비우기
+async function clearAllCache() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+
+    await store.clear();
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+
+    db.close();
+    console.log('All cache cleared');
+    return true;
+  } catch (error) {
+    console.error('Failed to clear cache:', error);
+    return false;
+  }
+}
+
+// 페이지 캐시 비우기 (현재는 전체 비우기와 동일)
+async function clearPageCache() {
+  return await clearAllCache();
 }
 
 console.log('Content script loaded');

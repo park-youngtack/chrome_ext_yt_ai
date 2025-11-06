@@ -242,6 +242,16 @@
       transform: translateY(1px);
     }
 
+    .btn.secondary {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn.secondary:hover {
+      background: var(--bg-card);
+    }
+
     .status {
       margin-top: 20px;
       padding: 16px;
@@ -334,17 +344,34 @@
         </div>
       </div>
 
+    </div>
+
+    <div class="card">
+      <div class="card-title">캐시 설정</div>
+
       <div class="form-group">
-        <div class="toggle-group">
-          <label>번역 캐시 사용</label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="useCache" checked>
-            <span class="toggle-slider"></span>
-          </label>
+        <label>캐시 만료 시간 (분)</label>
+        <div class="inline-setting">
+          <label>TTL (Time To Live)</label>
+          <input type="number" id="cacheTTL" value="60" min="5" max="1440">
         </div>
         <div class="help-text">
-          이전에 번역한 텍스트를 캐시하여 빠르게 재사용합니다 (최대 1000개)
+          기본값: 60분 (최소 5분, 최대 1440분/24시간)
         </div>
+      </div>
+
+      <div class="form-group">
+        <label>캐시 관리</label>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <button id="clearPageCacheBtn" class="btn secondary" style="width: auto; flex: 1;">이 페이지 캐시 비우기</button>
+          <button id="clearAllCacheBtn" class="btn secondary" style="width: auto; flex: 1;">전역 캐시 비우기</button>
+        </div>
+      </div>
+
+      <div class="help-text" style="margin-top: 20px; padding: 16px; background: var(--bg-primary); border-radius: var(--radius-md); line-height: 1.7;">
+        설정한 시간(TTL) 동안 저장된 번역을 재사용해 비용과 지연을 줄입니다.<br>
+        시간이 지나면 해당 문장을 자동으로 재번역해 최신 상태를 유지합니다.<br>
+        캐시를 끄면 모든 문장을 매번 번역합니다.
       </div>
     </div>
 
