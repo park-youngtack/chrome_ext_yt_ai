@@ -1,25 +1,9 @@
 // Background Service Worker
-
-// 로거 함수 (설정에 따라 로그 출력)
-async function log(...args) {
-  try {
-    const result = await chrome.storage.local.get(['enableConsoleLog']);
-    if (result.enableConsoleLog) {
-      console.log('[번역 확장 배경]', ...args);
-    }
-  } catch (error) {
-    // 설정 로드 실패 시 로그 출력 안 함
-  }
-}
-
-async function logError(...args) {
-  // 에러는 항상 출력
-  console.error('[번역 확장 배경 오류]', ...args);
-}
+import { log, logInfo, logWarn, logError, logDebug } from './logger.js';
 
 // 확장프로그램 설치 시
 chrome.runtime.onInstalled.addListener(() => {
-  log('웹페이지 번역기가 설치되었습니다.');
+  logInfo('background', 'EXTENSION_INSTALLED', '웹페이지 번역기가 설치되었습니다');
 });
 
 // 아이콘 클릭 시 해당 탭에서만 side panel 열기
@@ -30,18 +14,25 @@ let opening = false;
 chrome.action.onClicked.addListener(async (tab) => {
   // 디바운스: 이미 처리 중이면 무시
   if (opening) {
-    log('Side panel 처리 중, 중복 클릭 무시');
+    logDebug('background', 'PANEL_CLICK_DEBOUNCED', 'Side panel 처리 중, 중복 클릭 무시', { tabId: tab.id });
     return;
   }
 
   opening = true;
 
   try {
+    // 해당 탭에서만 사이드패널 설정 및 활성화
+    await chrome.sidePanel.setOptions({
+      tabId: tab.id,
+      path: 'sidepanel.html',
+      enabled: true
+    });
+
     // 해당 탭에서만 사이드패널 열기
     await chrome.sidePanel.open({ tabId: tab.id });
-    log(`Side panel opened for tab ${tab.id}`);
+    logInfo('background', 'PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
   } catch (error) {
-    logError('Side panel open error:', error);
+    logError('background', 'PANEL_OPEN_ERROR', 'Side panel 열기 실패', { tabId: tab.id }, error);
   } finally {
     // 300ms 후 디바운스 해제
     setTimeout(() => {
@@ -61,10 +52,10 @@ chrome.runtime.onMessage.addListener(async (message, sender) => {
           tabId: tab.id,
           enabled: false
         });
-        log(`Side panel closed for tab ${tab.id}`);
+        logInfo('background', 'PANEL_CLOSED', 'Side panel 닫힘', { tabId: tab.id });
       }
     } catch (error) {
-      logError('Failed to close side panel:', error);
+      logError('background', 'PANEL_CLOSE_ERROR', 'Side panel 닫기 실패', {}, error);
     }
   }
 });

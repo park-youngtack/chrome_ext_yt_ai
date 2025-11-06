@@ -1,4 +1,5 @@
 import { FOOTER_TEXT } from './meta.js';
+import { log, logInfo, logWarn, logError, logDebug, getLogs } from './logger.js';
 
 // 기본 설정
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
@@ -198,6 +199,9 @@ function initSettingsTab() {
 
   // 캐시 관리 버튼
   document.getElementById('clearAllCacheBtn')?.addEventListener('click', handleClearAllCache);
+
+  // 로그 복사 버튼
+  document.getElementById('copyLogsBtn')?.addEventListener('click', handleCopyLogs);
 }
 
 // 설정 로드
@@ -209,7 +213,7 @@ async function loadSettings() {
       'batchSize',
       'concurrency',
       'cacheTTL',
-      'enableConsoleLog'
+      'debugLog'
     ]);
 
     // 원본 설정 저장
@@ -227,13 +231,13 @@ async function loadSettings() {
     document.getElementById('cacheTTL').value = result.cacheTTL || 60;
 
     // 디버그 설정
-    document.getElementById('enableConsoleLog').checked = result.enableConsoleLog || false;
+    document.getElementById('debugLog').checked = result.debugLog || false;
 
     // 변경 플래그 초기화
     settingsChanged = false;
     hideSaveBar();
   } catch (error) {
-    console.error('Failed to load settings:', error);
+    logError('sidepanel', 'SETTINGS_LOAD_ERROR', '설정 로드 실패', {}, error);
   }
 }
 
@@ -244,7 +248,7 @@ async function handleSaveSettings() {
   const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
   const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
   const cacheTTL = parseInt(document.getElementById('cacheTTL').value) || 60;
-  const enableConsoleLog = document.getElementById('enableConsoleLog').checked;
+  const debugLog = document.getElementById('debugLog').checked;
 
   const model = modelInput || DEFAULT_MODEL;
 
@@ -276,16 +280,15 @@ async function handleSaveSettings() {
       batchSize,
       concurrency,
       cacheTTL,
-      enableConsoleLog
+      debugLog
     });
 
-    console.log('설정 저장 완료:', {
-      apiKey: apiKey ? '***' : '없음',
+    logInfo('sidepanel', 'SETTINGS_SAVED', '설정 저장 완료', {
       model,
       batchSize,
       concurrency,
       cacheTTL,
-      enableConsoleLog
+      debugLog
     });
 
     // 원본 설정 업데이트
@@ -295,14 +298,14 @@ async function handleSaveSettings() {
       batchSize,
       concurrency,
       cacheTTL,
-      enableConsoleLog
+      debugLog
     };
 
     settingsChanged = false;
     hideSaveBar();
     showToast('설정이 저장되었습니다!');
   } catch (error) {
-    console.error('Failed to save settings:', error);
+    logError('sidepanel', 'SETTINGS_SAVE_ERROR', '설정 저장 실패', {}, error);
     showToast('저장 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
@@ -523,18 +526,36 @@ async function handleRequestPermission() {
 async function ensureContentScriptReady(tabId) {
   try {
     await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
+    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 준비 확인 성공', { tabId });
     return true;
   } catch (error) {
+    // "Receiving end does not exist" 에러 탐지
+    if (error.message && error.message.includes('Receiving end does not exist')) {
+      logWarn('sidepanel', 'MESSAGE_ROUTING_ERROR', 'Content script 미주입 감지', {
+        tabId,
+        err: error.message,
+        hasContent: false
+      });
+    } else {
+      logWarn('sidepanel', 'CONTENT_READY_CHECK_FAILED', 'Content script 상태 확인 실패', { tabId }, error);
+    }
+
     // Content script가 없으면 주입
     try {
+      logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 시도', { tabId, files: ['content.js'] });
+
       await chrome.scripting.executeScript({
         target: { tabId },
         files: ['content.js']
       });
+
       await new Promise(resolve => setTimeout(resolve, 100));
+
+      logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 성공', { tabId, result: 'ok' });
+
       return true;
     } catch (injectError) {
-      console.error('Failed to inject content script:', injectError);
+      logError('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 실패', { tabId, result: 'failed' }, injectError);
       return false;
     }
   }
@@ -545,34 +566,61 @@ function connectToContentScript(tabId) {
   try {
     // 기존 port 종료
     if (port) {
+      logDebug('sidepanel', 'PORT_DISCONNECT', '기존 포트 종료', { tabId });
       port.disconnect();
       port = null;
     }
 
     // 새 port 연결
     port = chrome.tabs.connect(tabId, { name: 'panel' });
+    logInfo('sidepanel', 'PORT_CONNECT', 'Content script와 포트 연결', { tabId });
 
     port.onMessage.addListener((msg) => {
       if (msg.type === 'progress') {
+        // PROGRESS_UPDATE 로깅
+        logDebug('sidepanel', 'PROGRESS_UPDATE', '번역 진행 상태 수신', {
+          tabId,
+          done: msg.data.translatedCount,
+          total: msg.data.totalTexts,
+          percent: msg.data.totalTexts > 0 ? Math.round((msg.data.translatedCount / msg.data.totalTexts) * 100) : 0,
+          activeMs: msg.data.activeMs,
+          cacheHits: msg.data.cachedCount,
+          batches: msg.data.batchesDone + '/' + msg.data.batchCount
+        });
+
         translationState = { ...translationState, ...msg.data };
         updateUI();
+
+        // 번역 완료 시 SUMMARY 로깅
+        if (msg.data.state === 'completed') {
+          logInfo('sidepanel', 'SUMMARY', '번역 완료 요약', {
+            tabId,
+            totalTexts: msg.data.totalTexts,
+            translated: msg.data.translatedCount,
+            cacheHits: msg.data.cachedCount,
+            elapsedMs: msg.data.activeMs,
+            batches: msg.data.batchCount
+          });
+        }
       }
     });
 
     port.onDisconnect.addListener(() => {
-      console.log('Port disconnected');
+      logInfo('sidepanel', 'PORT_DISCONNECT', '포트 연결 끊김', { tabId });
       port = null;
     });
 
-    console.log('Port connected to tab:', tabId);
   } catch (error) {
-    console.error('Failed to connect port:', error);
+    logError('sidepanel', 'PORT_CONNECT_ERROR', '포트 연결 실패', { tabId }, error);
   }
 }
 
 // 전체 번역
 async function handleTranslateAll(useCache = true) {
+  const button = useCache ? 'fast-translate' : 'full-translate';
+
   if (!currentTabId || !permissionGranted) {
+    logWarn('sidepanel', 'UI_CLICK_BLOCKED', '권한 미허용', { button, tabId: currentTabId, permissionGranted });
     showToast('권한을 먼저 허용해주세요.', 'error');
     return;
   }
@@ -587,10 +635,27 @@ async function handleTranslateAll(useCache = true) {
     ]);
 
     if (!settings.apiKey) {
+      logWarn('sidepanel', 'UI_CLICK_BLOCKED', 'API Key 미설정', { button, tabId: currentTabId });
       showToast('먼저 설정에서 API Key를 입력해주세요.', 'error');
       switchTab('settings');
       return;
     }
+
+    // UI_CLICK 로깅
+    logInfo('sidepanel', 'UI_CLICK', '번역 버튼 클릭', {
+      button,
+      tabId: currentTabId,
+      model: settings.model || DEFAULT_MODEL,
+      batch: settings.batchSize || 50,
+      concurrency: settings.concurrency || 3,
+      useCache
+    });
+
+    // DISPATCH_TO_CONTENT (전)
+    logDebug('sidepanel', 'DISPATCH_TO_CONTENT', 'content script에 메시지 전송', {
+      action: 'translateFullPage',
+      tabId: currentTabId
+    });
 
     // 번역 시작 (캐시는 항상 활성화, useCache 파라미터로 빠른 모드/새로 번역 구분)
     await chrome.tabs.sendMessage(currentTabId, {
@@ -602,8 +667,21 @@ async function handleTranslateAll(useCache = true) {
       useCache: useCache
     });
 
+    // DISPATCH_TO_CONTENT (후 성공)
+    logDebug('sidepanel', 'DISPATCH_TO_CONTENT', '메시지 전송 성공', {
+      action: 'translateFullPage',
+      tabId: currentTabId,
+      ok: true
+    });
+
   } catch (error) {
-    console.error('Translation failed:', error);
+    // DISPATCH_TO_CONTENT (후 실패)
+    logError('sidepanel', 'DISPATCH_TO_CONTENT', '메시지 전송 실패', {
+      action: 'translateFullPage',
+      tabId: currentTabId,
+      ok: false
+    }, error);
+
     showToast('번역 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
@@ -612,12 +690,15 @@ async function handleTranslateAll(useCache = true) {
 async function handleRestore() {
   if (!currentTabId) return;
 
+  logInfo('sidepanel', 'UI_CLICK', '원본 복원 버튼 클릭', { button: 'restore', tabId: currentTabId });
+
   try {
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'restoreOriginal'
     });
+    logInfo('sidepanel', 'RESTORE_SUCCESS', '원본 복원 완료', { tabId: currentTabId });
   } catch (error) {
-    console.error('Restore failed:', error);
+    logError('sidepanel', 'RESTORE_ERROR', '원본 복원 실패', { tabId: currentTabId }, error);
     showToast('원본 복원 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
@@ -724,5 +805,32 @@ function formatTime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
+  }
+}
+
+// 로그 복사
+async function handleCopyLogs() {
+  try {
+    logInfo('sidepanel', 'UI_CLICK', '로그 복사 버튼 클릭', { button: 'copy-logs' });
+
+    const logs = await getLogs();
+
+    if (!logs || logs.length === 0) {
+      showToast('복사할 로그가 없습니다.', 'error');
+      return;
+    }
+
+    // 로그를 읽기 쉬운 형식으로 변환
+    const logsText = logs.join('\n');
+
+    // 클립보드에 복사
+    await navigator.clipboard.writeText(logsText);
+
+    logInfo('sidepanel', 'LOGS_COPIED', '로그 복사 완료', { count: logs.length });
+    showToast(`${logs.length}개의 로그를 복사했습니다!`);
+
+  } catch (error) {
+    logError('sidepanel', 'LOGS_COPY_ERROR', '로그 복사 실패', {}, error);
+    showToast('로그 복사 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
