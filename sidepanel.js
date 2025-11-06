@@ -104,12 +104,40 @@ window.addEventListener('beforeunload', () => {
 });
 
 // 패널 닫기 요청 메시지 핸들러
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.type === 'CLOSE_PANEL_REQUEST') {
     logInfo('PANEL_CLOSE_REQUEST', '패널 닫기 요청 수신', { requestedTabId: message.tabId, currentTabId });
     // window.close()로 패널 닫기
     window.close();
     sendResponse({ success: true });
+  } else if (message.type === 'TAB_URL_CHANGED') {
+    // 탭 URL 변경 시 권한 재확인
+    logInfo('TAB_URL_CHANGED', 'Tab URL 변경 감지, 권한 재확인', { tabId: message.tabId, url: message.url });
+
+    // 현재 탭 정보 가져오기
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.id === message.tabId) {
+        currentTabId = tab.id;
+        contentScriptReady = false; // 초기화
+        translationState = {
+          state: 'inactive',
+          totalTexts: 0,
+          translatedCount: 0,
+          cachedCount: 0,
+          batchCount: 0,
+          batchesDone: 0,
+          batches: [],
+          activeMs: 0
+        };
+        updateTranslateButtonState();
+        updateUI();
+        await checkPermissions(tab);
+        logInfo('PERMISSIONS_RECHECKED', '권한 재확인 완료', { tabId: tab.id, url: tab.url });
+      }
+    } catch (error) {
+      logError('sidepanel', 'TAB_URL_RECHECK_ERROR', '권한 재확인 실패', { tabId: message.tabId }, error);
+    }
   }
   return false; // 동기 응답
 });
