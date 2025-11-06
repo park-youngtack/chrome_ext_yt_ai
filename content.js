@@ -554,7 +554,59 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         batches: batches.length
       });
 
-      // 병렬 배치 처리 (API 호출만)
+      // DOM 적용 순서를 보장하면서도 준비된 배치는 즉시 반영하기 위한 포인터
+      let nextDomIndex = 0;
+      let isFlushing = false;
+      let flushRequested = false;
+
+      /**
+       * 준비가 완료된 배치를 순차적으로 DOM에 적용하는 헬퍼
+       * - batch.translations === undefined: 아직 번역 대기 → 대기
+       * - batch.translations === null: 번역 실패 → 건너뛰고 다음 배치로 진행
+       */
+      const flushReadyBatches = async () => {
+        if (isFlushing) {
+          flushRequested = true;
+          return;
+        }
+
+        isFlushing = true;
+        flushRequested = false;
+
+        try {
+          while (nextDomIndex < batches.length) {
+            const targetBatch = batches[nextDomIndex];
+
+            if (targetBatch.applied) {
+              nextDomIndex++;
+              continue;
+            }
+
+            // 번역 결과가 아직 없는 경우 즉시 종료하고 다음 완료 시점에 재시도
+            if (typeof targetBatch.translations === 'undefined') {
+              break;
+            }
+
+            // 번역 실패 배치 → DOM 적용 없이 건너뜀
+            if (targetBatch.translations === null) {
+              targetBatch.applied = true;
+              nextDomIndex++;
+              continue;
+            }
+
+            await applyTranslationsToDom(targetBatch, useCache, cacheOffset + nextDomIndex, model);
+            targetBatch.applied = true;
+            nextDomIndex++;
+          }
+        } finally {
+          isFlushing = false;
+          if (flushRequested) {
+            await flushReadyBatches();
+          }
+        }
+      };
+
+      // 병렬 배치 처리 (API 호출)
       const processQueue = async () => {
         let index = 0;
 
@@ -571,9 +623,9 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
             onBatchStart();
 
             try {
-              // API 호출만 수행, DOM 적용은 나중에
+              // API 호출 실행 후 즉시 결과 저장
               const translations = await translateBatch(batch, apiKey, model);
-              batch.translations = translations; // 결과 저장
+              batch.translations = translations;
               progressStatus.batches[globalIndex].status = 'completed';
               progressStatus.batchesDone++;
             } catch (error) {
@@ -585,6 +637,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
             onBatchEnd();
             pushProgress();
+            await flushReadyBatches();
           }
         };
 
@@ -593,16 +646,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       };
 
       await processQueue();
-
-      // 순차적으로 DOM 적용 (위에서 아래로)
-      for (let localIndex = 0; localIndex < batches.length; localIndex++) {
-        const batch = batches[localIndex];
-        const globalIndex = cacheOffset + localIndex;
-
-        if (batch.translations) {
-          await applyTranslationsToDom(batch, useCache, globalIndex, model);
-        }
-      }
+      await flushReadyBatches();
     }
 
     // 완료
