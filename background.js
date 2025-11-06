@@ -52,6 +52,14 @@ const logError = (evt, msg, data, err) => log('ERROR', evt, msg, data, err);
 chrome.runtime.onInstalled.addListener(async () => {
   logInfo('EXTENSION_INSTALLED', '웹페이지 번역기가 설치되었습니다');
 
+  // Side Panel 동작 설정: 아이콘 클릭 시 패널 열기
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    logInfo('SIDE_PANEL_BEHAVIOR_SET', 'Side Panel 동작 설정 완료');
+  } catch (error) {
+    logWarn('SIDE_PANEL_BEHAVIOR_FAILED', 'Side Panel 동작 설정 실패', {}, error);
+  }
+
   // Content script 상시 등록 (안정적인 주입 보장)
   try {
     await chrome.scripting.registerContentScripts([{

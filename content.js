@@ -339,7 +339,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     if (useCache && texts.length > 0) {
       const changeRate = newTexts.length / texts.length;
       if (changeRate >= 0.20) {
-        logWarn('AUTO_FULL_RETRANSLATE', '대규모 페이지 변경 감지, 전면 재번역', {
+        logInfo('AUTO_FULL_RETRANSLATE', '대규모 페이지 변경 감지, 전면 재번역', {
           changeRate: Math.round(changeRate * 100) / 100,
           threshold: 0.2
         });
