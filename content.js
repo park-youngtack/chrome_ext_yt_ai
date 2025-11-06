@@ -419,7 +419,7 @@ function handleRestoreOriginal() {
 
 // 텍스트 노드 수집
 function getAllTextNodes() {
-  const EXCLUDE_TAGS = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'OBJECT', 'CODE', 'PRE', 'KBD', 'SAMP', 'VAR', 'SVG'];
+  const EXCLUDE_TAGS = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS', 'CODE', 'PRE'];
   const nodes = [];
 
   const walker = document.createTreeWalker(

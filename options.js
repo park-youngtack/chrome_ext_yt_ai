@@ -1,8 +1,16 @@
+import { FOOTER_TEXT } from './meta.js';
+
 // 기본 모델
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 
 // 설정 로드
 document.addEventListener('DOMContentLoaded', async () => {
+  // 푸터 텍스트 설정
+  const footerEl = document.getElementById('footerText');
+  if (footerEl) {
+    footerEl.textContent = FOOTER_TEXT;
+  }
+
   const result = await chrome.storage.local.get([
     'apiKey',
     'model',
