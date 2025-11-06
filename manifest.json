@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "웹페이지 번역기",
+  "name": "무조건 한글로 번역해드림",
   "version": "2.0.0",
   "description": "OpenRouter AI를 사용하여 웹페이지를 한글로 번역하는 확장프로그램",
   "permissions": [
@@ -11,9 +11,11 @@
   ],
   "optional_host_permissions": [
     "https://*/*",
-    "http://*/*"
+    "http://*/*",
+    "file:///*"
   ],
   "action": {
+    "default_title": "무조건 한글로 번역해드림",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
