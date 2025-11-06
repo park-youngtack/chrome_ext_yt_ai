@@ -41,3 +41,18 @@ chrome.action.onClicked.addListener(async (tab) => {
     }, 300);
   }
 });
+
+// 패널 닫기 메시지 핸들러
+chrome.runtime.onMessage.addListener(async (message, sender) => {
+  if (message.action === 'closeSidePanel' && sender.tab?.id) {
+    try {
+      await chrome.sidePanel.setOptions({
+        tabId: sender.tab.id,
+        enabled: false
+      });
+      console.log(`Side panel closed for tab ${sender.tab.id}`);
+    } catch (error) {
+      console.error('Failed to close side panel:', error);
+    }
+  }
+});
