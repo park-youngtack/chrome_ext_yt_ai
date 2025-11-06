@@ -9,6 +9,7 @@ const SESSION_KEY = 'lastActiveTab';
 let currentTabId = null;
 let port = null;
 let permissionGranted = false;
+let contentScriptReady = false; // content script 준비 상태
 let settingsChanged = false;
 let originalSettings = {};
 
@@ -30,6 +31,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (footerEl) {
     footerEl.textContent = FOOTER_TEXT;
   }
+
+  // 초기 버튼 상태 (비활성화)
+  updateTranslateButtonState();
 
   // 현재 탭 가져오기
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -74,6 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
       currentTabId = tab.id;
+      contentScriptReady = false; // 탭 변경 시 초기화
+      updateTranslateButtonState();
       await checkPermissions(tab);
     }
   });
@@ -405,8 +411,18 @@ async function checkPermissions(tab) {
       if (hasPermission) {
         permissionGranted = true;
         showPermissionUI('granted');
-        await ensureContentScriptReady(tab.id);
-        connectToContentScript(tab.id);
+
+        // Content script 준비 확인 (백그라운드에서)
+        contentScriptReady = false;
+        updateTranslateButtonState();
+
+        ensureContentScriptReady(tab.id).then(ready => {
+          contentScriptReady = ready;
+          updateTranslateButtonState();
+          if (ready) {
+            connectToContentScript(tab.id);
+          }
+        });
       } else {
         permissionGranted = false;
         showPermissionUI('file', '파일 URL 접근 허용을 켜야 번역할 수 있습니다.');
@@ -432,11 +448,17 @@ async function checkPermissions(tab) {
       permissionGranted = true;
       showPermissionUI('granted');
 
-      // Content script 주입 확인
-      await ensureContentScriptReady(tab.id);
+      // Content script 준비 확인 (백그라운드에서)
+      contentScriptReady = false;
+      updateTranslateButtonState();
 
-      // Port 연결
-      connectToContentScript(tab.id);
+      ensureContentScriptReady(tab.id).then(ready => {
+        contentScriptReady = ready;
+        updateTranslateButtonState();
+        if (ready) {
+          connectToContentScript(tab.id);
+        }
+      });
     } else {
       permissionGranted = false;
       showPermissionUI('requestable', '이 사이트를 번역하려면 접근 권한이 필요합니다.');
@@ -854,6 +876,64 @@ function formatTime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
+  }
+}
+
+// 번역 버튼 상태 업데이트
+function updateTranslateButtonState() {
+  const translateAllBtn = document.getElementById('translateAllBtn');
+  const translateFreshBtn = document.getElementById('translateFreshBtn');
+  const restoreBtn = document.getElementById('restoreBtn');
+  const progressText = document.getElementById('progressText');
+
+  if (!permissionGranted) {
+    // 권한이 없으면 모든 버튼 비활성화
+    if (translateAllBtn) translateAllBtn.disabled = true;
+    if (translateFreshBtn) translateFreshBtn.disabled = true;
+    if (restoreBtn) restoreBtn.disabled = true;
+    return;
+  }
+
+  if (!contentScriptReady) {
+    // Content script 준비 중
+    if (translateAllBtn) {
+      translateAllBtn.disabled = true;
+      translateAllBtn.textContent = '초기화 중...';
+    }
+    if (translateFreshBtn) {
+      translateFreshBtn.disabled = true;
+      translateFreshBtn.textContent = '초기화 중...';
+    }
+    if (restoreBtn) restoreBtn.disabled = true;
+    if (progressText) progressText.textContent = '페이지 초기화 중...';
+
+    logDebug('sidepanel', 'BUTTON_STATE', '번역 버튼 비활성화 (초기화 중)', {
+      permissionGranted,
+      contentScriptReady
+    });
+  } else {
+    // Content script 준비 완료
+    if (translateAllBtn) {
+      translateAllBtn.disabled = false;
+      translateAllBtn.textContent = '현재 페이지 모두 번역 (빠른 모드)';
+    }
+    if (translateFreshBtn) {
+      translateFreshBtn.disabled = false;
+      translateFreshBtn.textContent = '현재 페이지 모두 새로 번역';
+    }
+
+    // 번역 상태에 따라 원본 보기 버튼 활성화
+    if (restoreBtn) {
+      const hasTranslations = translationState.translatedCount > 0;
+      restoreBtn.disabled = !hasTranslations;
+    }
+
+    if (progressText) progressText.textContent = '번역 대기 중';
+
+    logInfo('sidepanel', 'BUTTON_STATE', '번역 버튼 활성화 (준비 완료)', {
+      permissionGranted,
+      contentScriptReady
+    });
   }
 }
 
