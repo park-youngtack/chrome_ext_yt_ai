@@ -416,20 +416,8 @@ async function checkPermissions(tab) {
   }
 
   // http/https 스킴
-  try {
-    const url = new URL(tab.url);
-    const origin = `${url.protocol}//${url.host}/*`;
-
-    // 권한 확인
-    const hasPermission = await chrome.permissions.contains({
-      origins: [origin]
-    });
-
-    permissionGranted = hasPermission;
-  } catch (error) {
-    console.error('Permission check failed:', error);
-    permissionGranted = false;
-  }
+  // host_permissions에 이미 선언되어 있으므로 항상 권한이 있음
+  permissionGranted = true;
 }
 
 // 권한 UI 표시 (레거시 함수, 현재 미사용)
