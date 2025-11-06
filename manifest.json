@@ -23,7 +23,8 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_open_panel_on_action_click": true
   },
   "icons": {
     "16": "icons/icon16.png",
