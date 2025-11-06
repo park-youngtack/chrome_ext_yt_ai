@@ -25,6 +25,8 @@ const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const SESSION_KEY = 'lastActiveTab';
 const HISTORY_STORAGE_KEY = 'translationHistory';
 const HISTORY_MAX_ITEMS = 100;
+// 최신 확장 버전을 확인할 때 사용할 GitHub 저장소 주소
+const GITHUB_REPO_URL = 'https://github.com/park-youngtack/chrome_ext_yt_ai';
 
 /**
  * 최신순으로 정렬된 히스토리 목록에서 URL 기준 중복을 제거한다.
@@ -116,6 +118,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 탭바 이벤트 (세로 탭)
   initTabbar();
 
+  // 외부 링크(최신버전 버튼) 초기화
+  initExternalLinks();
+
   // 번역 탭 버튼 이벤트
   document.getElementById('translateAllBtn')?.addEventListener('click', () => handleTranslateAll(true));
   document.getElementById('translateFreshBtn')?.addEventListener('click', () => handleTranslateAll(false));
@@ -179,6 +184,42 @@ function initTabbar() {
 
     // 키보드 내비게이션
     btn.addEventListener('keydown', handleTabKeydown);
+  });
+}
+
+/**
+ * 외부 링크 버튼 초기화
+ * GitHub 저장소를 새 탭으로 열어 최신 버전을 안내한다.
+ */
+function initExternalLinks() {
+  const githubLinkBtn = document.getElementById('githubLinkBtn');
+
+  if (!githubLinkBtn) {
+    return;
+  }
+
+  /**
+   * GitHub 저장소를 새 탭으로 여는 헬퍼 함수
+   * chrome.tabs.create는 MV3 환경에서 Promise를 반환한다.
+   */
+  const openGithubRepository = async () => {
+    try {
+      await chrome.tabs.create({ url: GITHUB_REPO_URL, active: true });
+      logInfo('GITHUB_REPO_OPENED', { url: GITHUB_REPO_URL });
+    } catch (error) {
+      logWarn('GITHUB_REPO_OPEN_FAILED', { message: error?.message ?? String(error) });
+    }
+  };
+
+  githubLinkBtn.addEventListener('click', () => {
+    openGithubRepository();
+  });
+
+  githubLinkBtn.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+      event.preventDefault();
+      openGithubRepository();
+    }
   });
 }
 
