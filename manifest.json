@@ -7,11 +7,14 @@
     "activeTab",
     "storage",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "optional_host_permissions": [
-    "https://*/*",
-    "http://*/*",
     "file:///*"
   ],
   "action": {

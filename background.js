@@ -52,9 +52,88 @@ const logWarn = (evt, msg, data, err) => log('WARN', evt, msg, data, err);
 const logError = (evt, msg, data, err) => log('ERROR', evt, msg, data, err);
 
 // 확장프로그램 설치 시
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   logInfo('EXTENSION_INSTALLED', '웹페이지 번역기가 설치되었습니다');
+
+  // Content script 상시 등록 (안정적인 주입 보장)
+  try {
+    await chrome.scripting.registerContentScripts([{
+      id: 'content-script',
+      js: ['content.js'],
+      matches: ['https://*/*', 'http://*/*'],
+      runAt: 'document_start',
+      persistAcrossSessions: true,
+    }]);
+    logInfo('CONTENT_SCRIPT_REGISTERED', 'Content script 등록 완료');
+  } catch (error) {
+    // 이미 등록된 경우 무시
+    if (error.message.includes('duplicate')) {
+      logDebug('CONTENT_SCRIPT_ALREADY_REGISTERED', 'Content script 이미 등록됨');
+    } else {
+      logWarn('CONTENT_SCRIPT_REGISTER_FAILED', 'Content script 등록 실패', {}, error);
+    }
+  }
 });
+
+// ===== Content script 준비 확인 및 주입 =====
+async function ensureContentScript(tabId) {
+  // 1) PING으로 content script 존재 확인
+  const ping = () =>
+    chrome.tabs.sendMessage(tabId, { type: 'PING' })
+      .then(() => {
+        logDebug('CONTENT_PING_SUCCESS', 'Content script 이미 준비됨', { tabId });
+        return true;
+      })
+      .catch(() => {
+        logDebug('CONTENT_PING_FAILED', 'Content script 미주입', { tabId });
+        return false;
+      });
+
+  if (await ping()) {
+    return; // 이미 준비됨
+  }
+
+  // 2) 없으면 주입
+  logInfo('CONTENT_INJECT_START', 'Content script 수동 주입 시작', { tabId });
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js'],
+    });
+    logInfo('CONTENT_INJECT_DONE', 'Content script 수동 주입 완료', { tabId });
+  } catch (error) {
+    logError('CONTENT_INJECT_FAILED', 'Content script 주입 실패', { tabId }, error);
+    throw error;
+  }
+
+  // 3) CONTENT_READY 메시지 대기 (최대 1.5초)
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener);
+      reject(new Error('Content script 준비 타임아웃'));
+    }, 1500);
+
+    const listener = (msg, sender) => {
+      if (sender.tab?.id === tabId && msg?.type === 'CONTENT_READY') {
+        clearTimeout(timeout);
+        chrome.runtime.onMessage.removeListener(listener);
+        logInfo('CONTENT_READY_RECEIVED', 'Content script 준비 완료', { tabId });
+        resolve();
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(listener);
+
+    // 주입 직후 PING 재시도 (일부 페이지는 즉시 응답 가능)
+    setTimeout(async () => {
+      if (await ping()) {
+        clearTimeout(timeout);
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve();
+      }
+    }, 100);
+  });
+}
 
 // 아이콘 클릭 시 해당 탭에서만 side panel 열기
 // 각 탭마다 독립적으로 패널을 열고 닫을 수 있음
@@ -71,6 +150,18 @@ chrome.action.onClicked.addListener(async (tab) => {
   opening = true;
 
   try {
+    // 권한 가능 여부 확인 (chrome://, edge://, Web Store 등은 주입 불가)
+    if (!tab?.id || !/^https?:/.test(tab.url ?? '')) {
+      logWarn('PANEL_UNSUPPORTED_URL', '주입 불가능한 URL', { tabId: tab.id, url: tab.url });
+      await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false });
+      return;
+    }
+
+    // ⭐ Content script 준비 확인 및 주입
+    logDebug('PANEL_ENSURE_CONTENT', 'Content script 준비 확인 시작', { tabId: tab.id });
+    await ensureContentScript(tab.id);
+    logDebug('PANEL_ENSURE_CONTENT_DONE', 'Content script 준비 완료', { tabId: tab.id });
+
     // 해당 탭에서만 사이드패널 설정 및 활성화
     await chrome.sidePanel.setOptions({
       tabId: tab.id,
