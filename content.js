@@ -69,8 +69,8 @@ function log(level, evt, msg = '', data = {}, err = null) {
 
   // 구조화된 로그 출력 (객체가 [object Object]로 표시되지 않도록)
   // 데이터 필드만 추출 (ts, level, ns, evt, msg 제외)
-  const {ts, level: lvl, ns, evt: evtName, msg: msgText, err: errMsg, stack, ...data} = record;
-  const dataStr = Object.keys(data).length > 0 ? ' ' + JSON.stringify(data) : '';
+  const {ts, level: lvl, ns, evt: evtName, msg: msgText, err: errMsg, stack, ...extraData} = record;
+  const dataStr = Object.keys(extraData).length > 0 ? ' ' + JSON.stringify(extraData) : '';
 
   if (msg) {
     if (errMsg) {
