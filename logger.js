@@ -102,16 +102,15 @@ export function log(level, ns, evt, msg = '', data = {}, err = null) {
   }
 
   // 콘솔 출력 (스타일링)
-  const prefix = `%c[WPT]%c ${ns} %c${level}%c ${evt}`;
-  const css = [
-    'color:#8ab4f8;font-weight:bold',
-    'color:#9aa0a6',
-    `color:${level === 'ERROR' ? '#f28b82' : level === 'WARN' ? '#fbbc05' : level === 'DEBUG' ? '#81c995' : '#e8eaed'};font-weight:bold`,
-    'color:#e8eaed'
-  ];
-
+  const prefix = `[WPT][${level}][${ns}] ${evt}`;
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
-  console[consoleMethod](prefix, ...css, record);
+
+  // 메시지와 데이터를 함께 출력
+  if (msg) {
+    console[consoleMethod](prefix, msg, record);
+  } else {
+    console[consoleMethod](prefix, record);
+  }
 
   // ring-buffer에 저장 (JSON 문자열로)
   logBuffer.push(JSON.stringify(record));

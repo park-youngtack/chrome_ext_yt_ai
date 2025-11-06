@@ -64,16 +64,15 @@ function log(level, evt, msg = '', data = {}, err = null) {
     }
   }
 
-  const prefix = `%c[WPT]%c content %c${level}%c ${evt}`;
-  const css = [
-    'color:#8ab4f8;font-weight:bold',
-    'color:#9aa0a6',
-    `color:${level === 'ERROR' ? '#f28b82' : level === 'WARN' ? '#fbbc05' : level === 'DEBUG' ? '#81c995' : '#e8eaed'};font-weight:bold`,
-    'color:#e8eaed'
-  ];
-
+  const prefix = `[WPT][${level}][content] ${evt}`;
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
-  console[consoleMethod](prefix, ...css, record);
+
+  // 메시지와 데이터를 함께 출력
+  if (msg) {
+    console[consoleMethod](prefix, msg, record);
+  } else {
+    console[consoleMethod](prefix, record);
+  }
 }
 
 const logDebug = (evt, msg, data, err) => log('DEBUG', evt, msg, data, err);

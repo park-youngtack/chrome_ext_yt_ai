@@ -9,6 +9,7 @@ const SESSION_KEY = 'lastActiveTab';
 let currentTabId = null;
 let port = null;
 let permissionGranted = false;
+let contentScriptReady = false; // content script 준비 상태
 let settingsChanged = false;
 let originalSettings = {};
 
@@ -30,6 +31,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (footerEl) {
     footerEl.textContent = FOOTER_TEXT;
   }
+
+  // 초기 버튼 상태 (비활성화)
+  updateTranslateButtonState();
 
   // 현재 탭 가져오기
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -74,6 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
       currentTabId = tab.id;
+      contentScriptReady = false; // 탭 변경 시 초기화
+      updateTranslateButtonState();
       await checkPermissions(tab);
     }
   });
@@ -405,8 +411,18 @@ async function checkPermissions(tab) {
       if (hasPermission) {
         permissionGranted = true;
         showPermissionUI('granted');
-        await ensureContentScriptReady(tab.id);
-        connectToContentScript(tab.id);
+
+        // Content script 준비 확인 (백그라운드에서)
+        contentScriptReady = false;
+        updateTranslateButtonState();
+
+        ensureContentScriptReady(tab.id).then(ready => {
+          contentScriptReady = ready;
+          updateTranslateButtonState();
+          if (ready) {
+            connectToContentScript(tab.id);
+          }
+        });
       } else {
         permissionGranted = false;
         showPermissionUI('file', '파일 URL 접근 허용을 켜야 번역할 수 있습니다.');
@@ -432,11 +448,17 @@ async function checkPermissions(tab) {
       permissionGranted = true;
       showPermissionUI('granted');
 
-      // Content script 주입 확인
-      await ensureContentScriptReady(tab.id);
+      // Content script 준비 확인 (백그라운드에서)
+      contentScriptReady = false;
+      updateTranslateButtonState();
 
-      // Port 연결
-      connectToContentScript(tab.id);
+      ensureContentScriptReady(tab.id).then(ready => {
+        contentScriptReady = ready;
+        updateTranslateButtonState();
+        if (ready) {
+          connectToContentScript(tab.id);
+        }
+      });
     } else {
       permissionGranted = false;
       showPermissionUI('requestable', '이 사이트를 번역하려면 접근 권한이 필요합니다.');
@@ -522,11 +544,12 @@ async function handleRequestPermission() {
   }
 }
 
-// Content script 준비 확인
-async function ensureContentScriptReady(tabId) {
+// Content script 준비 확인 (재시도 로직 강화)
+async function ensureContentScriptReady(tabId, maxRetries = 5) {
+  // 1단계: 이미 준비되어 있는지 확인
   try {
     await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
-    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 준비 확인 성공', { tabId });
+    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 이미 준비됨', { tabId });
     return true;
   } catch (error) {
     // "Receiving end does not exist" 에러 탐지
@@ -540,7 +563,7 @@ async function ensureContentScriptReady(tabId) {
       logWarn('sidepanel', 'CONTENT_READY_CHECK_FAILED', 'Content script 상태 확인 실패', { tabId }, error);
     }
 
-    // Content script가 없으면 주입
+    // 2단계: Content script 재주입
     try {
       logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 시도', { tabId, files: ['content.js'] });
 
@@ -549,11 +572,41 @@ async function ensureContentScriptReady(tabId) {
         files: ['content.js']
       });
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 완료', { tabId });
 
-      logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 성공', { tabId, result: 'ok' });
+      // 3단계: 준비될 때까지 재시도 (최대 5번, 지수 백오프)
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const waitTime = Math.min(100 * Math.pow(2, attempt - 1), 1000); // 100ms, 200ms, 400ms, 800ms, 1000ms
 
-      return true;
+        logDebug('sidepanel', 'CONTENT_READY_RETRY', `Content script 준비 확인 재시도 ${attempt}/${maxRetries}`, {
+          tabId,
+          waitMs: waitTime
+        });
+
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+
+        try {
+          await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
+          logInfo('sidepanel', 'CONTENT_READY_SUCCESS', `Content script 준비 완료 (${attempt}번째 시도)`, {
+            tabId,
+            attempt,
+            totalWaitMs: waitTime
+          });
+          return true;
+        } catch (retryError) {
+          if (attempt === maxRetries) {
+            logError('sidepanel', 'CONTENT_READY_TIMEOUT', 'Content script 준비 시간 초과', {
+              tabId,
+              attempts: maxRetries
+            }, retryError);
+            return false;
+          }
+          // 계속 재시도
+        }
+      }
+
+      return false;
+
     } catch (injectError) {
       logError('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 실패', { tabId, result: 'failed' }, injectError);
       return false;
@@ -651,6 +704,16 @@ async function handleTranslateAll(useCache = true) {
       useCache
     });
 
+    // Content script 준비 확인 (새로고침 후 에러 방지)
+    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 준비 확인 시작', { tabId: currentTabId });
+    const isReady = await ensureContentScriptReady(currentTabId);
+
+    if (!isReady) {
+      logError('sidepanel', 'CONTENT_NOT_READY', 'Content script 준비 실패', { tabId: currentTabId });
+      showToast('페이지 준비 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      return;
+    }
+
     // DISPATCH_TO_CONTENT (전)
     logDebug('sidepanel', 'DISPATCH_TO_CONTENT', 'content script에 메시지 전송', {
       action: 'translateFullPage',
@@ -693,6 +756,14 @@ async function handleRestore() {
   logInfo('sidepanel', 'UI_CLICK', '원본 복원 버튼 클릭', { button: 'restore', tabId: currentTabId });
 
   try {
+    // Content script 준비 확인
+    const isReady = await ensureContentScriptReady(currentTabId);
+    if (!isReady) {
+      logError('sidepanel', 'CONTENT_NOT_READY', 'Content script 준비 실패', { tabId: currentTabId });
+      showToast('페이지 준비 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      return;
+    }
+
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'restoreOriginal'
     });
@@ -805,6 +876,64 @@ function formatTime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
+  }
+}
+
+// 번역 버튼 상태 업데이트
+function updateTranslateButtonState() {
+  const translateAllBtn = document.getElementById('translateAllBtn');
+  const translateFreshBtn = document.getElementById('translateFreshBtn');
+  const restoreBtn = document.getElementById('restoreBtn');
+  const progressText = document.getElementById('progressText');
+
+  if (!permissionGranted) {
+    // 권한이 없으면 모든 버튼 비활성화
+    if (translateAllBtn) translateAllBtn.disabled = true;
+    if (translateFreshBtn) translateFreshBtn.disabled = true;
+    if (restoreBtn) restoreBtn.disabled = true;
+    return;
+  }
+
+  if (!contentScriptReady) {
+    // Content script 준비 중
+    if (translateAllBtn) {
+      translateAllBtn.disabled = true;
+      translateAllBtn.textContent = '초기화 중...';
+    }
+    if (translateFreshBtn) {
+      translateFreshBtn.disabled = true;
+      translateFreshBtn.textContent = '초기화 중...';
+    }
+    if (restoreBtn) restoreBtn.disabled = true;
+    if (progressText) progressText.textContent = '페이지 초기화 중...';
+
+    logDebug('sidepanel', 'BUTTON_STATE', '번역 버튼 비활성화 (초기화 중)', {
+      permissionGranted,
+      contentScriptReady
+    });
+  } else {
+    // Content script 준비 완료
+    if (translateAllBtn) {
+      translateAllBtn.disabled = false;
+      translateAllBtn.textContent = '현재 페이지 모두 번역 (빠른 모드)';
+    }
+    if (translateFreshBtn) {
+      translateFreshBtn.disabled = false;
+      translateFreshBtn.textContent = '현재 페이지 모두 새로 번역';
+    }
+
+    // 번역 상태에 따라 원본 보기 버튼 활성화
+    if (restoreBtn) {
+      const hasTranslations = translationState.translatedCount > 0;
+      restoreBtn.disabled = !hasTranslations;
+    }
+
+    if (progressText) progressText.textContent = '번역 대기 중';
+
+    logInfo('sidepanel', 'BUTTON_STATE', '번역 버튼 활성화 (준비 완료)', {
+      permissionGranted,
+      contentScriptReady
+    });
   }
 }
 
