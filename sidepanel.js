@@ -83,6 +83,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       await checkPermissions(tab);
     }
   });
+
+  // 패널 열림 알림 (background에 상태 업데이트)
+  if (currentTabId) {
+    chrome.runtime.sendMessage({ type: 'PANEL_OPENED', tabId: currentTabId }).catch(() => {
+      // background script가 응답하지 않는 경우 무시
+    });
+    logInfo('PANEL_LIFECYCLE', '패널 열림', { tabId: currentTabId });
+  }
+});
+
+// 패널 닫힘 알림 (언로드 시)
+window.addEventListener('beforeunload', () => {
+  if (currentTabId) {
+    chrome.runtime.sendMessage({ type: 'PANEL_CLOSED', tabId: currentTabId }).catch(() => {
+      // background script가 응답하지 않는 경우 무시
+    });
+    logInfo('PANEL_LIFECYCLE', '패널 닫힘', { tabId: currentTabId });
+  }
+});
+
+// 패널 닫기 요청 메시지 핸들러
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CLOSE_PANEL_REQUEST') {
+    logInfo('PANEL_CLOSE_REQUEST', '패널 닫기 요청 수신', { requestedTabId: message.tabId, currentTabId });
+    // window.close()로 패널 닫기
+    window.close();
+    sendResponse({ success: true });
+  }
+  return false; // 동기 응답
 });
 
 // ===== 탭바 초기화 =====

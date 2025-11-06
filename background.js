@@ -137,6 +137,9 @@ async function ensureContentScript(tabId) {
 // 중복 호출 방지를 위한 디바운스
 let opening = false;
 
+// 탭별 패널 열림 상태 추적 (tabId -> boolean)
+const panelOpenState = new Map();
+
 chrome.action.onClicked.addListener(async (tab) => {
   // 디바운스: 이미 처리 중이면 무시
   if (opening) {
@@ -154,21 +157,32 @@ chrome.action.onClicked.addListener(async (tab) => {
       return;
     }
 
-    // 해당 탭에서만 사이드패널 설정 및 활성화
-    // (registerContentScripts로 이미 자동 주입되므로 별도 확인 불필요)
-    // 사용자 제스처 컨텍스트 유지를 위해 await 없이 setOptions 호출
-    chrome.sidePanel.setOptions({
-      tabId: tab.id,
-      path: 'sidepanel.html',
-      enabled: true
-    });
+    const isOpen = panelOpenState.get(tab.id) || false;
 
-    // 해당 탭에서만 사이드패널 열기
-    // setOptions의 await를 제거하여 사용자 제스처 컨텍스트 유지
-    await chrome.sidePanel.open({ tabId: tab.id });
-    logInfo('PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
+    if (isOpen) {
+      // 패널이 열려있으면 닫기 메시지 전송
+      try {
+        await chrome.runtime.sendMessage({ type: 'CLOSE_PANEL_REQUEST', tabId: tab.id });
+        logInfo('PANEL_CLOSE_REQUESTED', 'Side panel 닫기 요청', { tabId: tab.id });
+      } catch (error) {
+        // 패널이 이미 닫혀있거나 응답 없는 경우 상태만 업데이트
+        logDebug('PANEL_CLOSE_NO_RESPONSE', '패널 응답 없음, 상태 업데이트', { tabId: tab.id });
+        panelOpenState.set(tab.id, false);
+      }
+    } else {
+      // 패널이 닫혀있으면 열기
+      chrome.sidePanel.setOptions({
+        tabId: tab.id,
+        path: 'sidepanel.html',
+        enabled: true
+      });
+
+      await chrome.sidePanel.open({ tabId: tab.id });
+      logInfo('PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
+      // 상태는 sidepanel.js에서 PANEL_OPENED 메시지를 받으면 업데이트됨
+    }
   } catch (error) {
-    logError('PANEL_OPEN_ERROR', 'Side panel 열기 실패', { tabId: tab.id }, error);
+    logError('PANEL_TOGGLE_ERROR', 'Side panel 토글 실패', { tabId: tab.id }, error);
   } finally {
     // 300ms 후 디바운스 해제
     setTimeout(() => {
@@ -177,21 +191,40 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-// 패널 닫기 메시지 핸들러
+// 패널 상태 및 닫기 메시지 핸들러
 chrome.runtime.onMessage.addListener(async (message, sender) => {
-  if (message.type === 'closeSidePanel') {
+  if (message.type === 'PANEL_OPENED') {
+    // 패널이 열렸을 때 상태 업데이트
+    const tabId = message.tabId;
+    if (tabId) {
+      panelOpenState.set(tabId, true);
+      logInfo('PANEL_STATE_OPENED', 'Panel 상태: 열림', { tabId });
+    }
+  } else if (message.type === 'PANEL_CLOSED') {
+    // 패널이 닫혔을 때 상태 업데이트
+    const tabId = message.tabId;
+    if (tabId) {
+      panelOpenState.set(tabId, false);
+      logInfo('PANEL_STATE_CLOSED', 'Panel 상태: 닫힘', { tabId });
+    }
+  } else if (message.type === 'closeSidePanel') {
+    // 레거시 호환: 기존 닫기 메시지 지원
     try {
-      // 현재 활성 탭 가져오기
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.id) {
-        await chrome.sidePanel.setOptions({
-          tabId: tab.id,
-          enabled: false
-        });
-        logInfo('PANEL_CLOSED', 'Side panel 닫힘', { tabId: tab.id });
+        panelOpenState.set(tab.id, false);
+        logInfo('PANEL_CLOSED_LEGACY', 'Side panel 닫힘 (레거시)', { tabId: tab.id });
       }
     } catch (error) {
       logError('PANEL_CLOSE_ERROR', 'Side panel 닫기 실패', {}, error);
     }
+  }
+});
+
+// 탭이 닫히면 상태 정리
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (panelOpenState.has(tabId)) {
+    panelOpenState.delete(tabId);
+    logDebug('PANEL_STATE_CLEANUP', 'Panel 상태 정리', { tabId });
   }
 });
