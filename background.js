@@ -1,12 +1,29 @@
 // Background Service Worker
 
+// 로거 함수 (설정에 따라 로그 출력)
+async function log(...args) {
+  try {
+    const result = await chrome.storage.local.get(['enableConsoleLog']);
+    if (result.enableConsoleLog) {
+      console.log('[번역 확장 배경]', ...args);
+    }
+  } catch (error) {
+    // 설정 로드 실패 시 로그 출력 안 함
+  }
+}
+
+async function logError(...args) {
+  // 에러는 항상 출력
+  console.error('[번역 확장 배경 오류]', ...args);
+}
+
 // 확장프로그램 설치 시
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('웹페이지 번역기가 설치되었습니다.');
+  log('웹페이지 번역기가 설치되었습니다.');
 
   // 사이드패널 자동 오픈 설정 (액션 클릭 시 자동으로 열림)
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-    .catch(error => console.error('사이드패널 동작 설정 오류:', error));
+    .catch(error => logError('사이드패널 동작 설정 오류:', error));
 });
 
 // 아이콘 클릭 시 해당 탭에서만 side panel 토글
@@ -17,7 +34,7 @@ let opening = false;
 chrome.action.onClicked.addListener(async (tab) => {
   // 디바운스: 이미 처리 중이면 무시
   if (opening) {
-    console.log('Side panel 처리 중, 중복 클릭 무시');
+    log('Side panel 처리 중, 중복 클릭 무시');
     return;
   }
 
@@ -31,9 +48,9 @@ chrome.action.onClicked.addListener(async (tab) => {
       enabled: true
     });
 
-    console.log(`Side panel options set for tab ${tab.id}`);
+    log(`Side panel options set for tab ${tab.id}`);
   } catch (error) {
-    console.error('Side panel toggle error:', error);
+    logError('Side panel toggle error:', error);
   } finally {
     // 300ms 후 디바운스 해제
     setTimeout(() => {
@@ -53,10 +70,10 @@ chrome.runtime.onMessage.addListener(async (message, sender) => {
           tabId: tab.id,
           enabled: false
         });
-        console.log(`Side panel closed for tab ${tab.id}`);
+        log(`Side panel closed for tab ${tab.id}`);
       }
     } catch (error) {
-      console.error('Failed to close side panel:', error);
+      logError('Failed to close side panel:', error);
     }
   }
 });

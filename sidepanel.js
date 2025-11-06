@@ -68,9 +68,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 설정 탭 이벤트
   initSettingsTab();
 
-  // 닫기 버튼
-  document.getElementById('closeBtn')?.addEventListener('click', handleClose);
-
   // 탭 변경 감지
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -174,16 +171,6 @@ function handleDeepLink() {
   }
 }
 
-// 닫기 버튼
-async function handleClose() {
-  try {
-    // background.js에 닫기 메시지 전송
-    await chrome.runtime.sendMessage({ type: 'closeSidePanel' });
-  } catch (error) {
-    console.error('Failed to close side panel:', error);
-  }
-}
-
 // ===== 설정 탭 초기화 =====
 function initSettingsTab() {
   // 입력 필드 변경 감지
@@ -210,7 +197,6 @@ function initSettingsTab() {
   });
 
   // 캐시 관리 버튼
-  document.getElementById('clearPageCacheBtn')?.addEventListener('click', handleClearPageCache);
   document.getElementById('clearAllCacheBtn')?.addEventListener('click', handleClearAllCache);
 }
 
@@ -222,7 +208,8 @@ async function loadSettings() {
       'model',
       'batchSize',
       'concurrency',
-      'cacheTTL'
+      'cacheTTL',
+      'enableConsoleLog'
     ]);
 
     // 원본 설정 저장
@@ -239,6 +226,9 @@ async function loadSettings() {
     // 캐시 설정 (항상 활성화)
     document.getElementById('cacheTTL').value = result.cacheTTL || 60;
 
+    // 디버그 설정
+    document.getElementById('enableConsoleLog').checked = result.enableConsoleLog || false;
+
     // 변경 플래그 초기화
     settingsChanged = false;
     hideSaveBar();
@@ -254,6 +244,7 @@ async function handleSaveSettings() {
   const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
   const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
   const cacheTTL = parseInt(document.getElementById('cacheTTL').value) || 60;
+  const enableConsoleLog = document.getElementById('enableConsoleLog').checked;
 
   const model = modelInput || DEFAULT_MODEL;
 
@@ -284,7 +275,17 @@ async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
-      cacheTTL
+      cacheTTL,
+      enableConsoleLog
+    });
+
+    console.log('설정 저장 완료:', {
+      apiKey: apiKey ? '***' : '없음',
+      model,
+      batchSize,
+      concurrency,
+      cacheTTL,
+      enableConsoleLog
     });
 
     // 원본 설정 업데이트
@@ -293,7 +294,8 @@ async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
-      cacheTTL
+      cacheTTL,
+      enableConsoleLog
     };
 
     settingsChanged = false;
@@ -336,22 +338,6 @@ function showToast(message, type = 'success') {
   setTimeout(() => {
     toast.classList.remove('show');
   }, 2000);
-}
-
-// 페이지 캐시 비우기
-async function handleClearPageCache() {
-  if (!currentTabId) {
-    showToast('활성 탭을 찾을 수 없습니다.', 'error');
-    return;
-  }
-
-  try {
-    await chrome.tabs.sendMessage(currentTabId, { action: 'clearPageCache' });
-    showToast('이 페이지의 캐시가 삭제되었습니다.');
-  } catch (error) {
-    console.error('Failed to clear page cache:', error);
-    showToast('캐시 삭제 중 오류가 발생했습니다.', 'error');
-  }
 }
 
 // 전역 캐시 비우기
