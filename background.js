@@ -1,32 +1,55 @@
-// Background Service Worker
+/**
+ * Background Service Worker
+ *
+ * 주요 역할:
+ * - Content script 자동 등록 및 수동 주입
+ * - Side Panel 동작 설정
+ * - Extension 생명주기 관리
+ *
+ * 참고: Service Worker는 ES6 모듈 import를 지원하지 않으므로 인라인 로거 사용
+ */
 
-// ===== 인라인 로거 (service worker용) =====
+// ===== 로깅 시스템 =====
+// DEBUG 레벨은 설정에서 토글 가능, INFO/WARN/ERROR는 항상 출력
 const LEVEL_MAP = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 let currentLogLevel = 'INFO';
 
-// 초기화
+/**
+ * 로거 초기화 - storage에서 디버그 설정 로드
+ */
 (async () => {
   try {
     const result = await chrome.storage.local.get(['debugLog']);
     currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
   } catch (error) {
-    // 기본값 유지
+    // storage 접근 실패 시 기본값(INFO) 유지
   }
 })();
 
-// 설정 변경 감지
+/**
+ * 디버그 설정 변경 감지
+ */
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.debugLog) {
     currentLogLevel = changes.debugLog.newValue ? 'DEBUG' : 'INFO';
   }
 });
 
-// 로그 함수
+/**
+ * 구조화된 로그 출력
+ * @param {string} level - DEBUG|INFO|WARN|ERROR
+ * @param {string} evt - 이벤트명 (대문자_스네이크_케이스)
+ * @param {string} msg - 사람이 읽기 쉬운 요약 메시지
+ * @param {object} data - 추가 데이터 (자동으로 JSON 직렬화)
+ * @param {Error|string} err - 에러 객체 또는 메시지
+ */
 function log(level, evt, msg = '', data = {}, err = null) {
+  // DEBUG 레벨 필터링 (다른 레벨은 항상 출력)
   if (level === 'DEBUG' && LEVEL_MAP[level] < LEVEL_MAP[currentLogLevel]) return;
 
   const record = { ts: new Date().toISOString(), level, ns: 'background', evt, msg, ...data };
 
+  // 에러 정보 추가
   if (err) {
     if (err instanceof Error) {
       record.err = err.message;
@@ -39,7 +62,7 @@ function log(level, evt, msg = '', data = {}, err = null) {
   const prefix = `[WPT][${level}][background]`;
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
 
-  // 객체를 제대로 출력하도록 개선
+  // 구조화된 출력: prefix + evt + msg + data
   console[consoleMethod]('%s %s %o', prefix, evt, msg || '', record);
 }
 
@@ -48,11 +71,15 @@ const logInfo = (evt, msg, data, err) => log('INFO', evt, msg, data, err);
 const logWarn = (evt, msg, data, err) => log('WARN', evt, msg, data, err);
 const logError = (evt, msg, data, err) => log('ERROR', evt, msg, data, err);
 
-// 확장프로그램 설치 시
+// ===== Extension 설치 및 초기화 =====
+
+/**
+ * Extension 설치/업데이트 시 초기 설정
+ */
 chrome.runtime.onInstalled.addListener(async () => {
   logInfo('EXTENSION_INSTALLED', '웹페이지 번역기가 설치되었습니다');
 
-  // Side Panel 동작 설정: 아이콘 클릭 시 패널 열기
+  // Side Panel 동작 설정: 아이콘 클릭 시 패널 자동 오픈
   try {
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
     logInfo('SIDE_PANEL_BEHAVIOR_SET', 'Side Panel 동작 설정 완료');
@@ -60,18 +87,18 @@ chrome.runtime.onInstalled.addListener(async () => {
     logInfo('SIDE_PANEL_BEHAVIOR_FAILED', 'Side Panel 동작 설정 실패 (수동 오픈 사용)', {}, error);
   }
 
-  // Content script 상시 등록 (안정적인 주입 보장)
+  // Content script 상시 등록 (페이지 로드 시 자동 주입)
   try {
     await chrome.scripting.registerContentScripts([{
       id: 'content-script',
       js: ['content.js'],
       matches: ['https://*/*', 'http://*/*'],
       runAt: 'document_start',
-      persistAcrossSessions: true,
+      persistAcrossSessions: true, // 브라우저 재시작 후에도 유지
     }]);
     logInfo('CONTENT_SCRIPT_REGISTERED', 'Content script 등록 완료');
   } catch (error) {
-    // 이미 등록된 경우 무시
+    // 이미 등록된 경우 무시 (에러가 아님)
     if (error.message.includes('duplicate')) {
       logDebug('CONTENT_SCRIPT_ALREADY_REGISTERED', 'Content script 이미 등록됨');
     } else {
@@ -80,9 +107,22 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
-// ===== Content script 준비 확인 및 주입 =====
+// ===== Content Script 관리 =====
+
+/**
+ * Content script 준비 확인 및 주입
+ *
+ * 동작 흐름:
+ * 1. PING 메시지로 준비 상태 확인
+ * 2. 준비되지 않았으면 수동 주입
+ * 3. CONTENT_READY 메시지 대기 (최대 1.5초)
+ *
+ * @param {number} tabId - 대상 탭 ID
+ * @returns {Promise<void>}
+ * @throws {Error} 준비 시간 초과 시
+ */
 async function ensureContentScript(tabId) {
-  // 1) PING으로 content script 존재 확인
+  // 1단계: PING으로 content script 존재 확인
   const ping = () =>
     chrome.tabs.sendMessage(tabId, { type: 'PING' })
       .then(() => {
@@ -98,7 +138,7 @@ async function ensureContentScript(tabId) {
     return; // 이미 준비됨
   }
 
-  // 2) 없으면 주입
+  // 2단계: Content script 수동 주입
   logInfo('CONTENT_INJECT_START', 'Content script 수동 주입 시작', { tabId });
   try {
     await chrome.scripting.executeScript({
@@ -111,7 +151,7 @@ async function ensureContentScript(tabId) {
     throw error;
   }
 
-  // 3) CONTENT_READY 메시지 대기 (최대 1.5초)
+  // 3단계: CONTENT_READY 메시지 대기 (최대 1.5초)
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       chrome.runtime.onMessage.removeListener(listener);
@@ -141,7 +181,15 @@ async function ensureContentScript(tabId) {
 }
 
 // ===== Side Panel 관리 =====
-// manifest.json의 default_open_panel_on_action_click: true 설정으로
-// Chrome이 자동으로 패널을 관리합니다 (window-level).
-//
-// URL 체크 및 권한 확인은 sidepanel.js에서 사용자 액션(번역 버튼 클릭) 시에만 수행합니다.
+
+/**
+ * Side Panel은 Chrome이 자동으로 관리 (Window-level 동작)
+ *
+ * manifest.json의 openPanelOnActionClick: true 설정으로
+ * 아이콘 클릭 시 자동으로 패널이 열림
+ *
+ * 패널 상태 추적이나 URL 변경 감지는 하지 않음
+ * (불필요한 로그 방지 - CLAUDE.md 참고)
+ *
+ * 권한 체크는 sidepanel.js에서 사용자 액션(번역 버튼 클릭) 시에만 수행
+ */
