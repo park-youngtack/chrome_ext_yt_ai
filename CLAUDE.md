@@ -23,10 +23,11 @@ chrome_ext_yt_ai/
 ### 주요 컴포넌트
 
 #### 1. Background Service Worker (`background.js`)
-- 사이드패널 자동 오픈 설정
-- 탭별 독립적인 패널 관리
-- 패널 닫기 메시지 핸들러
-- 중복 호출 방지 디바운스
+- **Content script 자동 등록** (persistAcrossSessions)
+- **Content script 수동 주입** (필요 시 ensureContentScript)
+- **패널은 Chrome이 자동 관리** (manifest.json의 default_open_panel_on_action_click: true)
+- ❌ **탭별 패널 상태 추적 안 함** (window-level로 동작)
+- ❌ **URL 변경 감지 안 함** (불필요한 로그 방지)
 
 #### 2. Content Script (`content.js`)
 - DOM 텍스트 노드 수집 및 번역
@@ -42,6 +43,64 @@ chrome_ext_yt_ai/
 - **딥링크**: `#translate`, `#settings` 지원
 - **세션 복원**: 마지막 탭 상태 저장/복원
 - **실시간 UI**: Port를 통한 진행률/시간 업데이트 (1초마다)
+- **권한 체크**: 탭 변경 시 UI 업데이트 (조용한 체크), 번역 버튼 클릭 시 최종 검증
+
+## 패널 동작 원칙 ⚠️ 중요!
+
+### 핵심 원칙
+1. **패널은 Window-Level로 동작**
+   - 한번 열면 해당 창의 모든 탭에서 보임
+   - Chrome이 자동으로 관리 (manifest.json: `default_open_panel_on_action_click: true`)
+   - background.js는 패널 상태를 추적하지 않음
+
+2. **탭별 상태 관리 금지**
+   - ❌ `panelOpenState` Map 같은 탭별 추적 코드 작성 금지
+   - ❌ `chrome.tabs.onUpdated`로 URL 변경 감지하여 경고 출력 금지
+   - ❌ 탭 이동 시마다 권한 체크하여 로그 출력 금지
+
+3. **URL/권한 체크는 사용자 액션 시에만**
+   - ✅ 번역 버튼 클릭 시 `checkPermissions()` 호출
+   - ✅ 지원하지 않는 URL(chrome://, edge://)은 UI로 안내
+   - ✅ sidepanel.js의 `handleTranslateAll()`에서 최종 검증
+
+4. **불필요한 로그 방지**
+   - `chrome://newtab/` 같은 URL에서 패널이 보여도 경고 출력 안 함
+   - 탭 이동 시 조용한 UI 업데이트만 수행
+   - 사용자가 번역 시도할 때만 에러 메시지 표시
+
+### 금지 패턴
+```javascript
+// ❌ 절대 이런 코드 작성 금지!
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (!/^https?:/.test(tab.url)) {
+    logWarn('UNSUPPORTED_URL', ...); // 불필요한 경고!
+  }
+});
+
+// ❌ 탭별 패널 상태 추적 금지!
+const panelOpenState = new Map();
+chrome.action.onClicked.addListener(() => {
+  if (panelOpenState.get(tabId)) { ... }
+});
+```
+
+### 올바른 패턴
+```javascript
+// ✅ 사용자 액션 시에만 체크
+async function handleTranslateAll() {
+  if (!permissionGranted) {
+    showToast('권한을 먼저 허용해주세요.', 'error');
+    return;
+  }
+  // 번역 진행...
+}
+
+// ✅ 탭 변경 시 조용한 UI 업데이트
+chrome.tabs.onActivated.addListener(async () => {
+  currentTabId = tab.id;
+  await checkPermissions(tab); // UI만 업데이트, 로그 최소화
+});
+```
 
 ## UI/UX 스펙
 
