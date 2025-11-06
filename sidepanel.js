@@ -552,11 +552,10 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
     logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 이미 준비됨', { tabId });
     return true;
   } catch (error) {
-    // "Receiving end does not exist" 에러 탐지
+    // "Receiving end does not exist" 에러 탐지 (정상 시나리오 - 탭 전환 시 발생 가능)
     if (error.message && error.message.includes('Receiving end does not exist')) {
-      logWarn('sidepanel', 'MESSAGE_ROUTING_ERROR', 'Content script 미주입 감지', {
+      logDebug('sidepanel', 'CONTENT_NOT_READY', 'Content script 미주입 (정상, 자동 주입 예정)', {
         tabId,
-        err: error.message,
         hasContent: false
       });
     } else {
