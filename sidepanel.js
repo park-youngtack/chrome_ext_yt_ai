@@ -26,6 +26,37 @@ const SESSION_KEY = 'lastActiveTab';
 const HISTORY_STORAGE_KEY = 'translationHistory';
 const HISTORY_MAX_ITEMS = 100;
 
+/**
+ * 최신순으로 정렬된 히스토리 목록에서 URL 기준 중복을 제거한다.
+ * @param {Array<object>} entries - 정렬된 히스토리 배열
+ * @returns {Array<object>} URL별로 마지막 번역만 남긴 배열
+ */
+function deduplicateHistoryByUrl(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const uniqueEntries = [];
+
+  for (const entry of entries) {
+    if (!entry || typeof entry.url !== 'string') {
+      uniqueEntries.push(entry);
+      continue;
+    }
+
+    // 동일 URL은 가장 최근 항목만 유지하기 위해 최초 발견된 항목만 추가한다.
+    if (seen.has(entry.url)) {
+      continue;
+    }
+
+    seen.add(entry.url);
+    uniqueEntries.push(entry);
+  }
+
+  return uniqueEntries;
+}
+
 // ===== 전역 상태 =====
 let currentTabId = null;          // 현재 활성 탭 ID
 let port = null;                  // content script와의 통신 port
@@ -349,9 +380,17 @@ async function loadHistoryEntries() {
   try {
     const result = await chrome.storage.local.get([HISTORY_STORAGE_KEY]);
     const history = Array.isArray(result[HISTORY_STORAGE_KEY]) ? result[HISTORY_STORAGE_KEY] : [];
-    return history
+    const sorted = history
       .map((item) => ({ ...item }))
       .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
+
+    const uniqueEntries = deduplicateHistoryByUrl(sorted);
+
+    if (uniqueEntries.length !== sorted.length) {
+      await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: uniqueEntries });
+    }
+
+    return uniqueEntries;
   } catch (error) {
     logError('sidepanel', 'HISTORY_LOAD_ERROR', '히스토리 불러오기 실패', {}, error);
     return [];
@@ -465,7 +504,9 @@ async function saveHistoryEntry(entry) {
       mode: entry.mode
     };
 
-    const next = [normalized, ...history].slice(0, HISTORY_MAX_ITEMS);
+    const withoutSameUrl = history.filter((item) => item && item.url !== normalized.url);
+    const candidateList = [normalized, ...withoutSameUrl];
+    const next = deduplicateHistoryByUrl(candidateList).slice(0, HISTORY_MAX_ITEMS);
     await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: next });
 
     logInfo('sidepanel', 'HISTORY_SAVED', '번역 히스토리 저장', {
