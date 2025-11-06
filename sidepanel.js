@@ -177,13 +177,8 @@ function handleDeepLink() {
 // 닫기 버튼
 async function handleClose() {
   try {
-    if (!currentTabId) return;
-
     // background.js에 닫기 메시지 전송
-    await chrome.runtime.sendMessage({
-      action: 'closeSidePanel',
-      tabId: currentTabId
-    });
+    await chrome.runtime.sendMessage({ type: 'closeSidePanel' });
   } catch (error) {
     console.error('Failed to close side panel:', error);
   }
@@ -227,7 +222,6 @@ async function loadSettings() {
       'model',
       'batchSize',
       'concurrency',
-      'cacheEnabled',
       'cacheTTL'
     ]);
 
@@ -242,8 +236,7 @@ async function loadSettings() {
     document.getElementById('batchSize').value = result.batchSize || 50;
     document.getElementById('concurrency').value = result.concurrency || 3;
 
-    // 캐시 설정
-    document.getElementById('cacheToggle').checked = result.cacheEnabled !== false;
+    // 캐시 설정 (항상 활성화)
     document.getElementById('cacheTTL').value = result.cacheTTL || 60;
 
     // 변경 플래그 초기화
@@ -260,7 +253,6 @@ async function handleSaveSettings() {
   const modelInput = document.getElementById('model').value.trim();
   const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
   const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
-  const cacheEnabled = document.getElementById('cacheToggle').checked;
   const cacheTTL = parseInt(document.getElementById('cacheTTL').value) || 60;
 
   const model = modelInput || DEFAULT_MODEL;
@@ -292,7 +284,6 @@ async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
-      cacheEnabled,
       cacheTTL
     });
 
@@ -302,7 +293,6 @@ async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
-      cacheEnabled,
       cacheTTL
     };
 
@@ -607,8 +597,7 @@ async function handleTranslateAll(useCache = true) {
       'apiKey',
       'model',
       'batchSize',
-      'concurrency',
-      'cacheEnabled'
+      'concurrency'
     ]);
 
     if (!settings.apiKey) {
@@ -617,17 +606,14 @@ async function handleTranslateAll(useCache = true) {
       return;
     }
 
-    // 캐시 사용 여부 결정
-    const finalUseCache = useCache && settings.cacheEnabled !== false;
-
-    // 번역 시작
+    // 번역 시작 (캐시는 항상 활성화, useCache 파라미터로 빠른 모드/새로 번역 구분)
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'translateFullPage',
       apiKey: settings.apiKey,
       model: settings.model || DEFAULT_MODEL,
       batchSize: settings.batchSize || 50,
       concurrency: settings.concurrency || 3,
-      useCache: finalUseCache
+      useCache: useCache
     });
 
   } catch (error) {
