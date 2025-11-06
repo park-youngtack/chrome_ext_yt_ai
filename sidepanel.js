@@ -44,6 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 딥링크 처리
   handleDeepLink();
 
+  // 초기 API key UI 업데이트
+  await updateApiKeyUI();
+
   // 탭바 이벤트 (세로 탭)
   initTabbar();
 
@@ -62,6 +65,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsBtn = document.getElementById('openSettingsBtn');
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
+      switchTab('settings');
+    });
+  }
+
+  // 설정으로 이동 버튼 (API key 없을 때)
+  const goToSettingsBtn = document.getElementById('goToSettingsBtn');
+  if (goToSettingsBtn) {
+    goToSettingsBtn.addEventListener('click', () => {
       switchTab('settings');
     });
   }
@@ -149,6 +160,11 @@ async function switchTab(tabName) {
   // 세션 저장 (마지막 탭 상태)
   await chrome.storage.session.set({ [SESSION_KEY]: tabName });
 
+  // 번역 탭으로 전환 시 API key 확인
+  if (tabName === 'translate') {
+    await updateApiKeyUI();
+  }
+
   // 설정 탭으로 전환 시 설정 로드
   if (tabName === 'settings') {
     await loadSettings();
@@ -174,6 +190,29 @@ function handleDeepLink() {
   const hash = window.location.hash.slice(1); // # 제거
   if (hash === 'translate' || hash === 'settings') {
     switchTab(hash);
+  }
+}
+
+// ===== API Key UI 업데이트 =====
+async function updateApiKeyUI() {
+  try {
+    const result = await chrome.storage.local.get(['apiKey']);
+    const hasApiKey = result.apiKey && result.apiKey.trim().length > 0;
+
+    const noApiKeyMessage = document.getElementById('noApiKeyMessage');
+    const translateSection = document.getElementById('translateSection');
+
+    if (hasApiKey) {
+      // API key가 있으면 번역 섹션 표시
+      if (noApiKeyMessage) noApiKeyMessage.style.display = 'none';
+      if (translateSection) translateSection.style.display = 'block';
+    } else {
+      // API key가 없으면 안내 메시지 표시
+      if (noApiKeyMessage) noApiKeyMessage.style.display = 'block';
+      if (translateSection) translateSection.style.display = 'none';
+    }
+  } catch (error) {
+    logError('sidepanel', 'API_KEY_CHECK_ERROR', 'API Key 확인 실패', {}, error);
   }
 }
 
@@ -309,6 +348,9 @@ async function handleSaveSettings() {
     settingsChanged = false;
     hideSaveBar();
     showToast('설정이 저장되었습니다!');
+
+    // API key UI 업데이트 (번역 탭에서 버튼 표시/숨김)
+    await updateApiKeyUI();
   } catch (error) {
     logError('sidepanel', 'SETTINGS_SAVE_ERROR', '설정 저장 실패', {}, error);
     showToast('저장 중 오류가 발생했습니다: ' + error.message, 'error');
