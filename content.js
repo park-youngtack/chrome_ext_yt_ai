@@ -151,7 +151,10 @@ let progressStatus = {
   batchCount: 0,          // 전체 배치 수
   batchesDone: 0,         // 완료 배치 수
   batches: [],            // 배치 상세 정보
-  activeMs: 0             // 경과 시간 (ms)
+  activeMs: 0,            // 경과 시간 (ms)
+  originalTitle: '',      // 번역 전 페이지 제목
+  translatedTitle: '',    // 번역 후 페이지 제목
+  previewText: ''         // 히스토리용 번역 프리뷰
 };
 
 // ===== 타이머 관리 =====
@@ -368,10 +371,15 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     batchCount: 0,
     batchesDone: 0,
     batches: [],
-    activeMs: 0
+    activeMs: 0,
+    originalTitle: (document.title || '').trim(),
+    translatedTitle: (document.title || '').trim(),
+    previewText: ''
   };
 
   pushProgress();
+
+  const titlePromise = translateDocumentTitle(apiKey, model, useCache, progressStatus.originalTitle);
 
   try {
     // 텍스트 노드 수집
@@ -506,6 +514,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
                 originalTexts.set(element, element.textContent);
               }
               element.textContent = translation;
+              capturePreviewFromTranslation(translation);
               translatedElements.add(element);
               progressStatus.translatedCount++;
             });
@@ -656,6 +665,10 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     }
 
     // 완료
+    await titlePromise.catch((error) => {
+      logWarn('TITLE_TRANSLATE_DEFER_FAIL', '제목 번역 비동기 처리 실패', {}, error);
+    });
+
     translationState = 'completed';
     progressStatus.state = 'completed';
     pushProgress();
@@ -731,6 +744,7 @@ async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
           }
 
           element.textContent = translation;
+          capturePreviewFromTranslation(translation);
           applied++;
           translatedElements.add(element);
           progressStatus.translatedCount++;
@@ -756,6 +770,99 @@ async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
       resolve();
     });
   });
+}
+
+/**
+ * 번역된 텍스트에서 히스토리 프리뷰를 한 번만 포착한다.
+ * @param {string} translation - 적용된 번역 텍스트
+ */
+function capturePreviewFromTranslation(translation) {
+  if (progressStatus.previewText && progressStatus.previewText.length > 0) {
+    return;
+  }
+
+  if (typeof translation !== 'string') {
+    return;
+  }
+
+  const normalized = translation.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return;
+  }
+
+  progressStatus.previewText = normalized.slice(0, 120);
+}
+
+/**
+ * 페이지 제목을 별도로 번역하여 히스토리 정보에 활용한다.
+ * @param {string} apiKey - OpenRouter API Key
+ * @param {string} model - 번역에 사용할 모델
+ * @param {boolean} useCache - 캐시 활용 여부 (빠른 모드 여부)
+ * @param {string} originalTitle - 번역 전 페이지 제목
+ * @returns {Promise<void>} 제목 번역 완료 시 resolve되는 Promise
+ */
+async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
+  try {
+    if (!originalTitle) {
+      progressStatus.originalTitle = '';
+      progressStatus.translatedTitle = '';
+      return;
+    }
+
+    progressStatus.originalTitle = originalTitle;
+    progressStatus.translatedTitle = originalTitle;
+
+    if (useCache) {
+      const cached = await getCachedTranslation(originalTitle);
+      if (cached && cached.trim().length > 0) {
+        applyTranslatedTitleToDocument(cached.trim());
+        pushProgress();
+        return;
+      }
+    }
+
+    const translations = await translateWithOpenRouter([originalTitle], apiKey, model);
+    const translated = translations && translations[0] ? translations[0].trim() : '';
+    const finalTitle = translated.length > 0 ? translated : originalTitle;
+
+    applyTranslatedTitleToDocument(finalTitle);
+
+    if (useCache && finalTitle !== originalTitle) {
+      await setCachedTranslation(originalTitle, finalTitle, model);
+    }
+
+    pushProgress();
+  } catch (error) {
+    logWarn('TITLE_TRANSLATE_FAIL', '페이지 제목 번역 실패', { length: originalTitle?.length || 0 }, error);
+    applyTranslatedTitleToDocument(originalTitle || document.title || '');
+    pushProgress();
+  }
+}
+
+/**
+ * 번역된 제목을 document.title과 progressStatus에 반영한다.
+ * @param {string} titleText - 최종 적용할 제목 텍스트
+ */
+function applyTranslatedTitleToDocument(titleText) {
+  if (typeof titleText !== 'string') {
+    return;
+  }
+
+  const normalized = titleText.trim();
+  progressStatus.translatedTitle = normalized;
+
+  if (!normalized) {
+    return;
+  }
+
+  if (document.title !== normalized) {
+    document.title = normalized;
+  }
+
+  const titleElement = document.querySelector('title');
+  if (titleElement && titleElement.textContent !== normalized) {
+    titleElement.textContent = normalized;
+  }
 }
 
 // ===== OpenRouter API 통신 =====
@@ -1009,9 +1116,15 @@ function handleRestoreOriginal() {
   originalTexts = new WeakMap();
   translatedElements.clear();
 
+  if (progressStatus.originalTitle) {
+    applyTranslatedTitleToDocument(progressStatus.originalTitle);
+  }
+
   translationState = 'restored';
   progressStatus.state = 'restored';
   progressStatus.translatedCount = 0;
+  progressStatus.previewText = '';
+  progressStatus.translatedTitle = progressStatus.originalTitle;
 
   pushProgress();
 }
