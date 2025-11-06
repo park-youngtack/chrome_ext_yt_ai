@@ -575,7 +575,16 @@ function connectToContentScript(tabId) {
     });
 
     port.onDisconnect.addListener(() => {
-      logInfo('sidepanel', 'PORT_DISCONNECT', '포트 연결 끊김', { tabId });
+      // chrome.runtime.lastError를 확인하여 에러 처리
+      if (chrome.runtime.lastError) {
+        // Back/forward cache로 이동 등의 에러는 조용히 처리
+        logDebug('sidepanel', 'PORT_DISCONNECT', '포트 연결 끊김 (back/forward cache)', {
+          tabId,
+          error: chrome.runtime.lastError.message
+        });
+      } else {
+        logInfo('sidepanel', 'PORT_DISCONNECT', '포트 연결 끊김', { tabId });
+      }
       port = null;
     });
 

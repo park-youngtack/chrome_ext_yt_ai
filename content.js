@@ -68,10 +68,22 @@ function log(level, evt, msg = '', data = {}, err = null) {
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
 
   // 구조화된 로그 출력 (객체가 [object Object]로 표시되지 않도록)
+  // 데이터 필드만 추출 (ts, level, ns, evt, msg 제외)
+  const {ts, level: lvl, ns, evt: evtName, msg: msgText, err: errMsg, stack, ...data} = record;
+  const dataStr = Object.keys(data).length > 0 ? ' ' + JSON.stringify(data) : '';
+
   if (msg) {
-    console[consoleMethod](`${prefix} ${msg}`, record);
+    if (errMsg) {
+      console[consoleMethod](`${prefix} ${msg}${dataStr}`, `\nError: ${errMsg}${stack ? '\n' + stack : ''}`);
+    } else {
+      console[consoleMethod](`${prefix} ${msg}${dataStr}`);
+    }
   } else {
-    console[consoleMethod](prefix, record);
+    if (errMsg) {
+      console[consoleMethod](`${prefix}${dataStr}`, `\nError: ${errMsg}${stack ? '\n' + stack : ''}`);
+    } else {
+      console[consoleMethod](`${prefix}${dataStr}`);
+    }
   }
 }
 
@@ -111,8 +123,16 @@ chrome.runtime.onConnect.addListener((p) => {
     pushProgress();
 
     port.onDisconnect.addListener(() => {
+      // chrome.runtime.lastError를 확인하여 에러 처리
+      if (chrome.runtime.lastError) {
+        // Back/forward cache로 이동 등의 에러는 정상 시나리오로 조용히 처리
+        logDebug('PORT_DISCONNECT', 'Port 연결 끊김 (back/forward cache)', {
+          error: chrome.runtime.lastError.message
+        });
+      } else {
+        log('Side panel disconnected');
+      }
       port = null;
-      log('Side panel disconnected');
     });
   }
 });
@@ -171,8 +191,17 @@ function pushProgress() {
         activeMs
       }
     });
+    // chrome.runtime.lastError를 확인하여 에러를 조용히 처리
+    if (chrome.runtime.lastError) {
+      // Port가 이미 끊어진 경우 조용히 처리
+      port = null;
+    }
   } catch (error) {
-    console.error('Failed to push progress:', error);
+    // Port 연결 끊김 등의 에러는 조용히 처리
+    port = null;
+    logDebug('PUSH_PROGRESS_ERROR', 'Port 메시지 전송 실패 (연결 끊김)', {
+      error: error.message
+    });
   }
 }
 
