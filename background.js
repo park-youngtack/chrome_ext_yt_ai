@@ -37,6 +37,13 @@ chrome.action.onClicked.addListener(async (tab) => {
   opening = true;
 
   try {
+    // 해당 탭에서만 사이드패널 설정 및 활성화
+    await chrome.sidePanel.setOptions({
+      tabId: tab.id,
+      path: 'sidepanel.html',
+      enabled: true
+    });
+
     // 해당 탭에서만 사이드패널 열기
     await chrome.sidePanel.open({ tabId: tab.id });
     log(`Side panel opened for tab ${tab.id}`);
