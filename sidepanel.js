@@ -1,9 +1,15 @@
 import { FOOTER_TEXT } from './meta.js';
 
+// 기본 설정
+const DEFAULT_MODEL = 'openai/gpt-4o-mini';
+const SESSION_KEY = 'lastActiveTab';
+
 // 상태 관리
 let currentTabId = null;
 let port = null;
 let permissionGranted = false;
+let settingsChanged = false;
+let originalSettings = {};
 
 let translationState = {
   state: 'inactive',
@@ -31,13 +37,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     await checkPermissions(tab);
   }
 
-  // 버튼 이벤트
-  document.getElementById('translateAllBtn').addEventListener('click', () => handleTranslateAll(true));
-  document.getElementById('translateFreshBtn').addEventListener('click', () => handleTranslateAll(false));
-  document.getElementById('restoreBtn').addEventListener('click', handleRestore);
-  document.getElementById('openSettings').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
-  });
+  // 세션 복원 (마지막 탭)
+  await restoreSession();
+
+  // 딥링크 처리
+  handleDeepLink();
+
+  // 탭바 이벤트 (세로 탭)
+  initTabbar();
+
+  // 번역 탭 버튼 이벤트
+  document.getElementById('translateAllBtn')?.addEventListener('click', () => handleTranslateAll(true));
+  document.getElementById('translateFreshBtn')?.addEventListener('click', () => handleTranslateAll(false));
+  document.getElementById('restoreBtn')?.addEventListener('click', handleRestore);
 
   // 권한 요청 버튼
   const permBtn = document.getElementById('requestPermissionBtn');
@@ -49,9 +61,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsBtn = document.getElementById('openSettingsBtn');
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
-      chrome.runtime.openOptionsPage();
+      switchTab('settings');
     });
   }
+
+  // 설정 탭 이벤트
+  initSettingsTab();
+
+  // 닫기 버튼
+  document.getElementById('closeBtn')?.addEventListener('click', handleClose);
 
   // 탭 변경 감지
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
@@ -62,6 +80,307 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
+
+// ===== 탭바 초기화 =====
+function initTabbar() {
+  const tabButtons = document.querySelectorAll('.vertical-tabbar button[role="tab"]');
+
+  tabButtons.forEach(btn => {
+    // 클릭 이벤트
+    btn.addEventListener('click', () => {
+      const tabName = btn.dataset.tab;
+      if (tabName) {
+        switchTab(tabName);
+      }
+    });
+
+    // 키보드 내비게이션
+    btn.addEventListener('keydown', handleTabKeydown);
+  });
+}
+
+// 키보드 내비게이션 (화살표, Enter, Space)
+function handleTabKeydown(e) {
+  const tabButtons = Array.from(document.querySelectorAll('.vertical-tabbar button[role="tab"]'));
+  const currentIndex = tabButtons.indexOf(e.target);
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const nextIndex = (currentIndex + 1) % tabButtons.length;
+    tabButtons[nextIndex].focus();
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    const prevIndex = (currentIndex - 1 + tabButtons.length) % tabButtons.length;
+    tabButtons[prevIndex].focus();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    const tabName = e.target.dataset.tab;
+    if (tabName) {
+      switchTab(tabName);
+    }
+  }
+}
+
+// 탭 전환
+async function switchTab(tabName) {
+  // 탭 버튼 상태 업데이트
+  const tabButtons = document.querySelectorAll('.vertical-tabbar button[role="tab"]');
+  tabButtons.forEach(btn => {
+    if (btn.dataset.tab === tabName) {
+      btn.setAttribute('aria-selected', 'true');
+    } else {
+      btn.setAttribute('aria-selected', 'false');
+    }
+  });
+
+  // 탭 컨텐츠 전환
+  const tabContents = document.querySelectorAll('.tab-content');
+  tabContents.forEach(content => {
+    if (content.id === `${tabName}Tab`) {
+      content.classList.add('active');
+    } else {
+      content.classList.remove('active');
+    }
+  });
+
+  // 세션 저장 (마지막 탭 상태)
+  await chrome.storage.session.set({ [SESSION_KEY]: tabName });
+
+  // 설정 탭으로 전환 시 설정 로드
+  if (tabName === 'settings') {
+    await loadSettings();
+  }
+}
+
+// 세션 복원
+async function restoreSession() {
+  try {
+    const result = await chrome.storage.session.get(SESSION_KEY);
+    const lastTab = result[SESSION_KEY];
+
+    if (lastTab && (lastTab === 'translate' || lastTab === 'settings')) {
+      switchTab(lastTab);
+    }
+  } catch (error) {
+    console.error('Failed to restore session:', error);
+  }
+}
+
+// 딥링크 처리 (#translate, #settings)
+function handleDeepLink() {
+  const hash = window.location.hash.slice(1); // # 제거
+  if (hash === 'translate' || hash === 'settings') {
+    switchTab(hash);
+  }
+}
+
+// 닫기 버튼
+async function handleClose() {
+  try {
+    if (!currentTabId) return;
+
+    // background.js에 닫기 메시지 전송
+    await chrome.runtime.sendMessage({
+      action: 'closeSidePanel',
+      tabId: currentTabId
+    });
+  } catch (error) {
+    console.error('Failed to close side panel:', error);
+  }
+}
+
+// ===== 설정 탭 초기화 =====
+function initSettingsTab() {
+  // 입력 필드 변경 감지
+  const inputs = document.querySelectorAll('#settingsTab input');
+  inputs.forEach(input => {
+    input.addEventListener('input', () => {
+      settingsChanged = true;
+      showSaveBar();
+    });
+
+    input.addEventListener('change', () => {
+      settingsChanged = true;
+      showSaveBar();
+    });
+  });
+
+  // 저장 버튼
+  document.getElementById('saveBtn')?.addEventListener('click', handleSaveSettings);
+
+  // 취소 버튼
+  document.getElementById('cancelBtn')?.addEventListener('click', () => {
+    loadSettings(); // 원래 설정 복원
+    hideSaveBar();
+  });
+
+  // 캐시 관리 버튼
+  document.getElementById('clearPageCacheBtn')?.addEventListener('click', handleClearPageCache);
+  document.getElementById('clearAllCacheBtn')?.addEventListener('click', handleClearAllCache);
+}
+
+// 설정 로드
+async function loadSettings() {
+  try {
+    const result = await chrome.storage.local.get([
+      'apiKey',
+      'model',
+      'batchSize',
+      'concurrency',
+      'cacheEnabled',
+      'cacheTTL'
+    ]);
+
+    // 원본 설정 저장
+    originalSettings = { ...result };
+
+    // API 설정
+    document.getElementById('apiKey').value = result.apiKey || '';
+    document.getElementById('model').value = result.model || '';
+
+    // 번역 설정
+    document.getElementById('batchSize').value = result.batchSize || 50;
+    document.getElementById('concurrency').value = result.concurrency || 3;
+
+    // 캐시 설정
+    document.getElementById('cacheToggle').checked = result.cacheEnabled !== false;
+    document.getElementById('cacheTTL').value = result.cacheTTL || 60;
+
+    // 변경 플래그 초기화
+    settingsChanged = false;
+    hideSaveBar();
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+  }
+}
+
+// 설정 저장
+async function handleSaveSettings() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const modelInput = document.getElementById('model').value.trim();
+  const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
+  const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
+  const cacheEnabled = document.getElementById('cacheToggle').checked;
+  const cacheTTL = parseInt(document.getElementById('cacheTTL').value) || 60;
+
+  const model = modelInput || DEFAULT_MODEL;
+
+  // 유효성 검사
+  if (!apiKey) {
+    showToast('API Key를 입력해주세요.', 'error');
+    return;
+  }
+
+  if (batchSize < 10 || batchSize > 100) {
+    showToast('배치 크기는 10~100 사이여야 합니다.', 'error');
+    return;
+  }
+
+  if (concurrency < 1 || concurrency > 10) {
+    showToast('동시 처리 개수는 1~10 사이여야 합니다.', 'error');
+    return;
+  }
+
+  if (cacheTTL < 5 || cacheTTL > 1440) {
+    showToast('캐시 만료 시간은 5~1440분 사이여야 합니다.', 'error');
+    return;
+  }
+
+  try {
+    await chrome.storage.local.set({
+      apiKey,
+      model,
+      batchSize,
+      concurrency,
+      cacheEnabled,
+      cacheTTL
+    });
+
+    // 원본 설정 업데이트
+    originalSettings = {
+      apiKey,
+      model,
+      batchSize,
+      concurrency,
+      cacheEnabled,
+      cacheTTL
+    };
+
+    settingsChanged = false;
+    hideSaveBar();
+    showToast('설정이 저장되었습니다!');
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+    showToast('저장 중 오류가 발생했습니다: ' + error.message, 'error');
+  }
+}
+
+// 저장 바 표시
+function showSaveBar() {
+  const saveBar = document.getElementById('saveBar');
+  if (saveBar) {
+    saveBar.classList.add('active');
+  }
+}
+
+// 저장 바 숨김
+function hideSaveBar() {
+  const saveBar = document.getElementById('saveBar');
+  if (saveBar) {
+    saveBar.classList.remove('active');
+  }
+}
+
+// 토스트 표시 (2초)
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+
+  toast.textContent = message;
+  toast.className = 'toast show';
+
+  if (type === 'error') {
+    toast.classList.add('error');
+  }
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2000);
+}
+
+// 페이지 캐시 비우기
+async function handleClearPageCache() {
+  if (!currentTabId) {
+    showToast('활성 탭을 찾을 수 없습니다.', 'error');
+    return;
+  }
+
+  try {
+    await chrome.tabs.sendMessage(currentTabId, { action: 'clearPageCache' });
+    showToast('이 페이지의 캐시가 삭제되었습니다.');
+  } catch (error) {
+    console.error('Failed to clear page cache:', error);
+    showToast('캐시 삭제 중 오류가 발생했습니다.', 'error');
+  }
+}
+
+// 전역 캐시 비우기
+async function handleClearAllCache() {
+  if (!currentTabId) {
+    showToast('활성 탭을 찾을 수 없습니다.', 'error');
+    return;
+  }
+
+  try {
+    await chrome.tabs.sendMessage(currentTabId, { action: 'clearAllCache' });
+    showToast('모든 캐시가 삭제되었습니다.');
+  } catch (error) {
+    console.error('Failed to clear all cache:', error);
+    showToast('캐시 삭제 중 오류가 발생했습니다.', 'error');
+  }
+}
+
+// ===== 번역 기능 (기존 코드 유지) =====
 
 // 지원 스킴 확인
 function getSupportType(url) {
@@ -278,7 +597,7 @@ function connectToContentScript(tabId) {
 // 전체 번역
 async function handleTranslateAll(useCache = true) {
   if (!currentTabId || !permissionGranted) {
-    alert('권한을 먼저 허용해주세요.');
+    showToast('권한을 먼저 허용해주세요.', 'error');
     return;
   }
 
@@ -288,28 +607,32 @@ async function handleTranslateAll(useCache = true) {
       'apiKey',
       'model',
       'batchSize',
-      'concurrency'
+      'concurrency',
+      'cacheEnabled'
     ]);
 
     if (!settings.apiKey) {
-      alert('먼저 설정에서 API Key를 입력해주세요.');
-      chrome.runtime.openOptionsPage();
+      showToast('먼저 설정에서 API Key를 입력해주세요.', 'error');
+      switchTab('settings');
       return;
     }
+
+    // 캐시 사용 여부 결정
+    const finalUseCache = useCache && settings.cacheEnabled !== false;
 
     // 번역 시작
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'translateFullPage',
       apiKey: settings.apiKey,
-      model: settings.model || 'openai/gpt-4o-mini',
+      model: settings.model || DEFAULT_MODEL,
       batchSize: settings.batchSize || 50,
       concurrency: settings.concurrency || 3,
-      useCache: useCache
+      useCache: finalUseCache
     });
 
   } catch (error) {
     console.error('Translation failed:', error);
-    alert('번역 중 오류가 발생했습니다: ' + error.message);
+    showToast('번역 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
 
@@ -323,7 +646,7 @@ async function handleRestore() {
     });
   } catch (error) {
     console.error('Restore failed:', error);
-    alert('원본 복원 중 오류가 발생했습니다: ' + error.message);
+    showToast('원본 복원 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
 
@@ -334,27 +657,32 @@ function updateUI() {
   // 상태 뱃지
   const statusBadge = document.getElementById('statusBadge');
   const translateAllBtn = document.getElementById('translateAllBtn');
+  const translateFreshBtn = document.getElementById('translateFreshBtn');
   const restoreBtn = document.getElementById('restoreBtn');
 
   if (state === 'translating') {
     statusBadge.textContent = '번역 중';
     statusBadge.className = 'status-badge active pulse';
     translateAllBtn.disabled = true;
+    translateFreshBtn.disabled = true;
     restoreBtn.disabled = false;
   } else if (state === 'completed') {
     statusBadge.textContent = '번역 완료';
     statusBadge.className = 'status-badge active';
     translateAllBtn.disabled = false;
+    translateFreshBtn.disabled = false;
     restoreBtn.disabled = false;
   } else if (state === 'restored') {
     statusBadge.textContent = '원본 보기';
     statusBadge.className = 'status-badge restored';
     translateAllBtn.disabled = false;
+    translateFreshBtn.disabled = false;
     restoreBtn.disabled = true;
   } else {
     statusBadge.textContent = '대기 중';
     statusBadge.className = 'status-badge';
     translateAllBtn.disabled = false;
+    translateFreshBtn.disabled = false;
     restoreBtn.disabled = true;
   }
 

@@ -12,10 +12,11 @@
     }
 
     :root {
-      /* 플랫한 모노톤 다크 테마 */
+      /* 다크 테마 토큰 */
       --bg-primary: #0B0B0F;
-      --bg-secondary: #121212;
+      --bg-tabbar: #121418;
       --bg-card: #16181C;
+      --bg-secondary: #121212;
       --text-primary: #EDEEF0;
       --text-secondary: #A9AFB8;
       --text-disabled: #6B7280;
@@ -37,30 +38,152 @@
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
       --radius-md: 12px;
       --radius-lg: 16px;
+      --tabbar-width: 60px;
     }
 
-    body {
+    html, body {
+      height: 100%;
+      overflow: hidden;
       background: var(--bg-primary);
       color: var(--text-primary);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      height: 100vh;
-      overflow-y: auto;
-      padding: 20px;
       font-size: 14px;
       line-height: 1.5;
     }
 
-    .header {
-      margin-bottom: 24px;
+    /* 패널 전체 레이아웃: 좌측(컨텐츠) + 우측(탭바) */
+    .panel-container {
+      display: flex;
+      height: 100vh;
     }
 
-    .header h1 {
+    /* 좌측 컨텐츠 영역 */
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 헤더 (고정) */
+    .panel-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .panel-header h1 {
       font-size: 18px;
       font-weight: 700;
       color: var(--text-primary);
-      margin-bottom: 0;
     }
 
+    /* 메인 컨텐츠 (스크롤) */
+    .panel-main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    /* 푸터 (고정) */
+    .panel-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-color);
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .panel-footer-text {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* 우측 세로 탭바 */
+    .vertical-tabbar {
+      width: var(--tabbar-width);
+      background: var(--bg-tabbar);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 0;
+      gap: 8px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border-color);
+    }
+
+    .vertical-tabbar button {
+      position: relative;
+      width: 100%;
+      height: 64px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.2s;
+      padding: 8px;
+    }
+
+    .vertical-tabbar button:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .vertical-tabbar button:focus {
+      outline: 2px solid rgba(42, 108, 240, 0.6);
+      outline-offset: -2px;
+    }
+
+    /* 활성 탭 표시 (좌측 인디케이터) */
+    .vertical-tabbar button[aria-selected="true"]::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 2px;
+      height: 32px;
+      background: var(--status-active);
+      border-radius: 0 2px 2px 0;
+    }
+
+    .vertical-tabbar button[aria-selected="true"] {
+      color: var(--text-primary);
+    }
+
+    /* 아이콘 */
+    .vertical-tabbar button svg {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+    }
+
+    /* 라벨 */
+    .vertical-tabbar button span {
+      font-size: 11px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    /* 닫기 버튼 (하단 고정) */
+    .vertical-tabbar #closeBtn {
+      margin-top: auto;
+    }
+
+    /* 탭 컨텐츠 */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* 카드 스타일 */
     .main-card {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
@@ -92,6 +215,7 @@
       line-height: 1.6;
     }
 
+    /* 상태 헤더 */
     .status-header {
       display: flex;
       align-items: center;
@@ -133,6 +257,7 @@
       border-color: var(--border-color);
     }
 
+    /* 통계 그리드 */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -160,18 +285,7 @@
       color: var(--text-primary);
     }
 
-    .btn-group {
-      margin-bottom: 16px;
-    }
-
-    .btn-help {
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-top: 6px;
-      line-height: 1.4;
-      padding-left: 4px;
-    }
-
+    /* 버튼 */
     .btn {
       width: 100%;
       padding: 12px 20px;
@@ -210,48 +324,27 @@
       cursor: not-allowed;
     }
 
-    .guide-section {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-      margin-top: 16px;
-      box-shadow: var(--shadow);
+    .btn-group {
+      margin-bottom: 16px;
     }
 
-    .guide-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 12px;
+    .btn-help {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+      line-height: 1.4;
+      padding-left: 4px;
     }
 
-    .guide-list {
-      list-style: none;
-      padding-left: 0;
-    }
-
-    .guide-list li {
+    /* 진행률 텍스트 */
+    .progress-text {
       font-size: 13px;
       color: var(--text-secondary);
-      margin-bottom: 8px;
-      padding-left: 20px;
-      position: relative;
-      line-height: 1.6;
+      text-align: center;
+      margin-bottom: 16px;
     }
 
-    .guide-list li:before {
-      content: "•";
-      position: absolute;
-      left: 6px;
-      color: var(--status-active);
-      font-weight: bold;
-    }
-
-    .guide-list li:last-child {
-      margin-bottom: 0;
-    }
-
+    /* 배치 정보 */
     .batch-info {
       background: var(--bg-secondary);
       padding: 16px;
@@ -312,6 +405,7 @@
       color: var(--status-error);
     }
 
+    /* 애니메이션 */
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -321,105 +415,511 @@
       animation: pulse 2s ease-in-out infinite;
     }
 
-    .progress-text {
+    /* 가이드 섹션 */
+    .guide-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-top: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .guide-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+
+    .guide-list {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .guide-list li {
       font-size: 13px;
       color: var(--text-secondary);
-      text-align: center;
+      margin-bottom: 8px;
+      padding-left: 20px;
+      position: relative;
+      line-height: 1.6;
+    }
+
+    .guide-list li:before {
+      content: "•";
+      position: absolute;
+      left: 6px;
+      color: var(--status-active);
+      font-weight: bold;
+    }
+
+    .guide-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ===== 설정 탭 스타일 ===== */
+    .settings-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
       margin-bottom: 16px;
+      box-shadow: var(--shadow);
     }
 
-    .footer {
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 1px solid var(--border-color);
-      text-align: center;
+    .settings-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .footer-text {
-      font-size: 12px;
+    .settings-title::before {
+      content: '';
+      width: 3px;
+      height: 18px;
+      background: var(--status-active);
+      border-radius: 2px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .form-group input[type="password"],
+    .form-group input[type="text"],
+    .form-group input[type="number"] {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-size: 13px;
+      transition: all 0.2s;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+
+    .form-group input[type="number"] {
+      width: 100px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--status-active);
+      box-shadow: 0 0 0 3px rgba(42, 108, 240, 0.1);
+    }
+
+    .form-help {
+      font-size: 11px;
       color: var(--text-secondary);
+      margin-top: 6px;
       line-height: 1.5;
+    }
+
+    .form-help a {
+      color: var(--status-active);
+      text-decoration: none;
+    }
+
+    .form-help a:hover {
+      text-decoration: underline;
+    }
+
+    /* 토글 스위치 (44×24) */
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+    }
+
+    .toggle-group label {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-switch input:focus + .toggle-slider {
+      outline: 2px solid rgba(42, 108, 240, 0.6);
+      outline-offset: 2px;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--border-color);
+      border-radius: 24px;
+      transition: all 0.3s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background: var(--status-active);
+    }
+
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(20px);
+    }
+
+    .inline-setting {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .inline-setting label {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 12px;
+      flex: 1;
+    }
+
+    /* 캐시 설명 박스 */
+    .cache-info {
+      margin-top: 16px;
+      padding: 14px;
+      background: var(--bg-primary);
+      border-radius: var(--radius-md);
+      font-size: 11px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+
+    /* 캐시 버튼 그룹 */
+    .cache-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .cache-buttons .btn {
+      flex: 1;
+      font-size: 12px;
+      padding: 10px;
+    }
+
+    /* 저장 바 (하단 고정) */
+    .save-bar {
+      position: sticky;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-tabbar);
+      border-top: 1px solid var(--border-color);
+      padding: 12px 20px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      margin: 0 -20px -20px;
+    }
+
+    .save-bar.active {
+      display: flex;
+    }
+
+    .save-bar .btn {
+      margin: 0;
+      flex: 1;
+    }
+
+    .save-bar .btn-cancel {
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      flex: 0 0 80px;
+    }
+
+    /* 토스트 (2초) */
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--status-success);
+      color: white;
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      opacity: 1;
+    }
+
+    .toast.error {
+      background: var(--status-error);
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>AI 번역</h1>
-  </div>
+  <!-- 패널 컨테이너 -->
+  <div class="panel-container">
+    <!-- 좌측 컨텐츠 영역 -->
+    <div class="content-area">
+      <!-- 헤더 (고정) -->
+      <header class="panel-header">
+        <h1>AI 번역</h1>
+      </header>
 
-  <!-- 권한 요청 섹션 -->
-  <div id="permissionSection" class="permission-card" style="display: none;">
-    <div class="permission-icon">🔒</div>
-    <div id="permissionMessage" class="permission-message">
-      이 사이트 번역을 사용하려면 권한이 필요합니다.
+      <!-- 메인 컨텐츠 (스크롤) -->
+      <main class="panel-main">
+        <!-- 번역 탭 -->
+        <div id="translateTab" class="tab-content active">
+          <!-- 권한 요청 섹션 -->
+          <div id="permissionSection" class="permission-card" style="display: none;">
+            <div class="permission-icon">🔒</div>
+            <div id="permissionMessage" class="permission-message">
+              이 사이트 번역을 사용하려면 권한이 필요합니다.
+            </div>
+            <button id="requestPermissionBtn" class="btn">권한 허용</button>
+            <button id="openSettingsBtn" class="btn secondary" style="display: none;">설정 열기</button>
+          </div>
+
+          <!-- 메인 섹션 -->
+          <div id="mainSection">
+            <div class="main-card">
+              <div class="status-header">
+                <span class="status-label">현재 상태</span>
+                <span id="statusBadge" class="status-badge">대기 중</span>
+              </div>
+
+              <div id="progressText" class="progress-text">번역 대기 중</div>
+
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <div class="stat-label">번역된 텍스트</div>
+                  <div id="translatedCount" class="stat-value">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">캐시 사용</div>
+                  <div id="cachedCount" class="stat-value">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">배치 완료</div>
+                  <div id="batchCountText" class="stat-value">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">진행 시간</div>
+                  <div id="elapsedTime" class="stat-value">0s</div>
+                </div>
+              </div>
+
+              <div id="batchInfo" class="batch-info" style="display: none;">
+                <div class="batch-info-title">배치 진행 상황</div>
+                <div id="batchList"></div>
+              </div>
+
+              <div class="btn-group">
+                <button id="translateAllBtn" class="btn">현재 페이지 모두 번역 (빠른 모드)</button>
+                <div class="btn-help">저장된 번역을 재사용하여 빠르게 처리합니다.</div>
+              </div>
+
+              <div class="btn-group">
+                <button id="translateFreshBtn" class="btn">현재 페이지 모두 새로 번역</button>
+                <div class="btn-help">모든 문장을 최신 상태로 다시 번역합니다.</div>
+              </div>
+
+              <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
+            </div>
+
+            <div class="guide-section">
+              <div class="guide-title">사용 가이드</div>
+              <ul class="guide-list">
+                <li>번역할 페이지에서 확장 프로그램 아이콘을 클릭</li>
+                <li>처음 방문하는 사이트는 권한 허용 필요 (1회만)</li>
+                <li><strong>현재 페이지 모두 번역 (빠른 모드)</strong>로 캐시 활용</li>
+                <li>원본으로 되돌리려면 <strong>원본 보기</strong></li>
+                <li>번역 중에는 진행 시간과 배치 상황이 실시간 업데이트</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 설정 탭 -->
+        <div id="settingsTab" class="tab-content">
+          <!-- API 설정 -->
+          <div class="settings-section">
+            <div class="settings-title">API 설정</div>
+
+            <div class="form-group">
+              <label for="apiKey">OpenRouter API Key</label>
+              <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+              <div class="form-help">
+                API Key는 로컬에 안전하게 저장됩니다.
+                <a href="https://openrouter.ai/keys" target="_blank">키 발급받기 →</a>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="model">AI 모델</label>
+              <input type="text" id="model" placeholder="openai/gpt-4o-mini">
+              <div class="form-help">
+                비워두면 기본 모델(GPT-4o Mini) 사용.
+                <a href="https://openrouter.ai/models" target="_blank">모델 목록 보기 →</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- 번역 설정 -->
+          <div class="settings-section">
+            <div class="settings-title">번역 설정</div>
+
+            <div class="form-group">
+              <label>배치 크기</label>
+              <div class="inline-setting">
+                <label>한 번에 처리할 텍스트 개수</label>
+                <input type="number" id="batchSize" value="50" min="10" max="100">
+              </div>
+              <div class="form-help">
+                기본값: 50개 (값이 클수록 API 호출이 줄어들지만 한 번에 더 오래 걸릴 수 있습니다)
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>동시 처리 개수</label>
+              <div class="inline-setting">
+                <label>동시에 처리할 배치 수</label>
+                <input type="number" id="concurrency" value="3" min="1" max="10">
+              </div>
+              <div class="form-help">
+                기본값: 3개 (값이 클수록 빠르지만 API 부하가 증가합니다)
+              </div>
+            </div>
+          </div>
+
+          <!-- 캐시 설정 -->
+          <div class="settings-section">
+            <div class="settings-title">캐시 설정</div>
+
+            <div class="toggle-group">
+              <label for="cacheToggle">번역 캐시 사용</label>
+              <label class="toggle-switch">
+                <input type="checkbox" id="cacheToggle" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label>캐시 만료 시간 (분)</label>
+              <div class="inline-setting">
+                <label>TTL (Time To Live)</label>
+                <input type="number" id="cacheTTL" value="60" min="5" max="1440">
+              </div>
+              <div class="form-help">
+                기본값: 60분 (최소 5분, 최대 1440분/24시간)
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>캐시 관리</label>
+              <div class="cache-buttons">
+                <button id="clearPageCacheBtn" class="btn secondary">이 페이지 캐시 비우기</button>
+                <button id="clearAllCacheBtn" class="btn secondary">전역 캐시 비우기</button>
+              </div>
+            </div>
+
+            <div class="cache-info">
+              설정한 시간(TTL) 동안 저장된 번역을 재사용해 비용과 지연을 줄입니다.<br>
+              시간이 지나면 해당 문장을 자동으로 재번역해 최신 상태를 유지합니다.<br>
+              캐시를 끄면 모든 문장을 매번 번역합니다.
+            </div>
+          </div>
+
+          <!-- 저장 바 -->
+          <div class="save-bar" id="saveBar">
+            <button id="cancelBtn" class="btn btn-cancel">취소</button>
+            <button id="saveBtn" class="btn">저장</button>
+          </div>
+        </div>
+      </main>
+
+      <!-- 푸터 (고정) -->
+      <footer class="panel-footer">
+        <div id="footerText" class="panel-footer-text"></div>
+      </footer>
     </div>
-    <button id="requestPermissionBtn" class="btn">권한 허용</button>
-    <button id="openSettingsBtn" class="btn secondary" style="display: none;">설정 열기</button>
+
+    <!-- 우측 세로 탭바 -->
+    <nav class="vertical-tabbar" role="tablist">
+      <button role="tab" data-tab="translate" aria-selected="true" title="번역">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
+        </svg>
+        <span>번역</span>
+      </button>
+
+      <button role="tab" data-tab="settings" aria-selected="false" title="설정">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+        </svg>
+        <span>설정</span>
+      </button>
+
+      <button id="closeBtn" role="button" title="닫기">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+        <span>닫기</span>
+      </button>
+    </nav>
   </div>
 
-  <!-- 메인 섹션 -->
-  <div id="mainSection">
-    <div class="main-card">
-      <div class="status-header">
-        <span class="status-label">현재 상태</span>
-        <span id="statusBadge" class="status-badge">대기 중</span>
-      </div>
-
-      <div id="progressText" class="progress-text">번역 대기 중</div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">번역된 텍스트</div>
-          <div id="translatedCount" class="stat-value">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">캐시 사용</div>
-          <div id="cachedCount" class="stat-value">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">배치 완료</div>
-          <div id="batchCountText" class="stat-value">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">진행 시간</div>
-          <div id="elapsedTime" class="stat-value">0s</div>
-        </div>
-      </div>
-
-      <div id="batchInfo" class="batch-info" style="display: none;">
-        <div class="batch-info-title">배치 진행 상황</div>
-        <div id="batchList"></div>
-      </div>
-
-      <div class="btn-group">
-        <button id="translateAllBtn" class="btn">현재 페이지 모두 번역 (빠른 모드)</button>
-        <div class="btn-help">저장된 번역을 재사용하여 빠르게 처리합니다.</div>
-      </div>
-
-      <div class="btn-group">
-        <button id="translateFreshBtn" class="btn">현재 페이지 모두 새로 번역</button>
-        <div class="btn-help">모든 문장을 최신 상태로 다시 번역합니다.</div>
-      </div>
-
-      <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
-      <button id="openSettings" class="btn secondary">⚙️ 설정</button>
-    </div>
-
-    <div class="guide-section">
-      <div class="guide-title">사용 가이드</div>
-      <ul class="guide-list">
-        <li>번역할 페이지에서 확장 프로그램 아이콘을 클릭</li>
-        <li>처음 방문하는 사이트는 권한 허용 필요 (1회만)</li>
-        <li><strong>현재 페이지 모두 번역하기</strong>를 눌러 전체 번역</li>
-        <li>원본으로 되돌리려면 <strong>원본 보기</strong></li>
-        <li>번역 중에는 진행 시간과 배치 상황이 실시간 업데이트</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="footer">
-    <div id="footerText" class="footer-text"></div>
-  </div>
+  <!-- 토스트 -->
+  <div id="toast" class="toast"></div>
 
   <script type="module" src="sidepanel.js"></script>
 </body>
