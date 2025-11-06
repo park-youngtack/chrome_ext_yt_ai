@@ -31,9 +31,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     footerEl.textContent = FOOTER_TEXT;
   }
 
-  // 초기 버튼 상태 (비활성화)
-  updateTranslateButtonState();
-
   // 현재 탭 가져오기
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
@@ -385,20 +382,18 @@ function getSupportType(url) {
   }
 }
 
-// 권한 확인 (조용히 체크만, UI는 항상 표시)
+// 권한 확인 (조용히 체크만, UI 자동 변경 안 함)
 async function checkPermissions(tab) {
   if (!tab || !tab.url) {
     permissionGranted = false;
-    updateTranslateButtonState();
     return;
   }
 
   const supportType = getSupportType(tab.url);
 
-  // 지원 불가 스킴 - 권한 없음으로 표시만
+  // 지원 불가 스킴 - 권한 없음으로 저장만
   if (supportType === 'unsupported') {
     permissionGranted = false;
-    updateTranslateButtonState();
     return;
   }
 
@@ -413,11 +408,9 @@ async function checkPermissions(tab) {
       });
 
       permissionGranted = hasPermission;
-      updateTranslateButtonState();
     } catch (error) {
       console.error('File permission check failed:', error);
       permissionGranted = false;
-      updateTranslateButtonState();
     }
     return;
   }
@@ -433,11 +426,9 @@ async function checkPermissions(tab) {
     });
 
     permissionGranted = hasPermission;
-    updateTranslateButtonState();
   } catch (error) {
     console.error('Permission check failed:', error);
     permissionGranted = false;
-    updateTranslateButtonState();
   }
 }
 
@@ -757,35 +748,39 @@ async function handleRestore() {
   }
 }
 
-// UI 업데이트
+// UI 업데이트 (번역 상태에 따라서만 버튼 제어, 권한 체크 안 함)
 function updateUI() {
   const { state, totalTexts, translatedCount, cachedCount, batchCount, batchesDone, batches, activeMs } = translationState;
 
-  // 상태 뱃지
+  // 상태 뱃지와 버튼 제어 (권한과 무관하게 번역 상태에 따라서만 제어)
   const statusBadge = document.getElementById('statusBadge');
   const translateAllBtn = document.getElementById('translateAllBtn');
   const translateFreshBtn = document.getElementById('translateFreshBtn');
   const restoreBtn = document.getElementById('restoreBtn');
 
   if (state === 'translating') {
+    // 번역 중: 번역 버튼 비활성화, 원본 보기 활성화
     statusBadge.textContent = '번역 중';
     statusBadge.className = 'status-badge active pulse';
     translateAllBtn.disabled = true;
     translateFreshBtn.disabled = true;
     restoreBtn.disabled = false;
   } else if (state === 'completed') {
+    // 번역 완료: 모든 버튼 활성화
     statusBadge.textContent = '번역 완료';
     statusBadge.className = 'status-badge active';
     translateAllBtn.disabled = false;
     translateFreshBtn.disabled = false;
     restoreBtn.disabled = false;
   } else if (state === 'restored') {
+    // 원본 보기: 번역 버튼 활성화, 원본 보기 비활성화
     statusBadge.textContent = '원본 보기';
     statusBadge.className = 'status-badge restored';
     translateAllBtn.disabled = false;
     translateFreshBtn.disabled = false;
     restoreBtn.disabled = true;
   } else {
+    // 대기 중: 번역 버튼 활성화, 원본 보기 비활성화
     statusBadge.textContent = '대기 중';
     statusBadge.className = 'status-badge';
     translateAllBtn.disabled = false;
@@ -862,35 +857,11 @@ function formatTime(seconds) {
   }
 }
 
-// 번역 버튼 상태 업데이트
+// 번역 버튼 상태 업데이트 (레거시 함수, 더 이상 사용 안 함)
+// 버튼은 항상 활성화 상태 유지, 번역 상태에 따른 제어는 updateUI()에서만 수행
 function updateTranslateButtonState() {
-  const translateAllBtn = document.getElementById('translateAllBtn');
-  const translateFreshBtn = document.getElementById('translateFreshBtn');
-  const restoreBtn = document.getElementById('restoreBtn');
-
-  if (!permissionGranted) {
-    // 권한이 없으면 모든 버튼 비활성화
-    if (translateAllBtn) translateAllBtn.disabled = true;
-    if (translateFreshBtn) translateFreshBtn.disabled = true;
-    if (restoreBtn) restoreBtn.disabled = true;
-    return;
-  }
-
-  // 권한이 있으면 버튼 활성화
-  if (translateAllBtn) {
-    translateAllBtn.disabled = false;
-    translateAllBtn.textContent = '현재 페이지 모두 번역 (빠른 모드)';
-  }
-  if (translateFreshBtn) {
-    translateFreshBtn.disabled = false;
-    translateFreshBtn.textContent = '현재 페이지 모두 새로 번역';
-  }
-
-  // 번역 상태에 따라 원본 보기 버튼 활성화
-  if (restoreBtn) {
-    const hasTranslations = translationState.translatedCount > 0;
-    restoreBtn.disabled = !hasTranslations;
-  }
+  // 이 함수는 더 이상 사용되지 않음
+  // 버튼 활성화/비활성화는 updateUI()에서 번역 상태에 따라서만 제어됨
 }
 
 // 로그 복사
