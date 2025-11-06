@@ -57,7 +57,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
     logInfo('SIDE_PANEL_BEHAVIOR_SET', 'Side Panel 동작 설정 완료');
   } catch (error) {
-    logWarn('SIDE_PANEL_BEHAVIOR_FAILED', 'Side Panel 동작 설정 실패', {}, error);
+    logInfo('SIDE_PANEL_BEHAVIOR_FAILED', 'Side Panel 동작 설정 실패 (수동 오픈 사용)', {}, error);
   }
 
   // Content script 상시 등록 (안정적인 주입 보장)
@@ -75,7 +75,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     if (error.message.includes('duplicate')) {
       logDebug('CONTENT_SCRIPT_ALREADY_REGISTERED', 'Content script 이미 등록됨');
     } else {
-      logWarn('CONTENT_SCRIPT_REGISTER_FAILED', 'Content script 등록 실패', {}, error);
+      logInfo('CONTENT_SCRIPT_REGISTER_FAILED', 'Content script 등록 실패 (수동 주입 사용)', {}, error);
     }
   }
 });

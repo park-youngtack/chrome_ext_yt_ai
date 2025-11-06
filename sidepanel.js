@@ -476,7 +476,7 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
         hasContent: false
       });
     } else {
-      logWarn('sidepanel', 'CONTENT_READY_CHECK_FAILED', 'Content script 상태 확인 실패', { tabId }, error);
+      logInfo('sidepanel', 'CONTENT_READY_CHECK_FAILED', 'Content script 상태 확인 실패', { tabId }, error);
     }
 
     // 2단계: Content script 재주입
@@ -609,7 +609,7 @@ async function handleTranslateAll(useCache = true) {
 
     // 지원하지 않는 URL 체크 (사용자 액션 시에만!)
     if (supportType === 'unsupported') {
-      logWarn('sidepanel', 'UI_CLICK_BLOCKED', '지원하지 않는 URL', {
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', '지원하지 않는 URL', {
         button,
         tabId: currentTabId,
         url: tab.url
@@ -620,7 +620,7 @@ async function handleTranslateAll(useCache = true) {
 
     // file:// URL 권한 체크
     if (supportType === 'file' && !permissionGranted) {
-      logWarn('sidepanel', 'UI_CLICK_BLOCKED', 'file:// 권한 없음', {
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', 'file:// 권한 없음', {
         button,
         tabId: currentTabId
       });
@@ -630,7 +630,7 @@ async function handleTranslateAll(useCache = true) {
 
     // http/https URL 권한 체크
     if (supportType === 'requestable' && !permissionGranted) {
-      logWarn('sidepanel', 'UI_CLICK_BLOCKED', '권한 미허용', {
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', '권한 미허용', {
         button,
         tabId: currentTabId,
         permissionGranted
@@ -654,7 +654,7 @@ async function handleTranslateAll(useCache = true) {
     ]);
 
     if (!settings.apiKey) {
-      logWarn('sidepanel', 'UI_CLICK_BLOCKED', 'API Key 미설정', { button, tabId: currentTabId });
+      logInfo('sidepanel', 'UI_CLICK_BLOCKED', 'API Key 미설정', { button, tabId: currentTabId });
       showToast('먼저 설정에서 API Key를 입력해주세요.', 'error');
       switchTab('settings');
       return;
