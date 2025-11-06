@@ -47,7 +47,10 @@ let translationState = {
   batchCount: 0,          // 전체 배치 수
   batchesDone: 0,         // 완료 배치 수
   batches: [],            // 배치 상세 정보
-  activeMs: 0             // 경과 시간 (ms)
+  activeMs: 0,            // 경과 시간 (ms)
+  originalTitle: '',      // 번역 전 제목
+  translatedTitle: '',    // 번역 후 제목
+  previewText: ''         // 번역 프리뷰 텍스트
 };
 
 // ===== 초기화 =====
@@ -370,17 +373,29 @@ function createHistoryItemElement(entry) {
   const body = document.createElement('div');
   body.className = 'history-item-body';
 
+  const translatedTitle = (entry.translatedTitle || '').trim();
+  const originalTitle = (entry.originalTitle || '').trim();
+  const previewText = (entry.previewText || '').trim();
+
   const title = document.createElement('div');
   title.className = 'history-item-title';
-  title.textContent = entry.translatedTitle || entry.originalTitle || entry.url;
+  title.textContent = translatedTitle || originalTitle || entry.url;
+  if ((translatedTitle || originalTitle)) {
+    title.setAttribute('title', translatedTitle || originalTitle);
+  }
   body.appendChild(title);
 
   const subtitle = document.createElement('div');
   subtitle.className = 'history-item-subtitle';
-  if (entry.originalTitle && entry.originalTitle !== entry.translatedTitle) {
-    subtitle.textContent = `원본: ${entry.originalTitle}`;
+  if (previewText) {
+    subtitle.textContent = previewText;
+    if (originalTitle && originalTitle !== translatedTitle) {
+      subtitle.setAttribute('title', `원본 제목: ${originalTitle}`);
+    }
+  } else if (originalTitle && originalTitle !== translatedTitle) {
+    subtitle.textContent = `원본: ${originalTitle}`;
   } else {
-    subtitle.textContent = entry.originalTitle || '원본 제목 없음';
+    subtitle.textContent = originalTitle || '원본 제목 없음';
   }
   body.appendChild(subtitle);
 
@@ -445,6 +460,7 @@ async function saveHistoryEntry(entry) {
       url: entry.url,
       originalTitle: entry.originalTitle,
       translatedTitle: entry.translatedTitle,
+      previewText: entry.previewText || '',
       completedAt: entry.completedAt,
       mode: entry.mode
     };
@@ -538,6 +554,7 @@ async function handleHistoryItemOpen(entry) {
     }
 
     currentTabId = updatedTab.id;
+    await checkPermissions(updatedTab);
 
     try {
       const tabInfo = await chrome.tabs.get(updatedTab.id);
@@ -548,6 +565,16 @@ async function handleHistoryItemOpen(entry) {
       }
     } catch (error) {
       logDebug('sidepanel', 'HISTORY_WAIT_FALLBACK', '탭 상태 확인 실패, 바로 번역 실행', {
+        tabId: updatedTab.id,
+        reason: error?.message || '알 수 없음'
+      });
+    }
+
+    try {
+      const latestTab = await chrome.tabs.get(updatedTab.id);
+      await checkPermissions(latestTab);
+    } catch (error) {
+      logDebug('sidepanel', 'HISTORY_PERMISSION_REFRESH_FAIL', '탭 권한 재확인 실패', {
         tabId: updatedTab.id,
         reason: error?.message || '알 수 없음'
       });
@@ -643,27 +670,40 @@ async function handleTranslationCompletedForHistory(tabId, data) {
       return;
     }
 
-    const originalTitle = tab.title || '제목 없음';
-    let translatedTitle = originalTitle;
+    const progressOriginal = typeof data.originalTitle === 'string' ? data.originalTitle.trim() : '';
+    const progressTranslated = typeof data.translatedTitle === 'string' ? data.translatedTitle.trim() : '';
+    const progressPreview = typeof data.previewText === 'string' ? data.previewText.trim() : '';
 
-    try {
-      const response = await chrome.tabs.sendMessage(tabId, { action: 'getTranslatedTitle' });
-      if (response && typeof response.title === 'string' && response.title.trim().length > 0) {
-        translatedTitle = response.title.trim();
+    const fallbackTitle = tab.title || '제목 없음';
+    const originalTitle = progressOriginal || fallbackTitle || '제목 없음';
+    let translatedTitle = progressTranslated;
+
+    if (!translatedTitle) {
+      try {
+        const response = await chrome.tabs.sendMessage(tabId, { action: 'getTranslatedTitle' });
+        if (response && typeof response.title === 'string' && response.title.trim().length > 0) {
+          translatedTitle = response.title.trim();
+        }
+      } catch (error) {
+        logDebug('sidepanel', 'HISTORY_TITLE_FALLBACK', '번역 제목 요청 실패, 진행 데이터 사용', {
+          tabId,
+          reason: error?.message || '알 수 없음'
+        });
       }
-    } catch (error) {
-      logDebug('sidepanel', 'HISTORY_TITLE_FALLBACK', '번역 제목 요청 실패, 원본 제목 사용', {
-        tabId,
-        reason: error?.message || '알 수 없음'
-      });
     }
 
+    if (!translatedTitle) {
+      translatedTitle = fallbackTitle || originalTitle;
+    }
+
+    const previewText = progressPreview ? progressPreview.slice(0, 120) : '';
     const mode = translateModeByTab.get(tabId) || lastTranslateMode;
 
     await saveHistoryEntry({
       url: tab.url,
       originalTitle,
       translatedTitle,
+      previewText,
       completedAt: new Date().toISOString(),
       mode
     });
