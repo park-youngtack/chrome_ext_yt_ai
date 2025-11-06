@@ -105,11 +105,23 @@ export function log(level, ns, evt, msg = '', data = {}, err = null) {
   const prefix = `[WPT][${level}][${ns}] ${evt}`;
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
 
-  // 메시지와 데이터를 함께 출력
+  // 구조화된 로그 출력 (객체가 [object Object]로 표시되지 않도록)
+  // 데이터 필드만 추출 (ts, level, ns, evt, msg 제외)
+  const {ts, level: lvl, ns: namespace, evt: evtName, msg: msgText, err: errMsg, stack, ...extraData} = record;
+  const dataStr = Object.keys(extraData).length > 0 ? ' ' + JSON.stringify(extraData) : '';
+
   if (msg) {
-    console[consoleMethod](prefix, msg, record);
+    if (errMsg) {
+      console[consoleMethod](`${prefix} ${msg}${dataStr}`, `\nError: ${errMsg}${stack ? '\n' + stack : ''}`);
+    } else {
+      console[consoleMethod](`${prefix} ${msg}${dataStr}`);
+    }
   } else {
-    console[consoleMethod](prefix, record);
+    if (errMsg) {
+      console[consoleMethod](`${prefix}${dataStr}`, `\nError: ${errMsg}${stack ? '\n' + stack : ''}`);
+    } else {
+      console[consoleMethod](`${prefix}${dataStr}`);
+    }
   }
 
   // ring-buffer에 저장 (JSON 문자열로)
