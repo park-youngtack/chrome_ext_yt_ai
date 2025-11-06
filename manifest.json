@@ -9,7 +9,7 @@
     "scripting",
     "sidePanel"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "https://*/*",
     "http://*/*"
   ],
@@ -28,12 +28,8 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
 }

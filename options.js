@@ -6,8 +6,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const result = await chrome.storage.local.get([
     'apiKey',
     'model',
-    'autoPauseEnabled',
-    'autoPauseTimeout'
+    'batchSize',
+    'concurrency',
+    'useCache'
   ]);
 
   // API 설정
@@ -19,15 +20,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('model').value = result.model;
   }
 
-  // 자동 일시정지 설정
-  if (result.autoPauseEnabled !== undefined) {
-    document.getElementById('autoPauseEnabled').checked = result.autoPauseEnabled;
+  // 번역 설정
+  if (result.batchSize) {
+    document.getElementById('batchSize').value = result.batchSize;
   } else {
-    document.getElementById('autoPauseEnabled').checked = true; // 기본값 true
+    document.getElementById('batchSize').value = 50;
   }
 
-  if (result.autoPauseTimeout) {
-    document.getElementById('autoPauseTimeout').value = result.autoPauseTimeout;
+  if (result.concurrency) {
+    document.getElementById('concurrency').value = result.concurrency;
+  } else {
+    document.getElementById('concurrency').value = 3;
+  }
+
+  if (result.useCache !== undefined) {
+    document.getElementById('useCache').checked = result.useCache;
+  } else {
+    document.getElementById('useCache').checked = true; // 기본값 true
   }
 });
 
@@ -35,8 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 document.getElementById('saveBtn').addEventListener('click', async () => {
   const apiKey = document.getElementById('apiKey').value.trim();
   const modelInput = document.getElementById('model').value.trim();
-  const autoPauseEnabled = document.getElementById('autoPauseEnabled').checked;
-  const autoPauseTimeout = parseInt(document.getElementById('autoPauseTimeout').value) || 60;
+  const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
+  const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
+  const useCache = document.getElementById('useCache').checked;
 
   // 모델이 비어있으면 기본 모델 사용
   const model = modelInput || DEFAULT_MODEL;
@@ -46,9 +56,15 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     return;
   }
 
-  // 자동 일시정지 시간 유효성 검사
-  if (autoPauseTimeout < 10 || autoPauseTimeout > 600) {
-    showStatus('자동 일시정지 시간은 10~600초 사이여야 합니다.', 'error');
+  // 배치 크기 유효성 검사
+  if (batchSize < 10 || batchSize > 100) {
+    showStatus('배치 크기는 10~100 사이여야 합니다.', 'error');
+    return;
+  }
+
+  // 동시 처리 개수 유효성 검사
+  if (concurrency < 1 || concurrency > 10) {
+    showStatus('동시 처리 개수는 1~10 사이여야 합니다.', 'error');
     return;
   }
 
@@ -56,8 +72,9 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     await chrome.storage.local.set({
       apiKey,
       model,
-      autoPauseEnabled,
-      autoPauseTimeout
+      batchSize,
+      concurrency,
+      useCache
     });
 
     showStatus(`✅ 설정이 저장되었습니다! (모델: ${model})`, 'success');

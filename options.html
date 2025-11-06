@@ -12,24 +12,25 @@
     }
 
     :root {
-      --bg-primary: #0f0f23;
-      --bg-secondary: #1a1a2e;
-      --bg-tertiary: #16213e;
-      --accent-primary: #00d4ff;
-      --accent-secondary: #7c3aed;
-      --text-primary: #e2e8f0;
-      --text-secondary: #94a3b8;
-      --border-color: #2d3748;
+      /* 플랫 다크 테마 (그라데이션 금지) */
+      --bg-primary: #0B0B0F;
+      --bg-card: #16181C;
+      --text-primary: #EDEEF0;
+      --text-secondary: #A9AFB8;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --primary: #2A6CF0;
+      --primary-hover: #245ED2;
       --success: #10b981;
-      --warning: #f59e0b;
       --error: #ef4444;
-      --shadow: rgba(0, 0, 0, 0.3);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --radius-md: 12px;
+      --radius-lg: 16px;
     }
 
     body {
-      background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+      background: var(--bg-primary);
       color: var(--text-primary);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
       padding: 40px 20px;
     }
@@ -42,16 +43,12 @@
     .header {
       text-align: center;
       margin-bottom: 50px;
-      animation: fadeInDown 0.6s ease-out;
     }
 
     .header h1 {
       font-size: 36px;
       font-weight: 700;
-      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--text-primary);
       margin-bottom: 10px;
     }
 
@@ -61,19 +58,12 @@
     }
 
     .card {
-      background: var(--bg-tertiary);
+      background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 16px;
+      border-radius: var(--radius-lg);
       padding: 30px;
       margin-bottom: 24px;
-      box-shadow: 0 10px 30px var(--shadow);
-      animation: fadeInUp 0.6s ease-out;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-
-    .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 15px 40px var(--shadow);
+      box-shadow: var(--shadow);
     }
 
     .card-title {
@@ -83,13 +73,14 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      color: var(--text-primary);
     }
 
     .card-title::before {
       content: '';
       width: 4px;
       height: 24px;
-      background: linear-gradient(180deg, var(--accent-primary), var(--accent-secondary));
+      background: var(--primary);
       border-radius: 2px;
     }
 
@@ -111,13 +102,12 @@
 
     input[type="password"],
     input[type="text"],
-    input[type="number"],
-    select {
+    input[type="number"] {
       width: 100%;
       padding: 12px 16px;
-      background: var(--bg-secondary);
+      background: var(--bg-primary);
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       color: var(--text-primary);
       font-size: 14px;
       transition: all 0.3s;
@@ -126,15 +116,14 @@
 
     input[type="password"]:focus,
     input[type="text"]:focus,
-    input[type="number"]:focus,
-    select:focus {
+    input[type="number"]:focus {
       outline: none;
-      border-color: var(--accent-primary);
-      box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(42, 108, 240, 0.1);
     }
 
     input[type="number"] {
-      width: 100px;
+      width: 120px;
     }
 
     .help-text {
@@ -145,13 +134,12 @@
     }
 
     .help-text a {
-      color: var(--accent-primary);
+      color: var(--primary);
       text-decoration: none;
       transition: color 0.2s;
     }
 
     .help-text a:hover {
-      color: var(--accent-secondary);
       text-decoration: underline;
     }
 
@@ -202,83 +190,55 @@
     }
 
     .toggle-switch input:checked + .toggle-slider {
-      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      background: var(--primary);
     }
 
     .toggle-switch input:checked + .toggle-slider::before {
       transform: translateX(24px);
     }
 
-    .radio-group {
+    .inline-setting {
       display: flex;
-      gap: 16px;
-      margin-top: 8px;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
     }
 
-    .radio-option {
-      flex: 1;
-      position: relative;
-    }
-
-    .radio-option input[type="radio"] {
-      position: absolute;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .radio-label {
-      display: block;
-      padding: 12px 16px;
-      background: var(--bg-secondary);
-      border: 2px solid var(--border-color);
-      border-radius: 8px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s;
-      font-size: 14px;
-    }
-
-    .radio-option input[type="radio"]:checked + .radio-label {
-      background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(124, 58, 237, 0.1));
-      border-color: var(--accent-primary);
-      color: var(--accent-primary);
-      font-weight: 600;
-    }
-
-    .radio-label:hover {
-      border-color: var(--accent-primary);
+    .inline-setting label {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 13px;
+      min-width: 150px;
     }
 
     .btn {
       width: 100%;
       padding: 14px 24px;
-      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      background: var(--primary);
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.3s;
-      box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+      transition: all 0.2s;
+      box-shadow: var(--shadow);
     }
 
     .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
+      background: var(--primary-hover);
     }
 
     .btn:active {
-      transform: translateY(0);
+      transform: translateY(1px);
     }
 
     .status {
       margin-top: 20px;
       padding: 16px;
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       font-size: 14px;
       display: none;
-      animation: slideIn 0.3s ease-out;
     }
 
     .status.success {
@@ -308,66 +268,6 @@
       font-weight: 600;
       color: var(--text-primary);
       margin-bottom: 8px;
-    }
-
-    @keyframes fadeInDown {
-      from {
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateX(-20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    .inline-setting {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-top: 12px;
-    }
-
-    .inline-setting label {
-      margin: 0;
-      color: var(--text-secondary);
-      font-size: 13px;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 4px 12px;
-      background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(124, 58, 237, 0.15));
-      border: 1px solid var(--accent-primary);
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--accent-primary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-left: 8px;
     }
   </style>
 </head>
@@ -401,23 +301,40 @@
     </div>
 
     <div class="card">
-      <div class="card-title">번역 동작 설정</div>
+      <div class="card-title">번역 설정</div>
+
+      <div class="form-group">
+        <label>배치 크기</label>
+        <div class="inline-setting">
+          <label>한 번에 처리할 텍스트 개수</label>
+          <input type="number" id="batchSize" value="50" min="10" max="100">
+        </div>
+        <div class="help-text">
+          기본값: 50개 (값이 클수록 API 호출이 줄어들지만 한 번에 더 오래 걸릴 수 있습니다)
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>동시 처리 개수</label>
+        <div class="inline-setting">
+          <label>동시에 처리할 배치 수</label>
+          <input type="number" id="concurrency" value="3" min="1" max="10">
+        </div>
+        <div class="help-text">
+          기본값: 3개 (값이 클수록 빠르지만 API 부하가 증가합니다)
+        </div>
+      </div>
 
       <div class="form-group">
         <div class="toggle-group">
-          <label>자동 일시정지</label>
+          <label>번역 캐시 사용</label>
           <label class="toggle-switch">
-            <input type="checkbox" id="autoPauseEnabled" checked>
+            <input type="checkbox" id="useCache" checked>
             <span class="toggle-slider"></span>
           </label>
         </div>
         <div class="help-text">
-          사용자 활동이 없을 때 자동으로 번역을 일시정지합니다.
-        </div>
-
-        <div class="inline-setting">
-          <label>대기 시간 (초)</label>
-          <input type="number" id="autoPauseTimeout" value="60" min="10" max="600">
+          이전에 번역한 텍스트를 캐시하여 빠르게 재사용합니다 (최대 1000개)
         </div>
       </div>
     </div>
