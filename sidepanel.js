@@ -522,11 +522,12 @@ async function handleRequestPermission() {
   }
 }
 
-// Content script 준비 확인
-async function ensureContentScriptReady(tabId) {
+// Content script 준비 확인 (재시도 로직 강화)
+async function ensureContentScriptReady(tabId, maxRetries = 5) {
+  // 1단계: 이미 준비되어 있는지 확인
   try {
     await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
-    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 준비 확인 성공', { tabId });
+    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 이미 준비됨', { tabId });
     return true;
   } catch (error) {
     // "Receiving end does not exist" 에러 탐지
@@ -540,7 +541,7 @@ async function ensureContentScriptReady(tabId) {
       logWarn('sidepanel', 'CONTENT_READY_CHECK_FAILED', 'Content script 상태 확인 실패', { tabId }, error);
     }
 
-    // Content script가 없으면 주입
+    // 2단계: Content script 재주입
     try {
       logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 시도', { tabId, files: ['content.js'] });
 
@@ -549,11 +550,41 @@ async function ensureContentScriptReady(tabId) {
         files: ['content.js']
       });
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 완료', { tabId });
 
-      logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 성공', { tabId, result: 'ok' });
+      // 3단계: 준비될 때까지 재시도 (최대 5번, 지수 백오프)
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const waitTime = Math.min(100 * Math.pow(2, attempt - 1), 1000); // 100ms, 200ms, 400ms, 800ms, 1000ms
 
-      return true;
+        logDebug('sidepanel', 'CONTENT_READY_RETRY', `Content script 준비 확인 재시도 ${attempt}/${maxRetries}`, {
+          tabId,
+          waitMs: waitTime
+        });
+
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+
+        try {
+          await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
+          logInfo('sidepanel', 'CONTENT_READY_SUCCESS', `Content script 준비 완료 (${attempt}번째 시도)`, {
+            tabId,
+            attempt,
+            totalWaitMs: waitTime
+          });
+          return true;
+        } catch (retryError) {
+          if (attempt === maxRetries) {
+            logError('sidepanel', 'CONTENT_READY_TIMEOUT', 'Content script 준비 시간 초과', {
+              tabId,
+              attempts: maxRetries
+            }, retryError);
+            return false;
+          }
+          // 계속 재시도
+        }
+      }
+
+      return false;
+
     } catch (injectError) {
       logError('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 실패', { tabId, result: 'failed' }, injectError);
       return false;
@@ -651,6 +682,16 @@ async function handleTranslateAll(useCache = true) {
       useCache
     });
 
+    // Content script 준비 확인 (새로고침 후 에러 방지)
+    logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 준비 확인 시작', { tabId: currentTabId });
+    const isReady = await ensureContentScriptReady(currentTabId);
+
+    if (!isReady) {
+      logError('sidepanel', 'CONTENT_NOT_READY', 'Content script 준비 실패', { tabId: currentTabId });
+      showToast('페이지 준비 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      return;
+    }
+
     // DISPATCH_TO_CONTENT (전)
     logDebug('sidepanel', 'DISPATCH_TO_CONTENT', 'content script에 메시지 전송', {
       action: 'translateFullPage',
@@ -693,6 +734,14 @@ async function handleRestore() {
   logInfo('sidepanel', 'UI_CLICK', '원본 복원 버튼 클릭', { button: 'restore', tabId: currentTabId });
 
   try {
+    // Content script 준비 확인
+    const isReady = await ensureContentScriptReady(currentTabId);
+    if (!isReady) {
+      logError('sidepanel', 'CONTENT_NOT_READY', 'Content script 준비 실패', { tabId: currentTabId });
+      showToast('페이지 준비 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      return;
+    }
+
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'restoreOriginal'
     });
