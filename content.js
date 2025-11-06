@@ -178,6 +178,12 @@ function pushProgress() {
 
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // PING: Content script 준비 상태 확인
+  if (request.type === 'PING') {
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (request.action === 'translateFullPage') {
     handleTranslateFullPage(request.apiKey, request.model, request.batchSize, request.concurrency, request.useCache);
     sendResponse({ success: true });
@@ -846,4 +852,9 @@ async function clearPageCache() {
   return await clearAllCache();
 }
 
-log('Content script loaded');
+logDebug('CONTENT_LOADED', 'Content script 로드 완료');
+
+// Background에 준비 완료 알림
+chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {
+  // Background가 아직 준비되지 않았을 수 있음 (무시)
+});
