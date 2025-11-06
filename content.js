@@ -9,6 +9,23 @@ const DB_VERSION = 1;
 const STORE_NAME = 'translations';
 const DEFAULT_TTL_MINUTES = 60;
 
+// 로거 함수 (설정에 따라 로그 출력)
+async function log(...args) {
+  try {
+    const result = await chrome.storage.local.get(['enableConsoleLog']);
+    if (result.enableConsoleLog) {
+      console.log('[번역 확장]', ...args);
+    }
+  } catch (error) {
+    // 설정 로드 실패 시 로그 출력 안 함
+  }
+}
+
+async function logError(...args) {
+  // 에러는 항상 출력
+  console.error('[번역 확장 오류]', ...args);
+}
+
 // 진행 상태
 let progressStatus = {
   state: 'inactive',
@@ -34,14 +51,14 @@ let port = null;
 chrome.runtime.onConnect.addListener((p) => {
   if (p.name === 'panel') {
     port = p;
-    console.log('Side panel connected');
+    log('Side panel connected');
 
     // 현재 상태 즉시 푸시
     pushProgress();
 
     port.onDisconnect.addListener(() => {
       port = null;
-      console.log('Side panel disconnected');
+      log('Side panel disconnected');
     });
   }
 });
@@ -125,7 +142,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 전체 페이지 번역
 async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrency = 3, useCache = true) {
-  console.log('Starting full page translation...');
+  log('Starting full page translation...', {
+    batchSize,
+    concurrency,
+    useCache,
+    model
+  });
 
   // 상태 초기화
   translationState = 'translating';
@@ -194,7 +216,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     if (useCache && texts.length > 0) {
       const changeRate = newTexts.length / texts.length;
       if (changeRate >= 0.20) {
-        console.log(`Large page change detected (${Math.round(changeRate * 100)}%), forcing full retranslation`);
+        log(`Large page change detected (${Math.round(changeRate * 100)}%), forcing full retranslation`);
         // 전면 재번역으로 전환
         newTexts.length = 0;
         newElements.length = 0;
@@ -223,7 +245,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         if (isValid) {
           verifiedItems.push(item);
         } else {
-          console.log('Cache verification failed, re-translating:', item.text.substring(0, 50));
+          log('Cache verification failed, re-translating:', item.text.substring(0, 50));
           invalidItems.push(item);
         }
       }
@@ -252,7 +274,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
           newTexts.push(text);
           newElements.push(element);
         });
-        console.log(`${invalidItems.length} cached items failed verification, added to retranslation queue`);
+        log(`${invalidItems.length} cached items failed verification, added to retranslation queue`);
       }
     }
 
@@ -319,7 +341,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     progressStatus.state = 'completed';
     pushProgress();
 
-    console.log('Translation completed:', {
+    log('Translation completed:', {
       total: progressStatus.totalTexts,
       translated: progressStatus.translatedCount,
       cached: progressStatus.cachedCount,
@@ -327,7 +349,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     });
 
   } catch (error) {
-    console.error('Translation failed:', error);
+    logError('Translation failed:', error);
     translationState = 'inactive';
     progressStatus.state = 'error';
     pushProgress();
@@ -336,7 +358,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
 // 배치 처리
 async function processBatch(batch, apiKey, model, useCache) {
-  console.log(`Processing batch: ${batch.texts.length} texts`);
+  log(`Processing batch: ${batch.texts.length} texts`);
 
   try {
     // API 호출
@@ -369,7 +391,7 @@ async function processBatch(batch, apiKey, model, useCache) {
     });
 
   } catch (error) {
-    console.error('Batch processing failed:', error);
+    logError('Batch processing failed:', error);
     throw error;
   }
 }
@@ -438,7 +460,7 @@ function parseTranslationResult(translatedText, expectedCount) {
   // 매핑 실패 시 fallback
   const mappedCount = translations.filter(t => t !== null).length;
   if (mappedCount < expectedCount * 0.5) {
-    console.warn(`Translation mapping failed (${mappedCount}/${expectedCount}), using fallback`);
+    log(`Translation mapping failed (${mappedCount}/${expectedCount}), using fallback`);
     const fallbackLines = translatedText.split('\n')
       .map(line => line.replace(/^\[\d+\]\s*/, '').trim())
       .filter(line => line.length > 0);
@@ -453,7 +475,7 @@ function parseTranslationResult(translatedText, expectedCount) {
 
 // 원본 복원
 function handleRestoreOriginal() {
-  console.log('Restoring original texts...');
+  log('Restoring original texts...');
 
   translatedElements.forEach(element => {
     if (element && originalTexts.has(element)) {
@@ -693,10 +715,10 @@ async function clearAllCache() {
     });
 
     db.close();
-    console.log('All cache cleared');
+    log('All cache cleared');
     return true;
   } catch (error) {
-    console.error('Failed to clear cache:', error);
+    logError('Failed to clear cache:', error);
     return false;
   }
 }
@@ -706,4 +728,4 @@ async function clearPageCache() {
   return await clearAllCache();
 }
 
-console.log('Content script loaded');
+log('Content script loaded');
