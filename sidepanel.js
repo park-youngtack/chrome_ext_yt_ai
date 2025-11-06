@@ -32,7 +32,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 버튼 이벤트
-  document.getElementById('translateAllBtn').addEventListener('click', handleTranslateAll);
+  document.getElementById('translateAllBtn').addEventListener('click', () => handleTranslateAll(true));
+  document.getElementById('translateFreshBtn').addEventListener('click', () => handleTranslateAll(false));
   document.getElementById('restoreBtn').addEventListener('click', handleRestore);
   document.getElementById('openSettings').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
@@ -275,7 +276,7 @@ function connectToContentScript(tabId) {
 }
 
 // 전체 번역
-async function handleTranslateAll() {
+async function handleTranslateAll(useCache = true) {
   if (!currentTabId || !permissionGranted) {
     alert('권한을 먼저 허용해주세요.');
     return;
@@ -287,8 +288,7 @@ async function handleTranslateAll() {
       'apiKey',
       'model',
       'batchSize',
-      'concurrency',
-      'useCache'
+      'concurrency'
     ]);
 
     if (!settings.apiKey) {
@@ -304,7 +304,7 @@ async function handleTranslateAll() {
       model: settings.model || 'openai/gpt-4o-mini',
       batchSize: settings.batchSize || 50,
       concurrency: settings.concurrency || 3,
-      useCache: settings.useCache !== false
+      useCache: useCache
     });
 
   } catch (error) {

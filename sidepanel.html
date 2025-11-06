@@ -160,6 +160,18 @@
       color: var(--text-primary);
     }
 
+    .btn-group {
+      margin-bottom: 16px;
+    }
+
+    .btn-help {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+      line-height: 1.4;
+      padding-left: 4px;
+    }
+
     .btn {
       width: 100%;
       padding: 12px 20px;
@@ -332,7 +344,7 @@
 </head>
 <body>
   <div class="header">
-    <h1>무조건 한글로 번역해드림</h1>
+    <h1>AI 번역</h1>
   </div>
 
   <!-- 권한 요청 섹션 -->
@@ -379,7 +391,16 @@
         <div id="batchList"></div>
       </div>
 
-      <button id="translateAllBtn" class="btn">현재 페이지 모두 번역하기</button>
+      <div class="btn-group">
+        <button id="translateAllBtn" class="btn">현재 페이지 모두 번역 (빠른 모드)</button>
+        <div class="btn-help">저장된 번역을 재사용하여 빠르게 처리합니다.</div>
+      </div>
+
+      <div class="btn-group">
+        <button id="translateFreshBtn" class="btn">현재 페이지 모두 새로 번역</button>
+        <div class="btn-help">모든 문장을 최신 상태로 다시 번역합니다.</div>
+      </div>
+
       <button id="restoreBtn" class="btn secondary" disabled>원본 보기</button>
       <button id="openSettings" class="btn secondary">⚙️ 설정</button>
     </div>
