@@ -156,14 +156,15 @@ chrome.action.onClicked.addListener(async (tab) => {
 
     // 해당 탭에서만 사이드패널 설정 및 활성화
     // (registerContentScripts로 이미 자동 주입되므로 별도 확인 불필요)
-    await chrome.sidePanel.setOptions({
+    // 사용자 제스처 컨텍스트 유지를 위해 await 없이 setOptions 호출
+    chrome.sidePanel.setOptions({
       tabId: tab.id,
       path: 'sidepanel.html',
       enabled: true
     });
 
     // 해당 탭에서만 사이드패널 열기
-    // (사용자 제스처 컨텍스트 유지를 위해 await 없이 즉시 호출)
+    // setOptions의 await를 제거하여 사용자 제스처 컨텍스트 유지
     await chrome.sidePanel.open({ tabId: tab.id });
     logInfo('PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
   } catch (error) {
