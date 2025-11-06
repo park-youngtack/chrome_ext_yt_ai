@@ -153,7 +153,13 @@ chrome.action.onClicked.addListener(async (tab) => {
     // 권한 가능 여부 확인 (chrome://, edge://, Web Store 등은 주입 불가)
     if (!tab?.id || !/^https?:/.test(tab.url ?? '')) {
       logWarn('PANEL_UNSUPPORTED_URL', '주입 불가능한 URL', { tabId: tab.id, url: tab.url });
-      await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false });
+      // 지원하지 않는 URL에서는 패널 비활성화만 하고 종료
+      try {
+        await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false });
+      } catch (e) {
+        // setOptions 실패는 무시 (탭이 이미 닫혔을 수 있음)
+        logDebug('PANEL_DISABLE_FAILED', '패널 비활성화 실패 (무시)', { tabId: tab.id });
+      }
       return;
     }
 
@@ -170,16 +176,28 @@ chrome.action.onClicked.addListener(async (tab) => {
         panelOpenState.set(tab.id, false);
       }
     } else {
-      // 패널이 닫혀있으면 열기
-      chrome.sidePanel.setOptions({
-        tabId: tab.id,
-        path: 'sidepanel.html',
-        enabled: true
-      });
+      // 패널이 닫혀있으면 열기 (사용자 제스처 컨텍스트 보존 위해 await 사용)
+      try {
+        await chrome.sidePanel.setOptions({
+          tabId: tab.id,
+          path: 'sidepanel.html',
+          enabled: true
+        });
 
-      await chrome.sidePanel.open({ tabId: tab.id });
-      logInfo('PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
-      // 상태는 sidepanel.js에서 PANEL_OPENED 메시지를 받으면 업데이트됨
+        await chrome.sidePanel.open({ tabId: tab.id });
+        logInfo('PANEL_OPENED', 'Side panel 열림', { tabId: tab.id, url: tab.url });
+        // 상태는 sidepanel.js에서 PANEL_OPENED 메시지를 받으면 업데이트됨
+      } catch (openError) {
+        // 패널 열기 실패 시 명확한 에러 로깅
+        logError('PANEL_OPEN_ERROR', 'Side panel 열기 실패', {
+          tabId: tab.id,
+          url: tab.url,
+          errorMessage: openError.message
+        }, openError);
+
+        // 사용자에게 알림 (선택사항)
+        // chrome.notifications API를 사용할 수 있지만, 여기서는 로깅만 수행
+      }
     }
   } catch (error) {
     logError('PANEL_TOGGLE_ERROR', 'Side panel 토글 실패', { tabId: tab.id }, error);
