@@ -26,6 +26,9 @@ const DB_NAME = 'TranslationCache';
 const DB_VERSION = 1;
 const STORE_NAME = 'translations';
 const DEFAULT_TTL_MINUTES = 60;
+const API_RETRY_MAX_ATTEMPTS = 3;
+const API_RETRY_BASE_DELAY_MS = 800;
+const API_RETRY_BACKOFF_FACTOR = 2;
 
 // ===== 로깅 시스템 =====
 // DEBUG 레벨은 설정에서 토글 가능, INFO/WARN/ERROR는 항상 출력
@@ -755,6 +758,63 @@ async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
 // ===== OpenRouter API 통신 =====
 
 /**
+ * 지연을 통해 재시도 간격을 구현하기 위한 Promise 래퍼
+ * @param {number} delayMs - 대기할 시간(ms)
+ * @returns {Promise<void>} 지정 시간 이후 resolve되는 Promise
+ */
+function wait(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+/**
+ * 네트워크 요청 재시도를 일관되게 처리하는 헬퍼
+ * @param {(attempt: number) => Promise<any>} asyncTask - 시도 횟수를 입력받아 실행되는 비동기 함수
+ * @param {object} [options={}] - 재시도 동작 설정
+ * @param {number} [options.maxAttempts=API_RETRY_MAX_ATTEMPTS] - 최대 시도 횟수
+ * @param {number} [options.baseDelayMs=API_RETRY_BASE_DELAY_MS] - 첫 번째 재시도 대기 시간(ms)
+ * @param {number} [options.backoffFactor=API_RETRY_BACKOFF_FACTOR] - 재시도마다 곱해지는 지수 백오프 계수
+ * @returns {Promise<any>} asyncTask에서 반환된 값
+ */
+async function executeWithRetry(asyncTask, {
+  maxAttempts = API_RETRY_MAX_ATTEMPTS,
+  baseDelayMs = API_RETRY_BASE_DELAY_MS,
+  backoffFactor = API_RETRY_BACKOFF_FACTOR
+} = {}) {
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt < maxAttempts) {
+    attempt++;
+    try {
+      return await asyncTask(attempt);
+    } catch (error) {
+      lastError = error;
+
+      const isNetworkError = error instanceof TypeError || (typeof error?.message === 'string' && error.message.includes('Failed to fetch'));
+      const isExplicitRetryable = error?.retryable === true;
+      const isExplicitNonRetryable = error?.retryable === false;
+      const shouldRetry = attempt < maxAttempts && !isExplicitNonRetryable && (isExplicitRetryable || isNetworkError);
+
+      if (!shouldRetry) {
+        throw error;
+      }
+
+      const delayMs = baseDelayMs * Math.pow(backoffFactor, attempt - 1);
+
+      logWarn('API_REQUEST_RETRY', 'API 요청 재시도', {
+        attempt,
+        maxAttempts,
+        delayMs
+      }, error);
+
+      await wait(delayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+/**
  * OpenRouter API를 사용한 배치 번역
  *
  * 프롬프트 형식:
@@ -773,12 +833,14 @@ async function translateWithOpenRouter(texts, apiKey, model) {
 
   // API_REQUEST_START 로깅
   const startTime = performance.now();
+  let attempts = 0;
   logInfo('API_REQUEST_START', 'API 요청 시작', {
     reqId,
     batchIdx,
     count: texts.length,
     tokenEstimate: Math.round(tokenEstimate),
-    model
+    model,
+    maxAttempts: API_RETRY_MAX_ATTEMPTS
   });
 
   const prompt = `다음 텍스트들을 한국어로 번역해주세요.
@@ -793,46 +855,75 @@ ${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
 - HTML 태그가 있다면 그대로 유지해주세요.`;
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.href,
-        'X-Title': 'Web Page Translator'
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      })
+    const translatedText = await executeWithRetry(async (attempt) => {
+      attempts = attempt;
+      const attemptStart = performance.now();
+
+      logDebug('API_REQUEST_ATTEMPT', 'API 요청 실행', {
+        reqId,
+        batchIdx,
+        attempt
+      });
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.href,
+          'X-Title': 'Web Page Translator'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{
+            role: 'user',
+            content: prompt
+          }]
+        })
+      });
+
+      const attemptDurationMs = Math.round(performance.now() - attemptStart);
+
+      if (!response.ok) {
+        const error = new Error(`API error: ${response.statusText}`);
+        error.status = response.status;
+        error.retryable = response.status >= 500 || response.status === 429;
+
+        logWarn('API_REQUEST_ATTEMPT', 'API 응답 오류', {
+          reqId,
+          batchIdx,
+          attempt,
+          status: response.status,
+          durationMs: attemptDurationMs
+        }, error);
+
+        throw error;
+      }
+
+      const data = await response.json();
+
+      logDebug('API_REQUEST_ATTEMPT', 'API 요청 성공', {
+        reqId,
+        batchIdx,
+        attempt,
+        durationMs: attemptDurationMs
+      });
+
+      return data.choices?.[0]?.message?.content || '';
+    }, {
+      maxAttempts: API_RETRY_MAX_ATTEMPTS,
+      baseDelayMs: API_RETRY_BASE_DELAY_MS,
+      backoffFactor: API_RETRY_BACKOFF_FACTOR
     });
 
     const durationMs = Math.round(performance.now() - startTime);
 
-    if (!response.ok) {
-      // API_REQUEST_END (실패)
-      logError('API_REQUEST_END', 'API 요청 실패', {
-        reqId,
-        batchIdx,
-        status: response.status,
-        durationMs
-      }, new Error(`API error: ${response.statusText}`));
-
-      throw new Error(`API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const translatedText = data.choices?.[0]?.message?.content || '';
-
-    // API_REQUEST_END (성공)
     logInfo('API_REQUEST_END', 'API 요청 완료', {
       reqId,
       batchIdx,
       status: 200,
-      durationMs
+      durationMs,
+      attempts
     });
 
     return parseTranslationResult(translatedText, texts.length);
@@ -840,11 +931,11 @@ ${texts.map((text, idx) => `[${idx}] ${text}`).join('\n')}
   } catch (error) {
     const durationMs = Math.round(performance.now() - startTime);
 
-    // API_REQUEST_END (에러)
     logError('API_REQUEST_END', 'API 요청 에러', {
       reqId,
       batchIdx,
-      durationMs
+      durationMs,
+      attempts
     }, error);
 
     throw error;
