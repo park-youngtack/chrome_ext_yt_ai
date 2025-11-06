@@ -714,6 +714,11 @@ async function handleTranslateAll(useCache = true) {
       return;
     }
 
+    // 포트 재연결 (진행 상태 수신을 위해 필수)
+    if (!port) {
+      connectToContentScript(currentTabId);
+    }
+
     // DISPATCH_TO_CONTENT (전)
     logDebug('sidepanel', 'DISPATCH_TO_CONTENT', 'content script에 메시지 전송', {
       action: 'translateFullPage',
