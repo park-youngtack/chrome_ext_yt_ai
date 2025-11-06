@@ -246,3 +246,28 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     logDebug('PANEL_STATE_CLEANUP', 'Panel 상태 정리', { tabId });
   }
 });
+
+// 탭 URL 변경 감지 (새 탭에서 URL로 이동 시 sidepanel 자동 갱신)
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // URL이 변경되고 로딩이 완료되면 sidepanel에 알림
+  if (changeInfo.status === 'complete' && changeInfo.url) {
+    logDebug('TAB_URL_CHANGED', 'Tab URL 변경 감지', { tabId, url: changeInfo.url });
+
+    // 패널이 열려있는 탭인 경우에만 알림
+    const isOpen = panelOpenState.get(tabId) || false;
+    if (isOpen) {
+      try {
+        // sidepanel에 권한 재확인 요청
+        await chrome.runtime.sendMessage({
+          type: 'TAB_URL_CHANGED',
+          tabId: tabId,
+          url: tab.url
+        });
+        logDebug('TAB_URL_NOTIFY', 'Sidepanel에 URL 변경 알림', { tabId, url: tab.url });
+      } catch (error) {
+        // sidepanel이 응답하지 않으면 무시 (패널이 닫혔거나 준비되지 않음)
+        logDebug('TAB_URL_NOTIFY_FAILED', 'Sidepanel 응답 없음 (무시)', { tabId });
+      }
+    }
+  }
+});
