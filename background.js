@@ -20,13 +20,9 @@ async function logError(...args) {
 // 확장프로그램 설치 시
 chrome.runtime.onInstalled.addListener(() => {
   log('웹페이지 번역기가 설치되었습니다.');
-
-  // 사이드패널 자동 오픈 설정 (액션 클릭 시 자동으로 열림)
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-    .catch(error => logError('사이드패널 동작 설정 오류:', error));
 });
 
-// 아이콘 클릭 시 해당 탭에서만 side panel 토글
+// 아이콘 클릭 시 해당 탭에서만 side panel 열기
 // 각 탭마다 독립적으로 패널을 열고 닫을 수 있음
 // 중복 호출 방지를 위한 디바운스
 let opening = false;
@@ -41,16 +37,11 @@ chrome.action.onClicked.addListener(async (tab) => {
   opening = true;
 
   try {
-    // setOptions만 설정 (open()은 호출하지 않음 - 자동 오픈이 처리)
-    await chrome.sidePanel.setOptions({
-      tabId: tab.id,
-      path: 'sidepanel.html',
-      enabled: true
-    });
-
-    log(`Side panel options set for tab ${tab.id}`);
+    // 해당 탭에서만 사이드패널 열기
+    await chrome.sidePanel.open({ tabId: tab.id });
+    log(`Side panel opened for tab ${tab.id}`);
   } catch (error) {
-    logError('Side panel toggle error:', error);
+    logError('Side panel open error:', error);
   } finally {
     // 300ms 후 디바운스 해제
     setTimeout(() => {
