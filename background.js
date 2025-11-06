@@ -36,14 +36,11 @@ function log(level, evt, msg = '', data = {}, err = null) {
     }
   }
 
-  const prefix = `[WPT][${level}][background] ${evt}`;
+  const prefix = `[WPT][${level}][background]`;
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
 
-  if (msg) {
-    console[consoleMethod](prefix, msg, record);
-  } else {
-    console[consoleMethod](prefix, record);
-  }
+  // 객체를 제대로 출력하도록 개선
+  console[consoleMethod]('%s %s %o', prefix, evt, msg || '', record);
 }
 
 const logDebug = (evt, msg, data, err) => log('DEBUG', evt, msg, data, err);
