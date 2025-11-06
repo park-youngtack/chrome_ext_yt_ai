@@ -44,13 +44,17 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // 패널 닫기 메시지 핸들러
 chrome.runtime.onMessage.addListener(async (message, sender) => {
-  if (message.action === 'closeSidePanel' && sender.tab?.id) {
+  if (message.type === 'closeSidePanel') {
     try {
-      await chrome.sidePanel.setOptions({
-        tabId: sender.tab.id,
-        enabled: false
-      });
-      console.log(`Side panel closed for tab ${sender.tab.id}`);
+      // 현재 활성 탭 가져오기
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        await chrome.sidePanel.setOptions({
+          tabId: tab.id,
+          enabled: false
+        });
+        console.log(`Side panel closed for tab ${tab.id}`);
+      }
     } catch (error) {
       console.error('Failed to close side panel:', error);
     }
