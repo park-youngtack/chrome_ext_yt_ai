@@ -67,9 +67,9 @@ function log(level, evt, msg = '', data = {}, err = null) {
   const prefix = `[WPT][${level}][content] ${evt}`;
   const consoleMethod = level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log';
 
-  // 메시지와 데이터를 함께 출력
+  // 구조화된 로그 출력 (객체가 [object Object]로 표시되지 않도록)
   if (msg) {
-    console[consoleMethod](prefix, msg, record);
+    console[consoleMethod](`${prefix} ${msg}`, record);
   } else {
     console[consoleMethod](prefix, record);
   }
