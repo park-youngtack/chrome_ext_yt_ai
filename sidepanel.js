@@ -1167,6 +1167,7 @@ async function updateCacheStatus() {
 /**
  * 전역 캐시 비우기 핸들러
  * IndexedDB 데이터베이스를 직접 삭제하여 모든 캐시 제거
+ * 삭제 후 모든 탭에 notification 전송
  */
 async function handleClearAllCache() {
   try {
@@ -1194,6 +1195,29 @@ async function handleClearAllCache() {
     if (dbDeleted) {
       showToast('모든 캐시가 삭제되었습니다.');
       logInfo('sidepanel', 'CACHE_CLEARED', '전역 캐시 삭제 완료');
+
+      // 모든 탭에 캐시 삭제 알림 전송 (로그 출력)
+      try {
+        const tabs = await chrome.tabs.query({});
+        logDebug('sidepanel', 'NOTIFYING_TABS', '캐시 삭제 알림 전송', { tabCount: tabs.length });
+
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(
+            tab.id,
+            { action: 'cacheCleared' },
+            () => {
+              // 에러 무시 (content script가 없을 수 있음)
+              if (chrome.runtime.lastError) {
+                logDebug('sidepanel', 'NOTIFY_TAB_ERROR', `탭 ${tab.id}에 알림 전송 실패`, {
+                  error: chrome.runtime.lastError.message
+                });
+              }
+            }
+          );
+        });
+      } catch (notifyError) {
+        logDebug('sidepanel', 'NOTIFY_TABS_ERROR', '모든 탭에 알림 전송 중 오류', {}, notifyError);
+      }
 
       // 캐시 삭제 후 UI 업데이트
       await updateCacheStatus();

@@ -366,6 +366,25 @@ chrome.runtime.onConnect.addListener((p) => {
     // 현재 상태 즉시 푸시
     pushProgress();
 
+    // Port로부터 메시지 수신 (원본 복원 시 번역 작업 중단)
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'CANCEL_TRANSLATION') {
+        logInfo('CANCEL_TRANSLATION', '번역 취소 요청 수신', {
+          reason: msg.reason
+        });
+
+        // 현재 진행 중인 번역 작업 중단
+        if (translationState.state === 'translating') {
+          translationState.state = 'cancelled';
+          logInfo('TRANSLATION_CANCELLED', '번역 작업 취소됨', {
+            cancelReason: msg.reason,
+            translatedCount: translationState.translatedCount,
+            totalTexts: translationState.totalTexts
+          });
+        }
+      }
+    });
+
     port.onDisconnect.addListener(() => {
       // chrome.runtime.lastError를 확인하여 에러 처리
       if (chrome.runtime.lastError) {
@@ -494,8 +513,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ state: translationState });
   } else if (request.action === 'getTranslatedTitle') {
     sendResponse({ title: document.title });
+  } else if (request.action === 'cacheCleared') {
+    logInfo('CACHE_CLEARED_NOTIFICATION', '전역 캐시 삭제 알림 수신 (다른 탭에서 삭제)');
+    sendResponse({ acknowledged: true });
   } else if (request.action === 'clearAllCache') {
-    clearAllCache().then(() => sendResponse({ success: true }));
+    logInfo('CLEAR_CACHE_REQUEST', '캐시 삭제 요청 수신');
+    clearAllCache().then((result) => {
+      logInfo('CLEAR_CACHE_COMPLETED', '캐시 삭제 완료', { success: result });
+      sendResponse({ success: result });
+    }).catch((error) => {
+      logError('CLEAR_CACHE_ERROR', '캐시 삭제 실패', {}, error);
+      sendResponse({ success: false });
+    });
     return true;
   } else if (request.action === 'clearPageCache') {
     clearPageCache().then(() => sendResponse({ success: true }));
@@ -686,6 +715,15 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
       // 캐시 배치 적용
       for (let i = 0; i < cacheBatches.length; i++) {
+        // 번역 취소 상태 체크
+        if (translationState.state === 'cancelled') {
+          logInfo('CACHE_APPLY_CANCELLED', '번역 취소로 인해 캐시 적용 중단', {
+            completedBatches: i,
+            totalCacheBatches: cacheBatches.length
+          });
+          break;
+        }
+
         progressStatus.batches[i].status = 'processing';
         pushProgress();
 
@@ -809,6 +847,14 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
         const worker = async () => {
           while (index < batches.length) {
+            // 번역 취소 상태 체크
+            if (translationState.state === 'cancelled') {
+              logInfo('BATCH_CANCELLED', '번역 취소로 인해 배치 처리 중단', {
+                remainingBatches: batches.length - index
+              });
+              break;
+            }
+
             const localIndex = index++;
             const batch = batches[localIndex];
             const globalIndex = cacheOffset + localIndex; // 전역 배치 인덱스
@@ -851,9 +897,12 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       logWarn('TITLE_TRANSLATE_DEFER_FAIL', '제목 번역 비동기 처리 실패', {}, error);
     });
 
-    translationState = 'completed';
-    progressStatus.state = 'completed';
-    pushProgress();
+    // 번역 취소 상태라면 완료 상태로 업데이트 하지 않음
+    if (translationState.state !== 'cancelled') {
+      translationState = 'completed';
+      progressStatus.state = 'completed';
+      pushProgress();
+    }
 
     // 완료 요약 로깅
     logInfo('TRANSLATION_COMPLETED', '번역 완료', {
@@ -1581,8 +1630,14 @@ async function clearAllCache() {
     const tx = db.transaction([STORE_NAME], 'readwrite');
     const store = tx.objectStore(STORE_NAME);
 
-    await store.clear();
+    // store.clear()는 IDBRequest를 반환하므로 Promise로 래핑
+    await new Promise((resolve, reject) => {
+      const request = store.clear();
+      request.onsuccess = resolve;
+      request.onerror = () => reject(request.error);
+    });
 
+    // 트랜잭션 완료 대기
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
