@@ -25,6 +25,9 @@ const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const SESSION_KEY = 'lastActiveTab';
 const HISTORY_STORAGE_KEY = 'translationHistory';
 const HISTORY_MAX_ITEMS = 100;
+const DEFAULT_CACHE_TTL_MINUTES = 43200; // 기본 30일 유지 시간을 분 단위로 표현
+const CACHE_TTL_MIN_MINUTES = 5;         // 최소 5분
+const CACHE_TTL_MAX_MINUTES = 525600;    // 최대 365일
 // 최신 확장 버전을 확인할 때 사용할 GitHub 저장소 주소
 const GITHUB_REPO_URL = 'https://github.com/park-youngtack/chrome_ext_yt_ai';
 
@@ -803,8 +806,8 @@ async function handleTranslationCompletedForHistory(tabId, data) {
  * 입력 필드 변경 감지 및 버튼 이벤트 등록
  */
 function initSettingsTab() {
-  // 입력 필드 변경 감지
-  const inputs = document.querySelectorAll('#settingsTab input');
+  // 입력 필드 변경 감지 (select 포함)
+  const inputs = document.querySelectorAll('#settingsTab input, #settingsTab select');
   inputs.forEach(input => {
     input.addEventListener('input', () => {
       settingsChanged = true;
@@ -834,6 +837,56 @@ function initSettingsTab() {
 }
 
 /**
+ * 캐시 TTL 분 값을 사용자 입력용 값과 단위로 변환한다.
+ * @param {number} minutes - 저장된 TTL (분)
+ * @param {string} preferredUnit - 사용자가 이전에 선택한 단위 (minute|hour|day)
+ * @returns {{ value: number, unit: 'minute'|'hour'|'day' }} 사용자 입력용 값과 단위
+ */
+function resolveTTLDisplay(minutes, preferredUnit) {
+  // 기본값 보정 (NaN 또는 0일 경우 기본 TTL 사용)
+  let ttlMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_CACHE_TTL_MINUTES;
+
+  // 이전에 선택한 단위가 유효하면 그대로 사용한다.
+  if (preferredUnit === 'minute' || preferredUnit === 'hour' || preferredUnit === 'day') {
+    const multiplier = preferredUnit === 'day' ? 1440 : preferredUnit === 'hour' ? 60 : 1;
+    return {
+      unit: preferredUnit,
+      value: Math.max(1, Math.round(ttlMinutes / multiplier))
+    };
+  }
+
+  // 24시간(1440분)으로 나누어 떨어지면 일 단위로 표현
+  if (ttlMinutes % 1440 === 0) {
+    return { unit: 'day', value: ttlMinutes / 1440 };
+  }
+
+  // 1시간(60분)으로 나누어 떨어지면 시간 단위 사용
+  if (ttlMinutes % 60 === 0) {
+    return { unit: 'hour', value: ttlMinutes / 60 };
+  }
+
+  // 그 외에는 분 단위로 표현
+  return { unit: 'minute', value: ttlMinutes };
+}
+
+/**
+ * 사용자 입력 값을 분 단위 TTL로 변환한다.
+ * @param {number} value - 사용자 입력 값
+ * @param {'minute'|'hour'|'day'} unit - 사용자 선택 단위
+ * @returns {number} 분 단위 TTL
+ */
+function convertTTLToMinutes(value, unit) {
+  const numericValue = Number.isFinite(value) && value > 0 ? value : 0;
+  if (unit === 'day') {
+    return numericValue * 1440;
+  }
+  if (unit === 'hour') {
+    return numericValue * 60;
+  }
+  return numericValue;
+}
+
+/**
  * 설정 로드
  * storage에서 설정을 로드하여 폼에 적용
  */
@@ -845,11 +898,17 @@ async function loadSettings() {
       'batchSize',
       'concurrency',
       'cacheTTL',
+      'cacheTTLUnit',
       'debugLog'
     ]);
 
     // 원본 설정 저장
-    originalSettings = { ...result };
+    const resolvedTTL = resolveTTLDisplay(result.cacheTTL, result.cacheTTLUnit);
+    originalSettings = {
+      ...result,
+      cacheTTL: Number.isFinite(result.cacheTTL) && result.cacheTTL > 0 ? result.cacheTTL : DEFAULT_CACHE_TTL_MINUTES,
+      cacheTTLUnit: resolvedTTL.unit
+    };
 
     // API 설정
     document.getElementById('apiKey').value = result.apiKey || '';
@@ -859,8 +918,9 @@ async function loadSettings() {
     document.getElementById('batchSize').value = result.batchSize || 50;
     document.getElementById('concurrency').value = result.concurrency || 3;
 
-    // 캐시 설정 (항상 활성화)
-    document.getElementById('cacheTTL').value = result.cacheTTL || 60;
+    // 캐시 설정 (분 값을 적절한 단위로 변환하여 표시)
+    document.getElementById('cacheTTLValue').value = resolvedTTL.value;
+    document.getElementById('cacheTTLUnit').value = resolvedTTL.unit;
 
     // 디버그 설정
     document.getElementById('debugLog').checked = result.debugLog || false;
@@ -882,7 +942,10 @@ async function handleSaveSettings() {
   const modelInput = document.getElementById('model').value.trim();
   const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
   const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
-  const cacheTTL = parseInt(document.getElementById('cacheTTL').value) || 60;
+  const cacheTTLValue = parseInt(document.getElementById('cacheTTLValue').value) || 30;
+  const selectedUnit = document.getElementById('cacheTTLUnit').value;
+  const cacheTTLUnit = (selectedUnit === 'minute' || selectedUnit === 'hour' || selectedUnit === 'day') ? selectedUnit : 'day';
+  const cacheTTL = convertTTLToMinutes(cacheTTLValue, cacheTTLUnit);
   const debugLog = document.getElementById('debugLog').checked;
 
   const model = modelInput || DEFAULT_MODEL;
@@ -903,8 +966,8 @@ async function handleSaveSettings() {
     return;
   }
 
-  if (cacheTTL < 5 || cacheTTL > 1440) {
-    showToast('캐시 만료 시간은 5~1440분 사이여야 합니다.', 'error');
+  if (cacheTTL < CACHE_TTL_MIN_MINUTES || cacheTTL > CACHE_TTL_MAX_MINUTES) {
+    showToast('캐시 유지 기간은 5분 이상 365일 이하로 설정해주세요.', 'error');
     return;
   }
 
@@ -915,6 +978,7 @@ async function handleSaveSettings() {
       batchSize,
       concurrency,
       cacheTTL,
+      cacheTTLUnit,
       debugLog
     });
 
@@ -923,6 +987,7 @@ async function handleSaveSettings() {
       batchSize,
       concurrency,
       cacheTTL,
+      cacheTTLUnit,
       debugLog
     });
 
@@ -933,6 +998,7 @@ async function handleSaveSettings() {
       batchSize,
       concurrency,
       cacheTTL,
+      cacheTTLUnit,
       debugLog
     };
 
