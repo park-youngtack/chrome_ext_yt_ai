@@ -1074,25 +1074,18 @@ function showToast(message, type = 'success') {
 }
 
 /**
- * IndexedDB 캐시 상태 조회
- * 현재 탭의 content script에서 캐시 상태 요청
+ * IndexedDB 전체 캐시 상태 조회
+ * background.js를 통해 전체 캐시 조회 (도메인 무관)
  * @returns {Promise<{count: number, size: number}>} 캐시 항목 수와 총 용량(바이트)
  */
 async function getCacheStatus() {
   try {
-    if (!currentTabId) {
-      logDebug('sidepanel', 'CACHE_NO_TAB', '활성 탭이 없음');
-      return { count: 0, size: 0 };
-    }
-
     return new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(
-        currentTabId,
-        { action: 'getCacheStatus' },
+      chrome.runtime.sendMessage(
+        { action: 'getTotalCacheStatus' },
         (response) => {
           if (chrome.runtime.lastError) {
-            // content script가 없거나 응답할 수 없는 상태 (정상)
-            logDebug('sidepanel', 'CACHE_NO_CONTENT', 'Content script에서 캐시 조회 불가 (정상)', {
+            logError('sidepanel', 'CACHE_SEND_MSG_ERROR', 'Background와 통신 실패', {
               error: chrome.runtime.lastError.message
             });
             resolve({ count: 0, size: 0 });
@@ -1100,14 +1093,14 @@ async function getCacheStatus() {
           }
 
           if (response && response.success) {
-            logDebug('sidepanel', 'CACHE_STATUS_SUCCESS', '캐시 상태 조회 성공', {
+            logDebug('sidepanel', 'CACHE_STATUS_SUCCESS', '전체 캐시 상태 조회 성공', {
               count: response.count,
               size: formatBytes(response.size)
             });
             resolve({ count: response.count, size: response.size });
           } else {
             const errorMsg = response?.error || '알 수 없는 오류';
-            logDebug('sidepanel', 'CACHE_STATUS_RESPONSE_ERROR', 'Content script 응답 오류', {
+            logError('sidepanel', 'CACHE_STATUS_ERROR', 'Background에서 캐시 조회 실패', {
               error: errorMsg
             });
             resolve({ count: 0, size: 0 });

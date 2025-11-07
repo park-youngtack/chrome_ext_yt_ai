@@ -513,14 +513,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ state: translationState });
   } else if (request.action === 'getTranslatedTitle') {
     sendResponse({ title: document.title });
-  } else if (request.action === 'getCacheStatus') {
-    getCacheStatusFromDB().then((result) => {
-      sendResponse({ success: true, count: result.count, size: result.size });
-    }).catch((error) => {
-      logError('CACHE_STATUS_ERROR', 'IndexedDB 캐시 상태 조회 실패', {}, error);
-      sendResponse({ success: false, error: error.message });
-    });
-    return true;
   }
   return true;
 });
@@ -1609,47 +1601,6 @@ async function getCachedTranslation(text) {
   } catch (error) {
     console.error('Failed to get cache:', error);
     return null;
-  }
-}
-
-/**
- * IndexedDB 캐시 상태 조회
- * 캐시된 항목 수와 총 용량을 계산
- * @returns {Promise<{count: number, size: number}>}
- */
-async function getCacheStatusFromDB() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction([STORE_NAME], 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-
-    return await new Promise((resolve, reject) => {
-      const request = store.getAll();
-
-      request.onsuccess = () => {
-        const items = request.result;
-        let totalSize = 0;
-
-        items.forEach(item => {
-          totalSize += JSON.stringify(item).length;
-        });
-
-        db.close();
-        logDebug('CACHE_STATUS_SUCCESS', 'IndexedDB 캐시 상태 조회 성공', {
-          count: items.length,
-          sizeBytes: totalSize
-        });
-        resolve({ count: items.length, size: totalSize });
-      };
-
-      request.onerror = () => {
-        db.close();
-        reject(new Error('캐시 조회 실패'));
-      };
-    });
-  } catch (error) {
-    logError('CACHE_STATUS_ERROR', 'IndexedDB 캐시 상태 조회 실패', {}, error);
-    return { count: 0, size: 0 };
   }
 }
 

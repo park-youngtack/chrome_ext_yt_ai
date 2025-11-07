@@ -180,6 +180,93 @@ async function ensureContentScript(tabId) {
   });
 }
 
+// ===== 메시지 핸들러 =====
+
+/**
+ * sidepanel에서 전체 IndexedDB 캐시 상태 조회 요청을 받음
+ * background는 확장 프로그램 레벨에서 전체 캐시에 접근 가능
+ */
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'getTotalCacheStatus') {
+    getTotalCacheStatusFromDB().then((result) => {
+      sendResponse({ success: true, count: result.count, size: result.size });
+    }).catch((error) => {
+      logError('TOTAL_CACHE_STATUS_ERROR', '전체 캐시 상태 조회 실패', {}, error);
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // 비동기 응답
+  }
+});
+
+/**
+ * IndexedDB에서 전체 캐시 상태 조회
+ * @returns {Promise<{count: number, size: number}>}
+ */
+async function getTotalCacheStatusFromDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('TranslationCache', 1);
+
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+
+      try {
+        // Object store 존재 여부 확인
+        if (!db.objectStoreNames.contains('translations')) {
+          db.close();
+          logDebug('TOTAL_CACHE_NOT_FOUND', 'Object store "translations"가 없음 (캐시 미생성)');
+          resolve({ count: 0, size: 0 });
+          return;
+        }
+
+        const transaction = db.transaction(['translations'], 'readonly');
+        const store = transaction.objectStore('translations');
+        const getAllRequest = store.getAll();
+
+        getAllRequest.onsuccess = () => {
+          const items = getAllRequest.result;
+          let totalSize = 0;
+
+          items.forEach(item => {
+            totalSize += JSON.stringify(item).length;
+          });
+
+          db.close();
+          logDebug('TOTAL_CACHE_STATUS_SUCCESS', '전체 IndexedDB 캐시 상태 조회 성공', {
+            count: items.length,
+            sizeBytes: totalSize
+          });
+          resolve({ count: items.length, size: totalSize });
+        };
+
+        getAllRequest.onerror = () => {
+          db.close();
+          const errorMsg = getAllRequest.error?.message || '캐시 조회 실패';
+          reject(new Error(errorMsg));
+        };
+      } catch (error) {
+        db.close();
+        reject(error);
+      }
+    };
+
+    request.onerror = () => {
+      const errorMsg = request.error?.message || 'IndexedDB 열기 실패';
+      reject(new Error(errorMsg));
+    };
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      logDebug('TOTAL_CACHE_UPGRADE', 'IndexedDB 업그레이드');
+
+      // Object store가 없으면 생성
+      if (!db.objectStoreNames.contains('translations')) {
+        db.createObjectStore('translations', { keyPath: 'hash' });
+        logDebug('TOTAL_CACHE_STORE_CREATED', 'Object store "translations" 생성');
+      }
+    };
+  });
+}
+
 // ===== Side Panel 관리 =====
 
 /**
