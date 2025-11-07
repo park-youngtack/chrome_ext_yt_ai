@@ -210,6 +210,14 @@ async function getCacheStatusFromDB() {
       const db = event.target.result;
 
       try {
+        // Object store 존재 여부 확인
+        if (!db.objectStoreNames.contains('translations')) {
+          db.close();
+          logDebug('CACHE_NOT_FOUND', 'Object store "translations"가 없음 (캐시 미생성)');
+          resolve({ count: 0, size: 0 });
+          return;
+        }
+
         const transaction = db.transaction(['translations'], 'readonly');
         const store = transaction.objectStore('translations');
         const getAllRequest = store.getAll();
@@ -244,6 +252,17 @@ async function getCacheStatusFromDB() {
     request.onerror = () => {
       const errorMsg = request.error?.message || 'IndexedDB 열기 실패';
       reject(new Error(errorMsg));
+    };
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      logDebug('CACHE_UPGRADE', 'IndexedDB 업그레이드');
+
+      // Object store가 없으면 생성
+      if (!db.objectStoreNames.contains('translations')) {
+        db.createObjectStore('translations', { keyPath: 'hash' });
+        logDebug('CACHE_STORE_CREATED', 'Object store "translations" 생성');
+      }
     };
   });
 }
