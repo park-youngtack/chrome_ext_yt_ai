@@ -929,6 +929,217 @@
     .toast.error {
       background: var(--status-error);
     }
+
+    /* ===== 검색 탭 스타일 ===== */
+    .search-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .search-header {
+      margin-bottom: 24px;
+    }
+
+    .search-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .search-subtitle {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* 검색 입력 영역 */
+    .search-input-group {
+      margin-bottom: 24px;
+    }
+
+    .search-input-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .search-input-group textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      resize: vertical;
+      transition: all 0.2s;
+      margin-bottom: 12px;
+    }
+
+    .search-input-group textarea:focus {
+      outline: none;
+      border-color: var(--status-active);
+      box-shadow: 0 0 0 3px rgba(42, 108, 240, 0.1);
+    }
+
+    /* 로딩 상태 */
+    .search-loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    .search-loading.show {
+      display: flex;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(42, 108, 240, 0.2);
+      border-top-color: var(--status-active);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* 추천 검색문 리스트 */
+    .search-recommendations {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .search-item {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .search-item:hover {
+      background: rgba(42, 108, 240, 0.12);
+      border-color: rgba(42, 108, 240, 0.4);
+    }
+
+    .search-item:focus-visible {
+      outline: 2px solid rgba(42, 108, 240, 0.6);
+      outline-offset: 2px;
+    }
+
+    .search-item-text {
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 500;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .search-item-engines {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .search-engine-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      padding: 0;
+    }
+
+    .search-engine-btn img {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+    }
+
+    .search-engine-btn svg {
+      width: 20px;
+      height: 20px;
+      filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+    }
+
+    .search-engine-btn:hover {
+      background: rgba(42, 108, 240, 0.15);
+      border-color: rgba(42, 108, 240, 0.6);
+      transform: scale(1.05);
+    }
+
+    .search-engine-btn:active {
+      transform: scale(0.95);
+    }
+
+    .search-engine-btn.all {
+      background: rgba(42, 108, 240, 0.15);
+      color: var(--status-active);
+      border-color: var(--status-active);
+      font-size: 12px;
+    }
+
+    .search-engine-btn.all:hover {
+      background: rgba(42, 108, 240, 0.25);
+    }
+
+    /* 빈 상태 */
+    .search-empty {
+      padding: 32px 20px;
+      border-radius: var(--radius-md);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(18, 20, 24, 0.8);
+      text-align: center;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      margin-top: 24px;
+    }
+
+    .search-empty.hidden {
+      display: none;
+    }
+
+    .search-empty-icon {
+      font-size: 36px;
+    }
+
+    .search-empty p {
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
@@ -1035,6 +1246,36 @@
             </div>
 
             <div id="historyList" class="history-list" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <!-- 검색 탭 -->
+        <div id="searchTab" class="tab-content">
+          <div class="search-card">
+            <div class="search-header">
+              <h2 class="search-title">🔍 스마트 검색</h2>
+              <p class="search-subtitle">AI가 최적의 검색문을 추천해줍니다</p>
+            </div>
+
+            <!-- 검색 입력 영역 -->
+            <div class="search-input-group">
+              <label for="searchInput">검색 목적 또는 내용</label>
+              <textarea id="searchInput" placeholder="AI가 찾아주는 당신의 가장 빛나는 크리에이터를 의미하는 스텔라이즈는 무엇인가요?" rows="3"></textarea>
+              <button id="getRecommendationsBtn" class="btn">추천 받기</button>
+              <div id="searchLoadingState" class="search-loading" style="display: none;">
+                <div class="spinner"></div>
+                <span>AI가 최적의 검색문을 생성중...</span>
+              </div>
+            </div>
+
+            <!-- 추천 검색문 리스트 -->
+            <div id="searchRecommendations" class="search-recommendations"></div>
+
+            <!-- 빈 상태 -->
+            <div id="searchEmpty" class="search-empty">
+              <div class="search-empty-icon">✨</div>
+              <p>검색 내용을 입력하고 "추천 받기" 버튼을 누르세요</p>
+            </div>
           </div>
         </div>
 
@@ -1178,6 +1419,15 @@
           <path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7 6.93 6.93 0 01-4.9-2H7.62A9 9 0 1013 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/>
         </svg>
         <span>히스토리</span>
+      </button>
+
+      <div class="tabbar-divider" role="presentation" aria-hidden="true"></div>
+
+      <button role="tab" data-tab="search" aria-selected="false" title="검색">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z"/>
+        </svg>
+        <span>검색</span>
       </button>
 
       <div class="tabbar-divider" role="presentation" aria-hidden="true"></div>
