@@ -1075,51 +1075,35 @@ function showToast(message, type = 'success') {
 
 /**
  * IndexedDB 캐시 상태 조회
- * 캐시된 항목 수와 총 용량을 계산
+ * background.js를 통해 캐시 상태 요청 (origin 격리 우회)
  * @returns {Promise<{count: number, size: number}>} 캐시 항목 수와 총 용량(바이트)
  */
 async function getCacheStatus() {
   try {
-    return await new Promise((resolve, reject) => {
-      const request = indexedDB.open('TranslationCache', 1);
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'getCacheStatus' }, (response) => {
+        if (chrome.runtime.lastError) {
+          const error = new Error(`Background 통신 실패: ${chrome.runtime.lastError.message}`);
+          logError('sidepanel', 'CACHE_SEND_MSG_ERROR', 'Background와 통신 실패', {}, error);
+          reject(error);
+          return;
+        }
 
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-
-        try {
-          const transaction = db.transaction(['translations'], 'readonly');
-          const store = transaction.objectStore('translations');
-          const getAllRequest = store.getAll();
-
-          getAllRequest.onsuccess = () => {
-            const items = getAllRequest.result;
-            let totalSize = 0;
-
-            // 각 항목의 크기 계산 (대략적)
-            items.forEach(item => {
-              totalSize += JSON.stringify(item).length;
-            });
-
-            db.close();
-            resolve({ count: items.length, size: totalSize });
-          };
-
-          getAllRequest.onerror = () => {
-            db.close();
-            reject(new Error('캐시 조회 실패'));
-          };
-        } catch (error) {
-          db.close();
+        if (response.success) {
+          logDebug('sidepanel', 'CACHE_STATUS_SUCCESS', '캐시 상태 조회 성공', {
+            count: response.data.count,
+            size: formatBytes(response.data.size)
+          });
+          resolve(response.data);
+        } else {
+          const error = new Error(response.error || '알 수 없는 오류');
+          logError('sidepanel', 'CACHE_STATUS_ERROR', 'Background에서 캐시 조회 실패', {}, error);
           reject(error);
         }
-      };
-
-      request.onerror = () => {
-        reject(new Error('IndexedDB 열기 실패'));
-      };
+      });
     });
   } catch (error) {
-    logDebug('sidepanel', 'CACHE_STATUS_ERROR', '캐시 상태 조회 실패', {}, error);
+    logError('sidepanel', 'CACHE_STATUS_ERROR', '캐시 상태 조회 실패', {}, error);
     return { count: 0, size: 0 };
   }
 }

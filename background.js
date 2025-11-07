@@ -180,6 +180,74 @@ async function ensureContentScript(tabId) {
   });
 }
 
+// ===== 메시지 핸들러 =====
+
+/**
+ * sidepanel에서 IndexedDB 캐시 상태 조회 요청을 받음
+ * background는 모든 origin에서 IndexedDB에 접근 가능하므로 중계 역할 수행
+ */
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'getCacheStatus') {
+    getCacheStatusFromDB().then((result) => {
+      sendResponse({ success: true, data: result });
+    }).catch((error) => {
+      logError('CACHE_STATUS_ERROR', 'IndexedDB 캐시 상태 조회 실패', {}, error);
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // 비동기 응답
+  }
+});
+
+/**
+ * IndexedDB에서 캐시 상태 조회
+ * @returns {Promise<{count: number, size: number}>}
+ */
+async function getCacheStatusFromDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('TranslationCache', 1);
+
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+
+      try {
+        const transaction = db.transaction(['translations'], 'readonly');
+        const store = transaction.objectStore('translations');
+        const getAllRequest = store.getAll();
+
+        getAllRequest.onsuccess = () => {
+          const items = getAllRequest.result;
+          let totalSize = 0;
+
+          items.forEach(item => {
+            totalSize += JSON.stringify(item).length;
+          });
+
+          db.close();
+          logDebug('CACHE_STATUS_SUCCESS', 'IndexedDB 캐시 상태 조회 성공', {
+            count: items.length,
+            sizeBytes: totalSize
+          });
+          resolve({ count: items.length, size: totalSize });
+        };
+
+        getAllRequest.onerror = () => {
+          db.close();
+          const errorMsg = getAllRequest.error?.message || '캐시 조회 실패';
+          reject(new Error(errorMsg));
+        };
+      } catch (error) {
+        db.close();
+        reject(error);
+      }
+    };
+
+    request.onerror = () => {
+      const errorMsg = request.error?.message || 'IndexedDB 열기 실패';
+      reject(new Error(errorMsg));
+    };
+  });
+}
+
 // ===== Side Panel 관리 =====
 
 /**
