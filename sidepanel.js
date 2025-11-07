@@ -683,6 +683,10 @@ async function handleHistoryItemOpen(entry) {
     }
 
     lastTranslateMode = entry.mode === 'fresh' ? 'fresh' : 'cache';
+
+    // 번역 탭으로 자동 전환
+    await switchTab('translate');
+
     await handleTranslateAll(entry.mode !== 'fresh');
   } catch (error) {
     logError('sidepanel', 'HISTORY_OPEN_ERROR', '히스토리 항목 실행 실패', { url: entry.url }, error);
