@@ -513,6 +513,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ state: translationState });
   } else if (request.action === 'getTranslatedTitle') {
     sendResponse({ title: document.title });
+  } else if (request.action === 'getCacheStatus') {
+    // Sidepanel에서 현재 도메인의 캐시 상태 요청
+    getCacheStatus().then(result => {
+      sendResponse(result);
+    }).catch(error => {
+      sendResponse({ success: false, count: 0, size: 0, error: error.message });
+    });
+    return true; // 비동기 응답
+  } else if (request.action === 'clearCacheForDomain') {
+    // Sidepanel에서 현재 도메인의 캐시 삭제 요청
+    handleClearCacheForDomain().then(result => {
+      sendResponse(result);
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // 비동기 응답
   }
   return true;
 });
@@ -1637,12 +1653,66 @@ async function clearAllCache() {
 }
 
 /**
- * 페이지 캐시 비우기 (현재는 전체 비우기와 동일)
- * TODO: 페이지별 캐시 구현
+ * 페이지 캐시 비우기
  * @returns {Promise<boolean>}
  */
 async function clearPageCache() {
   return await clearAllCache();
+}
+
+/**
+ * 현재 페이지(도메인)의 캐시 상태 조회
+ * Sidepanel에서 요청할 때 사용
+ * @returns {Promise<{success: boolean, count: number, size: number, error?: string}>}
+ */
+async function getCacheStatus() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction([STORE_NAME], 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+
+    // 모든 캐시 항목 조회
+    const result = await new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const items = request.result;
+        let totalSize = 0;
+
+        items.forEach(item => {
+          totalSize += JSON.stringify(item).length;
+        });
+
+        resolve({ success: true, count: items.length, size: totalSize });
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    db.close();
+    return result;
+  } catch (error) {
+    logError('CACHE_STATUS_ERROR', '캐시 상태 조회 실패', {}, error);
+    return { success: false, count: 0, size: 0, error: error.message };
+  }
+}
+
+/**
+ * 현재 페이지(도메인)의 캐시 비우기 핸들러
+ * Sidepanel의 "이 페이지 캐시 비우기" 버튼에서 호출
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function handleClearCacheForDomain() {
+  try {
+    const success = await clearPageCache();
+    if (success) {
+      logInfo('CACHE_CLEARED', '현재 도메인 캐시 삭제 완료');
+      return { success: true };
+    } else {
+      return { success: false, error: '캐시 삭제 실패' };
+    }
+  } catch (error) {
+    logError('CACHE_CLEAR_ERROR', '캐시 삭제 중 오류 발생', {}, error);
+    return { success: false, error: error.message };
+  }
 }
 
 // ===== 초기화 =====

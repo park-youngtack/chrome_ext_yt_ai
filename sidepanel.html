@@ -1258,6 +1258,18 @@
                   <div class="batch-info-title">배치 진행 상황</div>
                   <div id="batchList"></div>
                 </div>
+
+                <!-- 캐시 관리 (현재 페이지) -->
+                <div id="cacheManagement" class="batch-info" style="display: none; margin-top: 16px;">
+                  <div class="batch-info-title">현재 페이지 캐시</div>
+                  <div style="padding: 8px 0; font-size: 13px; color: var(--text-secondary);">
+                    <div style="margin-bottom: 8px;">
+                      항목 수: <span id="pageItemCount" style="color: var(--text-primary); font-weight: 600;">0</span>개 /
+                      용량: <span id="pageSizeDisplay" style="color: var(--text-primary); font-weight: 600;">0 B</span>
+                    </div>
+                    <button id="clearPageCacheBtn" class="btn secondary" style="width: 100%; padding: 8px; font-size: 12px; margin: 0;">이 페이지 캐시 비우기</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1388,15 +1400,6 @@
               </div>
             </div>
 
-            <div class="form-group">
-              <label>캐시 관리</label>
-              <div id="cacheStatus" style="padding: 12px; background: var(--bg-primary); border-radius: var(--radius-md); margin-bottom: 12px; font-size: 13px; color: var(--text-secondary);">
-                <div style="margin-bottom: 6px;"><strong>캐시 상태</strong></div>
-                <div>항목 수: <span id="cacheItemCount" style="color: var(--text-primary);">계산 중...</span></div>
-                <div>총 용량: <span id="cacheSizeDisplay" style="color: var(--text-primary);">계산 중...</span></div>
-              </div>
-              <button id="clearAllCacheBtn" class="btn secondary">전역 캐시 비우기</button>
-            </div>
 
             <div class="cache-info">
               저장된 번역을 TTL 동안 자동 재사용하며, 만료되면 재번역합니다.<br>

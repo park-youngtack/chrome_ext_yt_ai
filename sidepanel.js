@@ -155,9 +155,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 히스토리 탭 초기화
   await initHistoryTab();
 
-  // 설정 탭 이벤트 및 초기 캐시 상태 조회
+  // 설정 탭 이벤트 초기화
   initSettingsTab();
-  await updateCacheStatus();
 
   // 탭 변경 감지
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
@@ -293,15 +292,15 @@ async function switchTab(tabName) {
   // 세션 저장 (마지막 탭 상태)
   await chrome.storage.session.set({ [SESSION_KEY]: tabName });
 
-  // 번역 탭으로 전환 시 API key 확인
+  // 번역 탭으로 전환 시 API key 확인 및 캐시 상태 업데이트
   if (tabName === 'translate') {
     await updateApiKeyUI();
+    await updatePageCacheStatus();
   }
 
-  // 설정 탭으로 전환 시 설정 로드 및 캐시 정보 표시
+  // 설정 탭으로 전환 시 설정 로드
   if (tabName === 'settings') {
     await loadSettings();
-    await updateCacheStatus();
   }
 
   // 히스토리 탭으로 전환 시 목록 새로고침
@@ -847,8 +846,8 @@ function initSettingsTab() {
     hideSaveBar();
   });
 
-  // 캐시 관리 버튼
-  document.getElementById('clearAllCacheBtn')?.addEventListener('click', handleClearAllCache);
+  // 이 페이지 캐시 비우기 버튼
+  document.getElementById('clearPageCacheBtn')?.addEventListener('click', handleClearPageCache);
 
   // 로그 복사 버튼
   document.getElementById('copyLogsBtn')?.addEventListener('click', handleCopyLogs);
@@ -1074,18 +1073,25 @@ function showToast(message, type = 'success') {
 }
 
 /**
- * IndexedDB 전체 캐시 상태 조회
- * background.js를 통해 전체 캐시 조회 (도메인 무관)
+ * 현재 페이지(도메인)의 IndexedDB 캐시 상태 조회
+ * content script를 통해 현재 도메인의 캐시만 조회
  * @returns {Promise<{count: number, size: number}>} 캐시 항목 수와 총 용량(바이트)
  */
-async function getCacheStatus() {
+async function getPageCacheStatus() {
   try {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { action: 'getTotalCacheStatus' },
+      if (!currentTabId) {
+        logDebug('sidepanel', 'PAGE_CACHE_NO_TAB', 'CurrentTabId가 없음, 캐시 조회 스킵');
+        resolve({ count: 0, size: 0 });
+        return;
+      }
+
+      chrome.tabs.sendMessage(
+        currentTabId,
+        { action: 'getCacheStatus' },
         (response) => {
           if (chrome.runtime.lastError) {
-            logError('sidepanel', 'CACHE_SEND_MSG_ERROR', 'Background와 통신 실패', {
+            logDebug('sidepanel', 'PAGE_CACHE_SEND_MSG_ERROR', 'Content script와 통신 실패 (권한 없음 또는 준비 안됨)', {
               error: chrome.runtime.lastError.message
             });
             resolve({ count: 0, size: 0 });
@@ -1093,14 +1099,14 @@ async function getCacheStatus() {
           }
 
           if (response && response.success) {
-            logDebug('sidepanel', 'CACHE_STATUS_SUCCESS', '전체 캐시 상태 조회 성공', {
+            logDebug('sidepanel', 'PAGE_CACHE_STATUS_SUCCESS', '현재 페이지 캐시 상태 조회 성공', {
               count: response.count,
               size: formatBytes(response.size)
             });
             resolve({ count: response.count, size: response.size });
           } else {
             const errorMsg = response?.error || '알 수 없는 오류';
-            logError('sidepanel', 'CACHE_STATUS_ERROR', 'Background에서 캐시 조회 실패', {
+            logDebug('sidepanel', 'PAGE_CACHE_STATUS_ERROR', 'Content script에서 캐시 조회 실패', {
               error: errorMsg
             });
             resolve({ count: 0, size: 0 });
@@ -1109,7 +1115,7 @@ async function getCacheStatus() {
       );
     });
   } catch (error) {
-    logError('sidepanel', 'CACHE_STATUS_ERROR', '캐시 상태 조회 실패', {}, error);
+    logError('sidepanel', 'PAGE_CACHE_STATUS_ERROR', '현재 페이지 캐시 상태 조회 실패', {}, error);
     return { count: 0, size: 0 };
   }
 }
@@ -1128,69 +1134,92 @@ function formatBytes(bytes) {
 }
 
 /**
- * 캐시 상태 UI 업데이트
+ * 현재 페이지의 캐시 상태 UI 업데이트
+ * 동시에 캐시 UI의 표시 여부를 결정
  */
-async function updateCacheStatus() {
+async function updatePageCacheStatus() {
   try {
-    const { count, size } = await getCacheStatus();
+    const cacheManagementEl = document.getElementById('cacheManagement');
 
-    const itemCountEl = document.getElementById('cacheItemCount');
-    const sizeDisplayEl = document.getElementById('cacheSizeDisplay');
+    // 현재 탭이 지원되는 URL인 경우에만 캐시 UI 표시
+    if (permissionGranted) {
+      const { count, size } = await getPageCacheStatus();
 
-    if (itemCountEl) {
-      itemCountEl.textContent = count.toLocaleString() + '개';
+      const itemCountEl = document.getElementById('pageItemCount');
+      const sizeDisplayEl = document.getElementById('pageSizeDisplay');
+
+      if (itemCountEl) {
+        itemCountEl.textContent = count.toLocaleString();
+      }
+
+      if (sizeDisplayEl) {
+        sizeDisplayEl.textContent = formatBytes(size);
+      }
+
+      // 캐시 UI 표시
+      if (cacheManagementEl) {
+        cacheManagementEl.style.display = 'block';
+      }
+
+      logDebug('sidepanel', 'PAGE_CACHE_STATUS_UPDATED', '현재 페이지 캐시 상태 업데이트', {
+        count,
+        size: formatBytes(size)
+      });
+    } else {
+      // 지원되지 않는 URL이면 캐시 UI 숨김
+      if (cacheManagementEl) {
+        cacheManagementEl.style.display = 'none';
+      }
+      logDebug('sidepanel', 'PAGE_CACHE_HIDDEN', '지원되지 않는 URL이므로 캐시 UI 숨김');
     }
-
-    if (sizeDisplayEl) {
-      sizeDisplayEl.textContent = formatBytes(size);
-    }
-
-    logDebug('sidepanel', 'CACHE_STATUS_UPDATED', '캐시 상태 업데이트', {
-      count,
-      size: formatBytes(size)
-    });
   } catch (error) {
-    logError('sidepanel', 'CACHE_STATUS_UPDATE_ERROR', '캐시 상태 업데이트 실패', {}, error);
+    logError('sidepanel', 'PAGE_CACHE_STATUS_UPDATE_ERROR', '현재 페이지 캐시 상태 업데이트 실패', {}, error);
   }
 }
 
 /**
- * 전역 캐시 비우기 핸들러
- * IndexedDB 데이터베이스를 직접 삭제하여 모든 캐시 제거
- * 삭제 후 모든 탭에 notification 전송
+ * 현재 페이지의 캐시 비우기 핸들러
+ * Content script에 메시지를 보내 해당 도메인의 캐시만 삭제
  */
-async function handleClearAllCache() {
+async function handleClearPageCache() {
   try {
-    logInfo('sidepanel', 'CACHE_CLEAR_START', '캐시 삭제 시작');
-
-    const dbDeleted = await new Promise((resolve, reject) => {
-      const request = indexedDB.deleteDatabase('TranslationCache');
-
-      request.onsuccess = () => {
-        logDebug('sidepanel', 'DB_DELETE_SUCCESS', 'IndexedDB 데이터베이스 삭제 완료');
-        resolve(true);
-      };
-
-      request.onerror = () => {
-        const errorMsg = request.error?.message || '알 수 없는 오류';
-        logError('sidepanel', 'DB_DELETE_ERROR', 'IndexedDB 데이터베이스 삭제 실패', {}, new Error(errorMsg));
-        reject(new Error(errorMsg));
-      };
-
-      request.onblocked = () => {
-        logDebug('sidepanel', 'DB_DELETE_BLOCKED', 'IndexedDB 삭제 블록됨 (다른 연결 있음)');
-      };
-    });
-
-    if (dbDeleted) {
-      showToast('모든 캐시가 삭제되었습니다.');
-      logInfo('sidepanel', 'CACHE_CLEARED', '전역 캐시 삭제 완료');
-
-      // 캐시 삭제 후 UI 업데이트
-      await updateCacheStatus();
+    if (!currentTabId) {
+      logWarn('sidepanel', 'PAGE_CACHE_CLEAR_NO_TAB', 'CurrentTabId가 없음');
+      showToast('현재 탭을 확인할 수 없습니다.', 'error');
+      return;
     }
+
+    logInfo('sidepanel', 'PAGE_CACHE_CLEAR_START', '현재 페이지 캐시 삭제 시작');
+
+    chrome.tabs.sendMessage(
+      currentTabId,
+      { action: 'clearCacheForDomain' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          logWarn('sidepanel', 'PAGE_CACHE_CLEAR_MSG_ERROR', 'Content script와 통신 실패', {
+            error: chrome.runtime.lastError.message
+          });
+          showToast('캐시 삭제 중 오류가 발생했습니다.', 'error');
+          return;
+        }
+
+        if (response && response.success) {
+          showToast('이 페이지의 캐시가 삭제되었습니다.');
+          logInfo('sidepanel', 'PAGE_CACHE_CLEARED', '현재 페이지 캐시 삭제 완료');
+
+          // 캐시 삭제 후 UI 업데이트
+          updatePageCacheStatus();
+        } else {
+          const errorMsg = response?.error || '알 수 없는 오류';
+          logWarn('sidepanel', 'PAGE_CACHE_CLEAR_FAILED', 'Content script에서 캐시 삭제 실패', {
+            error: errorMsg
+          });
+          showToast('캐시 삭제 중 오류가 발생했습니다: ' + errorMsg, 'error');
+        }
+      }
+    );
   } catch (error) {
-    logError('sidepanel', 'CACHE_CLEAR_ERROR', '캐시 삭제 실패', {}, error);
+    logError('sidepanel', 'PAGE_CACHE_CLEAR_ERROR', '현재 페이지 캐시 삭제 실패', {}, error);
     showToast('캐시 삭제 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
@@ -1256,6 +1285,12 @@ async function checkPermissions(tab) {
   // http/https 스킴
   // host_permissions에 이미 선언되어 있으므로 항상 권한이 있음
   permissionGranted = true;
+
+  // 현재 탭에서 번역 탭을 보고 있으면 캐시 상태도 업데이트
+  const activeTab = document.querySelector('.tab-content.active');
+  if (activeTab && activeTab.id === 'translateTab') {
+    await updatePageCacheStatus();
+  }
 }
 
 /**
