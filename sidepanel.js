@@ -686,6 +686,8 @@ async function handleHistoryItemOpen(entry) {
     }
 
     lastTranslateMode = entry.mode === 'fresh' ? 'fresh' : 'cache';
+    // 탭별 모드도 설정 (완료 후 히스토리 저장 시 올바른 모드 사용)
+    translateModeByTab.set(currentTabId, lastTranslateMode);
 
     // 번역 탭으로 자동 전환
     await switchTab('translate');
