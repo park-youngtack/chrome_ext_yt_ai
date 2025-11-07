@@ -513,22 +513,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ state: translationState });
   } else if (request.action === 'getTranslatedTitle') {
     sendResponse({ title: document.title });
-  } else if (request.action === 'cacheCleared') {
-    logInfo('CACHE_CLEARED_NOTIFICATION', '전역 캐시 삭제 알림 수신 (다른 탭에서 삭제)');
-    sendResponse({ acknowledged: true });
-  } else if (request.action === 'clearAllCache') {
-    logInfo('CLEAR_CACHE_REQUEST', '캐시 삭제 요청 수신');
-    clearAllCache().then((result) => {
-      logInfo('CLEAR_CACHE_COMPLETED', '캐시 삭제 완료', { success: result });
-      sendResponse({ success: result });
-    }).catch((error) => {
-      logError('CLEAR_CACHE_ERROR', '캐시 삭제 실패', {}, error);
-      sendResponse({ success: false });
-    });
-    return true;
-  } else if (request.action === 'clearPageCache') {
-    clearPageCache().then(() => sendResponse({ success: true }));
-    return true;
   }
   return true;
 });
