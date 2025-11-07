@@ -278,6 +278,16 @@ async function switchTab(tabName) {
     }
   });
 
+  // 헤더 제목 업데이트
+  const panelTitle = document.getElementById('panelTitle');
+  const titleMap = {
+    'translate': 'AI 번역',
+    'history': '번역 히스토리',
+    'search': '스마트 검색',
+    'settings': '설정'
+  };
+  panelTitle.textContent = titleMap[tabName] || 'AI 번역';
+
   // 세션 저장 (마지막 탭 상태)
   await chrome.storage.session.set({ [SESSION_KEY]: tabName });
 
