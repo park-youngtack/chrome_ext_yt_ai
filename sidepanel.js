@@ -158,6 +158,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 설정 탭 이벤트 초기화
   initSettingsTab();
 
+  // 오류 로그 개수 업데이트
+  updateErrorLogCount();
+
   // 탭 변경 감지
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1911,6 +1914,37 @@ function formatTime(seconds) {
 // ===== 개발자 도구 =====
 
 /**
+ * 오류 로그 개수를 버튼에 표시
+ */
+async function updateErrorLogCount() {
+  try {
+    const allLogs = await getLogs();
+    if (!allLogs || allLogs.length === 0) {
+      return;
+    }
+
+    // 오류 로그 필터링
+    const errorLogs = allLogs.filter(logLine => {
+      return /\["ERROR"\]|\["WARN"\]|"level":"ERROR"|"level":"WARN"/.test(logLine);
+    });
+
+    // 버튼에 개수 표시
+    const errorBtn = document.getElementById('copyErrorLogsBtn');
+    if (errorBtn) {
+      if (errorLogs.length > 0) {
+        errorBtn.textContent = `오류 로그만 복사 (${errorLogs.length})`;
+        errorBtn.style.borderColor = '#ef4444';
+        errorBtn.style.color = '#ef4444';
+      } else {
+        errorBtn.textContent = '오류 로그만 복사 (0)';
+      }
+    }
+  } catch (error) {
+    logDebug('sidepanel', 'UPDATE_ERROR_LOG_COUNT_ERROR', '오류 로그 개수 업데이트 실패', {}, error);
+  }
+}
+
+/**
  * 로그 복사 핸들러
  * @param {string} mode - 'all' (전체) 또는 'errors' (오류만)
  */
@@ -1952,6 +1986,9 @@ async function handleCopyLogs(mode = 'all') {
       count: logsToCopy.length
     });
     showToast(`${logsToCopy.length}개의 ${modeLabel} 로그를 복사했습니다!`);
+
+    // 오류 로그 개수 업데이트
+    await updateErrorLogCount();
 
   } catch (error) {
     logError('sidepanel', 'LOGS_COPY_ERROR', '로그 복사 실패', {}, error);
