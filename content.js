@@ -3,7 +3,7 @@
  *
  * 주요 기능:
  * - DOM 텍스트 노드 수집 및 번역
- * - IndexedDB 기반 번역 캐시 관리 (TTL 60분 기본)
+ * - IndexedDB 기반 번역 캐시 관리 (기본 TTL 30일)
  * - 배치 처리 (기본 50개 문장, 동시 3개 배치)
  * - WeakMap 기반 원본 텍스트 복원
  * - Port를 통한 실시간 진행 상태 푸시
@@ -25,7 +25,7 @@ let translatedElements = new Set(); // 번역된 요소 추적
 const DB_NAME = 'TranslationCache';
 const DB_VERSION = 1;
 const STORE_NAME = 'translations';
-const DEFAULT_TTL_MINUTES = 60;
+const DEFAULT_TTL_MINUTES = 43200; // 기본 30일을 분 단위로 표현
 const API_RETRY_MAX_ATTEMPTS = 3;
 const API_RETRY_BASE_DELAY_MS = 800;
 const API_RETRY_BACKOFF_FACTOR = 2;
@@ -1217,7 +1217,7 @@ function extractTexts(textNodes) {
  * 구조:
  * - 키: SHA1(normalize(text))
  * - 값: { translation, ts, model }
- * - TTL: 기본 60분 (설정 변경 가능)
+ * - TTL: 기본 30일 (설정 변경 가능)
  *
  * 특징:
  * - 해시 재검증으로 DOM 변경 감지

@@ -32,7 +32,7 @@ chrome_ext_yt_ai/
 
 #### 2. Content Script (`content.js`)
 - DOM 텍스트 노드 수집 및 번역
-- IndexedDB 기반 캐시 시스템 (TTL 60분 기본)
+- IndexedDB 기반 캐시 시스템 (TTL 기본 30일)
 - 배치 처리 (기본 50개 문장, 동시 3개 배치)
 - WeakMap 기반 원본 텍스트 복원
 - Port를 통한 실시간 진행 상태 푸시
@@ -142,7 +142,7 @@ chrome.tabs.onActivated.addListener(async () => {
 - **번역 설정**: 배치 크기(기본 50), 동시 처리(기본 3)
 - **캐시 설정**:
   - 캐시 사용 토글 (44×24px)
-  - 캐시 만료 시간(분) (기본 60, 범위 5-1440)
+  - 캐시 유지 기간 (분/시간/일 단위 선택, 기본 30일, 최대 365일)
   - 이 페이지 캐시 비우기 / 전역 캐시 비우기
 - **저장 바**: 하단 고정, 변경 시에만 활성화, 성공 시 2초 토스트
 
@@ -150,7 +150,7 @@ chrome.tabs.onActivated.addListener(async () => {
 - **저장소**: IndexedDB (`TranslationCache`)
 - **키**: `sha1(normalize(text))`
 - **값**: `{translation, ts, model}`
-- **TTL**: 기본 60분 (설정 변경 가능)
+- **TTL**: 기본 30일 (설정 변경 가능, 최대 365일)
 - **재검증**: 적용 직전 해시 비교, 불일치 시 재번역
 - **대규모 변경**: 페이지 변경률 ≥20% 시 자동 전면 재번역
 
