@@ -854,7 +854,8 @@ function initSettingsTab() {
   document.getElementById('clearPageCacheBtn')?.addEventListener('click', handleClearPageCache);
 
   // 로그 복사 버튼
-  document.getElementById('copyLogsBtn')?.addEventListener('click', handleCopyLogs);
+  document.getElementById('copyAllLogsBtn')?.addEventListener('click', () => handleCopyLogs('all'));
+  document.getElementById('copyErrorLogsBtn')?.addEventListener('click', () => handleCopyLogs('errors'));
 }
 
 /**
@@ -1911,27 +1912,46 @@ function formatTime(seconds) {
 
 /**
  * 로그 복사 핸들러
- * 최근 500개 로그를 클립보드에 복사 (이슈 리포트용)
+ * @param {string} mode - 'all' (전체) 또는 'errors' (오류만)
  */
-async function handleCopyLogs() {
+async function handleCopyLogs(mode = 'all') {
   try {
-    logInfo('sidepanel', 'UI_CLICK', '로그 복사 버튼 클릭', { button: 'copy-logs' });
+    const buttonName = mode === 'errors' ? 'copy-error-logs' : 'copy-all-logs';
+    logInfo('sidepanel', 'UI_CLICK', `로그 복사 버튼 클릭 (${mode})`, { button: buttonName });
 
-    const logs = await getLogs();
+    const allLogs = await getLogs();
 
-    if (!logs || logs.length === 0) {
+    if (!allLogs || allLogs.length === 0) {
       showToast('복사할 로그가 없습니다.', 'error');
       return;
     }
 
+    // 오류 로그만 필터링
+    let logsToCopy = allLogs;
+    if (mode === 'errors') {
+      logsToCopy = allLogs.filter(logLine => {
+        // ERROR 또는 WARN이 포함된 로그만 선택
+        return /\["ERROR"\]|\["WARN"\]|"level":"ERROR"|"level":"WARN"/.test(logLine);
+      });
+
+      if (logsToCopy.length === 0) {
+        showToast('오류 로그가 없습니다.', 'info');
+        return;
+      }
+    }
+
     // 로그를 읽기 쉬운 형식으로 변환
-    const logsText = logs.join('\n');
+    const logsText = logsToCopy.join('\n');
 
     // 클립보드에 복사
     await navigator.clipboard.writeText(logsText);
 
-    logInfo('sidepanel', 'LOGS_COPIED', '로그 복사 완료', { count: logs.length });
-    showToast(`${logs.length}개의 로그를 복사했습니다!`);
+    const modeLabel = mode === 'errors' ? '오류' : '전체';
+    logInfo('sidepanel', 'LOGS_COPIED', '로그 복사 완료', {
+      mode,
+      count: logsToCopy.length
+    });
+    showToast(`${logsToCopy.length}개의 ${modeLabel} 로그를 복사했습니다!`);
 
   } catch (error) {
     logError('sidepanel', 'LOGS_COPY_ERROR', '로그 복사 실패', {}, error);

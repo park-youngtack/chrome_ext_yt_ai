@@ -1427,9 +1427,13 @@
 
             <div class="form-group">
               <label>개발자 도구</label>
-              <button id="copyLogsBtn" class="btn secondary">최근 로그 복사 (개발자용)</button>
+              <div style="display: flex; gap: 8px; flex-direction: column;">
+                <button id="copyAllLogsBtn" class="btn secondary">전체 로그 복사</button>
+                <button id="copyErrorLogsBtn" class="btn secondary">오류 로그만 복사</button>
+              </div>
               <div class="form-help">
-                최근 500개 로그를 클립보드에 복사합니다. 이슈 리포트 시 유용합니다.
+                전체 로그: 최근 500개 모든 로그를 복사 (이슈 리포트용)<br>
+                오류 로그: ERROR, WARN 레벨만 복사 (디버깅용)
               </div>
             </div>
           </div>
