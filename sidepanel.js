@@ -128,6 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('translateAllBtn')?.addEventListener('click', () => handleTranslateAll(true));
   document.getElementById('translateFreshBtn')?.addEventListener('click', () => handleTranslateAll(false));
   document.getElementById('restoreBtn')?.addEventListener('click', handleRestore);
+  document.getElementById('resetTranslateBtn')?.addEventListener('click', handleResetTranslate);
 
   // 권한 요청 버튼
   const permBtn = document.getElementById('requestPermissionBtn');
@@ -154,8 +155,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 히스토리 탭 초기화
   await initHistoryTab();
 
-  // 설정 탭 이벤트
+  // 설정 탭 이벤트 및 초기 캐시 상태 조회
   initSettingsTab();
+  await updateCacheStatus();
 
   // 탭 변경 감지
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
@@ -296,9 +298,10 @@ async function switchTab(tabName) {
     await updateApiKeyUI();
   }
 
-  // 설정 탭으로 전환 시 설정 로드
+  // 설정 탭으로 전환 시 설정 로드 및 캐시 정보 표시
   if (tabName === 'settings') {
     await loadSettings();
+    await updateCacheStatus();
   }
 
   // 히스토리 탭으로 전환 시 목록 새로고침
@@ -1071,20 +1074,133 @@ function showToast(message, type = 'success') {
 }
 
 /**
+ * IndexedDB 캐시 상태 조회
+ * 캐시된 항목 수와 총 용량을 계산
+ * @returns {Promise<{count: number, size: number}>} 캐시 항목 수와 총 용량(바이트)
+ */
+async function getCacheStatus() {
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = indexedDB.open('TranslationCache', 1);
+
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+
+        try {
+          const transaction = db.transaction(['translations'], 'readonly');
+          const store = transaction.objectStore('translations');
+          const getAllRequest = store.getAll();
+
+          getAllRequest.onsuccess = () => {
+            const items = getAllRequest.result;
+            let totalSize = 0;
+
+            // 각 항목의 크기 계산 (대략적)
+            items.forEach(item => {
+              totalSize += JSON.stringify(item).length;
+            });
+
+            db.close();
+            resolve({ count: items.length, size: totalSize });
+          };
+
+          getAllRequest.onerror = () => {
+            db.close();
+            reject(new Error('캐시 조회 실패'));
+          };
+        } catch (error) {
+          db.close();
+          reject(error);
+        }
+      };
+
+      request.onerror = () => {
+        reject(new Error('IndexedDB 열기 실패'));
+      };
+    });
+  } catch (error) {
+    logDebug('sidepanel', 'CACHE_STATUS_ERROR', '캐시 상태 조회 실패', {}, error);
+    return { count: 0, size: 0 };
+  }
+}
+
+/**
+ * 바이트를 읽기 쉬운 형식으로 변환
+ * @param {number} bytes - 바이트 수
+ * @returns {string} 포맷된 용량 텍스트
+ */
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+/**
+ * 캐시 상태 UI 업데이트
+ */
+async function updateCacheStatus() {
+  try {
+    const { count, size } = await getCacheStatus();
+
+    const itemCountEl = document.getElementById('cacheItemCount');
+    const sizeDisplayEl = document.getElementById('cacheSizeDisplay');
+
+    if (itemCountEl) {
+      itemCountEl.textContent = count.toLocaleString() + '개';
+    }
+
+    if (sizeDisplayEl) {
+      sizeDisplayEl.textContent = formatBytes(size);
+    }
+
+    logDebug('sidepanel', 'CACHE_STATUS_UPDATED', '캐시 상태 업데이트', {
+      count,
+      size: formatBytes(size)
+    });
+  } catch (error) {
+    logError('sidepanel', 'CACHE_STATUS_UPDATE_ERROR', '캐시 상태 업데이트 실패', {}, error);
+  }
+}
+
+/**
  * 전역 캐시 비우기 핸들러
+ * IndexedDB 데이터베이스를 직접 삭제하여 모든 캐시 제거
  */
 async function handleClearAllCache() {
-  if (!currentTabId) {
-    showToast('활성 탭을 찾을 수 없습니다.', 'error');
-    return;
-  }
-
   try {
-    await chrome.tabs.sendMessage(currentTabId, { action: 'clearAllCache' });
-    showToast('모든 캐시가 삭제되었습니다.');
+    logInfo('sidepanel', 'CACHE_CLEAR_START', '캐시 삭제 시작');
+
+    const dbDeleted = await new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase('TranslationCache');
+
+      request.onsuccess = () => {
+        logDebug('sidepanel', 'DB_DELETE_SUCCESS', 'IndexedDB 데이터베이스 삭제 완료');
+        resolve(true);
+      };
+
+      request.onerror = () => {
+        const errorMsg = request.error?.message || '알 수 없는 오류';
+        logError('sidepanel', 'DB_DELETE_ERROR', 'IndexedDB 데이터베이스 삭제 실패', {}, new Error(errorMsg));
+        reject(new Error(errorMsg));
+      };
+
+      request.onblocked = () => {
+        logDebug('sidepanel', 'DB_DELETE_BLOCKED', 'IndexedDB 삭제 블록됨 (다른 연결 있음)');
+      };
+    });
+
+    if (dbDeleted) {
+      showToast('모든 캐시가 삭제되었습니다.');
+      logInfo('sidepanel', 'CACHE_CLEARED', '전역 캐시 삭제 완료');
+
+      // 캐시 삭제 후 UI 업데이트
+      await updateCacheStatus();
+    }
   } catch (error) {
-    console.error('Failed to clear all cache:', error);
-    showToast('캐시 삭제 중 오류가 발생했습니다.', 'error');
+    logError('sidepanel', 'CACHE_CLEAR_ERROR', '캐시 삭제 실패', {}, error);
+    showToast('캐시 삭제 중 오류가 발생했습니다: ' + error.message, 'error');
   }
 }
 
@@ -1532,10 +1648,25 @@ async function handleRestore() {
       return;
     }
 
+    // 번역 중이면 번역 작업 취소
+    if (translationState.state === 'translating' && port) {
+      port.postMessage({
+        type: 'CANCEL_TRANSLATION',
+        reason: 'user_restore'
+      });
+      logInfo('sidepanel', 'CANCEL_ON_RESTORE', '원본 보기로 인한 번역 취소', {
+        tabId: currentTabId,
+        translatedCount: translationState.translatedCount
+      });
+    }
+
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'restoreOriginal'
     });
     logInfo('sidepanel', 'RESTORE_SUCCESS', '원본 복원 완료', { tabId: currentTabId });
+
+    // UI 초기화
+    resetTranslateUI();
   } catch (error) {
     logError('sidepanel', 'RESTORE_ERROR', '원본 복원 실패', { tabId: currentTabId }, error);
     showToast('원본 복원 중 오류가 발생했습니다: ' + error.message, 'error');
@@ -1548,6 +1679,36 @@ async function handleRestore() {
  * UI 업데이트 (번역 상태에 따라서만 버튼 제어, 권한 체크 안 함)
  * Port로 수신한 진행 상태를 UI에 반영
  */
+/**
+ * 번역 초기화 버튼 클릭 핸들러
+ */
+function handleResetTranslate() {
+  logInfo('sidepanel', 'RESET_TRANSLATE', '번역 상태 초기화 버튼 클릭', {
+    currentState: translationState.state
+  });
+
+  resetTranslateUI();
+  showToast('번역 상태가 초기화되었습니다.');
+}
+
+/**
+ * 번역 UI만 초기화 (검색, 히스토리, 설정은 유지)
+ */
+function resetTranslateUI() {
+  // 번역 진행 상황만 초기화
+  translationState.state = 'inactive';
+  translationState.totalTexts = 0;
+  translationState.translatedCount = 0;
+  translationState.cachedCount = 0;
+  translationState.batchCount = 0;
+  translationState.batchesDone = 0;
+  translationState.batches = [];
+  translationState.activeMs = 0;
+
+  // UI 업데이트
+  updateUI();
+}
+
 function updateUI() {
   const { state, totalTexts, translatedCount, cachedCount, batchCount, batchesDone, batches, activeMs } = translationState;
 
