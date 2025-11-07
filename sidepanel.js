@@ -1073,6 +1073,37 @@ function showToast(message, type = 'success') {
 }
 
 /**
+ * Content script가 준비되어 있는지 확인 (필요시 주입)
+ * @param {number} tabId - 대상 탭 ID
+ * @returns {Promise<void>}
+ */
+async function ensurePageContentScript(tabId) {
+  try {
+    // PING으로 content script 존재 확인
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    if (response && response.ok) {
+      logDebug('sidepanel', 'CONTENT_PING_SUCCESS', 'Content script 이미 준비됨', { tabId });
+      return;
+    }
+  } catch (error) {
+    // PING 실패 → content script 미주입
+    logDebug('sidepanel', 'CONTENT_PING_FAILED', 'Content script 미주입, 주입 시작', { tabId });
+  }
+
+  // Content script 주입
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js']
+    });
+    logDebug('sidepanel', 'CONTENT_INJECT_SUCCESS', 'Content script 주입 완료', { tabId });
+  } catch (error) {
+    logError('sidepanel', 'CONTENT_INJECT_FAILED', 'Content script 주입 실패', { tabId }, error);
+    throw error;
+  }
+}
+
+/**
  * 현재 페이지(도메인)의 IndexedDB 캐시 상태 조회
  * content script를 통해 현재 도메인의 캐시만 조회
  * @returns {Promise<{count: number, size: number}>} 캐시 항목 수와 총 용량(바이트)
@@ -1143,6 +1174,16 @@ async function updatePageCacheStatus() {
 
     // 현재 탭이 지원되는 URL인 경우에만 캐시 UI 표시
     if (permissionGranted) {
+      // Content script가 준비되어 있는지 확인 (필요시 주입)
+      try {
+        await ensurePageContentScript(currentTabId);
+      } catch (error) {
+        logDebug('sidepanel', 'ENSURE_CONTENT_SCRIPT_FAILED', 'Content script 준비 실패', {
+          error: error.message
+        });
+        // Content script 준비 실패해도 캐시 조회는 시도
+      }
+
       const { count, size } = await getPageCacheStatus();
 
       const itemCountEl = document.getElementById('pageItemCount');
@@ -1190,6 +1231,17 @@ async function handleClearPageCache() {
     }
 
     logInfo('sidepanel', 'PAGE_CACHE_CLEAR_START', '현재 페이지 캐시 삭제 시작');
+
+    // Content script가 준비되어 있는지 확인 (필요시 주입)
+    try {
+      await ensurePageContentScript(currentTabId);
+    } catch (error) {
+      logDebug('sidepanel', 'ENSURE_CONTENT_SCRIPT_FAILED', 'Content script 준비 실패', {
+        error: error.message
+      });
+      showToast('캐시 삭제 준비 중 오류가 발생했습니다.', 'error');
+      return;
+    }
 
     chrome.tabs.sendMessage(
       currentTabId,
