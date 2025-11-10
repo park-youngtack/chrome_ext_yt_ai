@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
     currentTabId = tab.id;
-    await checkPermissions(tab);
+    await handleTabChange(tab);
   }
 
   // 세션 복원 (마지막 탭)
