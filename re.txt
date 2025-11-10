@@ -1,0 +1,868 @@
+# sidepanel.js 모듈화 리팩토링 플랜
+
+## 📊 현황
+- **파일**: sidepanel.js (2,404줄, 75KB)
+- **목표**: 7개 모듈로 분리 (state, ui-utils, history, settings, translation, search + main)
+- **규격**: Chrome Extension Manifest V3, ES6 Module 사용
+
+---
+
+## 🎯 최종 구조
+
+chrome_ext_yt_ai/ ├── manifest.json # 수정 불필요 ├── sidepanel.html # 수정 불필요 (이미 type="module") ├── sidepanel.js # 메인 진입점 (~150줄) ├── logger.js # 기존 유지 ├── meta.js # 기존 유지 └── modules/ # 새로 생성 ├── state.js # 상태 관리 (~100줄) ├── ui-utils.js # UI 유틸 (~350줄) ├── history.js # 히스토리 (~450줄) ├── settings.js # 설정 (~450줄) ├── translation.js # 번역 (~650줄) └── search.js # 검색 (~310줄)
+
+
+---
+
+## 🔧 Phase 1: 백업 및 준비
+
+### 1.1 백업
+```bash
+git add .
+git commit -m "💾 Backup before refactoring sidepanel.js"
+1.2 modules 폴더 생성
+mkdir -p modules
+📦 Phase 2: 모듈 생성 (순서 중요!)
+2.1 modules/state.js 생성
+작업:
+
+modules/state.js 파일 생성
+sidepanel.js에서 아래 코드 이동 (줄 65-111):
+전역 상태 변수들 (currentTabId, port, permissionGranted, translationState 등)
+translationStateByTab, translateModeByTab Map
+createDefaultTranslationState() 함수
+modules/state.js 내용:
+
+/**
+ * 전역 상태 관리
+ */
+
+// 상태 변수들
+export let currentTabId = null;
+export let port = null;
+export let permissionGranted = false;
+export let settingsChanged = false;
+export let originalSettings = {};
+export let lastTranslateMode = 'cache';
+export let lastHistoryCompletionMeta = { signature: null, ts: 0 };
+
+export const translateModeByTab = new Map();
+export const translationStateByTab = new Map();
+
+export let translationState = {
+  state: 'inactive',
+  totalTexts: 0,
+  translatedCount: 0,
+  cachedCount: 0,
+  batchCount: 0,
+  batchesDone: 0,
+  batches: [],
+  activeMs: 0,
+  originalTitle: '',
+  translatedTitle: '',
+  previewText: ''
+};
+
+// Setter 함수들
+export function setCurrentTabId(tabId) {
+  currentTabId = tabId;
+}
+
+export function setPort(newPort) {
+  port = newPort;
+}
+
+export function setPermissionGranted(value) {
+  permissionGranted = value;
+}
+
+export function setSettingsChanged(value) {
+  settingsChanged = value;
+}
+
+export function setOriginalSettings(settings) {
+  originalSettings = settings;
+}
+
+export function setLastTranslateMode(mode) {
+  lastTranslateMode = mode;
+}
+
+export function setLastHistoryCompletionMeta(meta) {
+  lastHistoryCompletionMeta = meta;
+}
+
+export function setTranslationState(newState) {
+  translationState = newState;
+}
+
+export function createDefaultTranslationState() {
+  return {
+    state: 'inactive',
+    totalTexts: 0,
+    translatedCount: 0,
+    cachedCount: 0,
+    batchCount: 0,
+    batchesDone: 0,
+    batches: [],
+    activeMs: 0,
+    originalTitle: '',
+    translatedTitle: '',
+    previewText: ''
+  };
+}
+sidepanel.js 수정:
+
+줄 65-111 삭제
+파일 최상단에 추가:
+import * as State from './modules/state.js';
+코드 내 사용처:
+currentTabId → State.currentTabId
+translationState → State.translationState
+(또는 개별 import: import { currentTabId, translationState } from './modules/state.js';)
+테스트:
+
+# Chrome에서 확장 리로드
+# F12 콘솔에서 에러 확인
+# 사이드패널 열어서 정상 작동 확인
+2.2 modules/ui-utils.js 생성
+작업:
+
+modules/ui-utils.js 파일 생성
+sidepanel.js에서 아래 함수들 이동:
+탭바 관리 (줄 210-391): initTabbar, initExternalLinks, handleTabKeydown, switchTab, restoreSession, handleDeepLink
+UI 업데이트 (줄 1840-2020): updateUI, resetTranslateUI, getBatchStatusText, formatTime
+개발자 도구 (줄 2021-2105): updateErrorLogCount, handleCopyLogs
+showToast, ensurePageContentScript 등 공통 유틸
+modules/ui-utils.js 구조:
+
+import { logInfo, logDebug } from '../logger.js';
+import { currentTabId, translationState, permissionGranted, setTranslationState } from './state.js';
+
+// SESSION_KEY 상수도 여기로 이동
+const SESSION_KEY = 'lastActiveTab';
+
+export function initTabbar() {
+  // 기존 코드
+}
+
+export async function switchTab(tabName) {
+  // 기존 코드
+}
+
+export function showToast(message, type = 'success') {
+  // 기존 코드
+}
+
+export function updateUI(hasPermission = true) {
+  // 기존 코드
+}
+
+export function resetTranslateUI() {
+  // 기존 코드
+}
+
+export function getBatchStatusText(status) {
+  // 기존 코드
+}
+
+export function formatTime(seconds) {
+  // 기존 코드
+}
+
+export async function updateErrorLogCount() {
+  // 기존 코드
+}
+
+export async function handleCopyLogs(mode = 'all') {
+  // 기존 코드
+}
+
+export async function restoreSession() {
+  // 기존 코드
+}
+
+export function handleDeepLink() {
+  // 기존 코드
+}
+
+export function initExternalLinks() {
+  // 기존 코드
+}
+
+export async function ensurePageContentScript(tabId) {
+  // 기존 코드
+}
+sidepanel.js 수정:
+
+해당 함수들 삭제
+import 추가:
+import { 
+  initTabbar, 
+  switchTab, 
+  showToast, 
+  updateUI,
+  restoreSession,
+  handleDeepLink,
+  initExternalLinks
+} from './modules/ui-utils.js';
+테스트:
+
+# 탭 전환 테스트
+# 토스트 메시지 테스트
+2.3 modules/search.js 생성
+작업:
+
+modules/search.js 파일 생성
+sidepanel.js에서 검색 탭 기능 이동 (줄 2106-2404):
+모든 아이콘 함수들
+initializeSearchTab
+handleGetRecommendations
+callOpenRouterSearch
+renderSearchRecommendations
+openSearchResults
+openAllSearchEngines
+modules/search.js 구조:
+
+import { logInfo, logError } from '../logger.js';
+import { showToast } from './ui-utils.js';
+
+export function getGoogleIcon() {
+  return `<img class="search-engine-icon" alt="Google" width="24" height="24" src="https://www.google.com/s2/favicons?sz=128&domain=google.com" style="width: 20px; height: 20px;">`;
+}
+
+export function getNaverIcon() {
+  // 기존 코드
+}
+
+// ... 나머지 아이콘 함수들
+
+export function initializeSearchTab() {
+  // 기존 코드
+}
+
+export async function handleGetRecommendations() {
+  // 기존 코드
+}
+
+async function callOpenRouterSearch(query, apiKey) {
+  // 기존 코드
+}
+
+export function renderSearchRecommendations(newRecommendations) {
+  // 기존 코드
+}
+
+export function resetSearchRecommendations() {
+  // 기존 코드
+}
+
+export function openSearchResults(engine, query) {
+  // 기존 코드
+}
+
+export function openAllSearchEngines(query) {
+  // 기존 코드
+}
+sidepanel.js 수정:
+
+import { initializeSearchTab } from './modules/search.js';
+테스트:
+
+# 검색 탭으로 이동
+# AI 추천 받기 클릭
+# 검색 엔진 열기 테스트
+2.4 modules/settings.js 생성
+작업:
+
+modules/settings.js 파일 생성
+sidepanel.js에서 설정 관련 함수 이동:
+API Key UI (줄 392-419): updateApiKeyUI
+설정 관리 (줄 856-1237): initSettingsTab, loadSettings, handleSaveSettings, showSaveBar, hideSaveBar
+캐시 관리: getPageCacheStatus, updatePageCacheStatus, handleClearPageCache, formatBytes
+modules/settings.js 구조:
+
+import { logInfo, logError, initLogger } from '../logger.js';
+import { currentTabId, setSettingsChanged, setOriginalSettings } from './state.js';
+import { showToast, ensurePageContentScript } from './ui-utils.js';
+
+// 상수들
+const DEFAULT_CACHE_TTL_MINUTES = 43200;
+const CACHE_TTL_MIN_MINUTES = 5;
+const CACHE_TTL_MAX_MINUTES = 525600;
+
+export async function updateApiKeyUI() {
+  // 기존 코드
+}
+
+export function initSettingsTab() {
+  // 기존 코드
+}
+
+export async function loadSettings() {
+  // 기존 코드
+}
+
+export async function handleSaveSettings() {
+  // 기존 코드
+}
+
+export function showSaveBar() {
+  // 기존 코드
+}
+
+export function hideSaveBar() {
+  // 기존 코드
+}
+
+export async function getPageCacheStatus() {
+  // 기존 코드
+}
+
+export async function updatePageCacheStatus() {
+  // 기존 코드
+}
+
+export async function handleClearPageCache() {
+  // 기존 코드
+}
+
+function formatBytes(bytes) {
+  // 기존 코드
+}
+sidepanel.js 수정:
+
+import { 
+  initSettingsTab, 
+  loadSettings, 
+  updateApiKeyUI, 
+  updatePageCacheStatus 
+} from './modules/settings.js';
+테스트:
+
+# 설정 탭에서 API Key 입력
+# 저장 버튼 클릭
+# 캐시 정보 표시 확인
+2.5 modules/history.js 생성
+작업:
+
+modules/history.js 파일 생성
+sidepanel.js에서 히스토리 관련 함수 이동 (줄 420-855):
+deduplicateHistoryByUrl (줄 39-63도 함께)
+initHistoryTab
+renderHistoryList
+loadHistoryEntries
+createHistoryItemElement
+saveHistoryEntry
+deleteHistoryEntry
+clearHistory
+handleHistoryItemOpen
+waitForTabLoad
+formatHistoryTime
+formatHistoryMode
+handleTranslationCompletedForHistory
+modules/history.js 구조:
+
+import { logInfo, logWarn, logError } from '../logger.js';
+import { currentTabId, lastHistoryCompletionMeta, setLastHistoryCompletionMeta } from './state.js';
+import { showToast, switchTab } from './ui-utils.js';
+
+// 상수
+const HISTORY_STORAGE_KEY = 'translationHistory';
+const HISTORY_MAX_ITEMS = 100;
+
+export function deduplicateHistoryByUrl(entries) {
+  // 기존 코드
+}
+
+export async function initHistoryTab() {
+  // 기존 코드
+}
+
+export async function renderHistoryList(prefetchedEntries) {
+  // 기존 코드
+}
+
+export async function loadHistoryEntries() {
+  // 기존 코드
+}
+
+function createHistoryItemElement(entry) {
+  // 기존 코드
+}
+
+export async function saveHistoryEntry(entry) {
+  // 기존 코드
+}
+
+async function deleteHistoryEntry(entryId) {
+  // 기존 코드
+}
+
+async function clearHistory() {
+  // 기존 코드
+}
+
+function isHistoryTabActive() {
+  // 기존 코드
+}
+
+async function handleHistoryItemOpen(entry) {
+  // 기존 코드 - 여기서 handleTranslateAll 호출하는데 순환 의존성 주의!
+}
+
+function waitForTabLoad(tabId, timeoutMs = 20000) {
+  // 기존 코드
+}
+
+function formatHistoryTime(isoString) {
+  // 기존 코드
+}
+
+function formatHistoryMode(mode) {
+  // 기존 코드
+}
+
+export async function handleTranslationCompletedForHistory(tabId, data) {
+  // 기존 코드
+}
+⚠️ 순환 의존성 주의:
+
+handleHistoryItemOpen에서 handleTranslateAll 호출
+translation.js에서 handleTranslationCompletedForHistory 호출
+해결: history.js에서 translation.js를 import하되, translation.js는 history를 직접 import 안 함
+sidepanel.js 수정:
+
+import { 
+  initHistoryTab, 
+  handleTranslationCompletedForHistory 
+} from './modules/history.js';
+테스트:
+
+# 히스토리 탭 렌더링
+# 항목 클릭 시 재번역
+# 삭제 기능
+2.6 modules/translation.js 생성 ⭐ (가장 복잡)
+작업:
+
+modules/translation.js 파일 생성
+sidepanel.js에서 번역 기능 이동 (줄 1238-1839):
+getSupportType
+initializeTranslationState
+handleTabChange
+queryTranslationState
+updateUIByPermission
+checkPermissions
+handleRequestPermission
+ensureContentScriptReady
+connectToContentScript
+handleTranslateAll
+handleRestore
+handleResetTranslate
+modules/translation.js 구조:
+
+import { logInfo, logWarn, logError, logDebug } from '../logger.js';
+import { 
+  currentTabId,
+  port,
+  translationState,
+  translationStateByTab,
+  translateModeByTab,
+  setCurrentTabId,
+  setPort,
+  setPermissionGranted,
+  setTranslationState,
+  createDefaultTranslationState
+} from './state.js';
+import { updateUI, resetTranslateUI, showToast } from './ui-utils.js';
+import { handleTranslationCompletedForHistory } from './history.js';
+
+export function getSupportType(url) {
+  // 기존 코드
+}
+
+export function initializeTranslationState() {
+  // 기존 코드
+}
+
+export async function handleTabChange(tab) {
+  // 기존 코드 - 핵심 로직!
+}
+
+async function queryTranslationState(tab) {
+  // 기존 코드
+}
+
+function updateUIByPermission() {
+  // 기존 코드
+}
+
+export async function checkPermissions(tab) {
+  // 기존 코드
+}
+
+export async function handleRequestPermission() {
+  // 기존 코드
+}
+
+async function ensureContentScriptReady(tabId, maxRetries = 5) {
+  // 기존 코드
+}
+
+function connectToContentScript(tabId) {
+  // 기존 코드 - Port 통신!
+}
+
+export async function handleTranslateAll(useCache = true) {
+  // 기존 코드
+}
+
+export async function handleRestore() {
+  // 기존 코드
+}
+
+export async function handleResetTranslate() {
+  // 기존 코드
+}
+sidepanel.js 수정:
+
+import { 
+  handleTabChange, 
+  handleTranslateAll, 
+  handleRestore,
+  handleResetTranslate,
+  checkPermissions
+} from './modules/translation.js';
+테스트:
+
+# 번역 버튼 클릭
+# 진행률 표시 확인
+# 원본 복원 버튼
+# 번역 중 탭 전환 방지 테스트
+📝 Phase 3: 메인 파일 정리
+3.1 sidepanel.js 슬림화
+최종 sidepanel.js 구조:
+
+/**
+ * Side Panel Script - 메인 진입점
+ */
+
+import { FOOTER_TEXT } from './meta.js';
+import { log, logInfo, logWarn, logError, logDebug, getLogs, initLogger } from './logger.js';
+
+// 모듈 import
+import * as State from './modules/state.js';
+import { 
+  initTabbar, 
+  switchTab, 
+  restoreSession, 
+  handleDeepLink, 
+  initExternalLinks,
+  updateUI 
+} from './modules/ui-utils.js';
+import { initHistoryTab } from './modules/history.js';
+import { 
+  initSettingsTab, 
+  loadSettings, 
+  updateApiKeyUI, 
+  updatePageCacheStatus 
+} from './modules/settings.js';
+import { 
+  handleTabChange, 
+  handleTranslateAll, 
+  handleRestore, 
+  handleResetTranslate 
+} from './modules/translation.js';
+import { initializeSearchTab } from './modules/search.js';
+
+// 상수 정의
+const DEFAULT_MODEL = 'openai/gpt-4o-mini';
+const GITHUB_REPO_URL = 'https://github.com/park-youngtack/chrome_ext_yt_ai';
+
+// DOMContentLoaded
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // 로거 초기화
+    await initLogger();
+    
+    // 푸터 설정
+    const footerEl = document.getElementById('footerText');
+    if (footerEl) {
+      footerEl.textContent = FOOTER_TEXT;
+    }
+
+    // 탭바 초기화
+    initTabbar();
+    initExternalLinks();
+
+    // 외부 링크 (GitHub)
+    const githubBtn = document.getElementById('githubLinkBtn');
+    if (githubBtn) {
+      githubBtn.addEventListener('click', () => {
+        chrome.tabs.create({ url: GITHUB_REPO_URL });
+      });
+    }
+
+    // 설정 탭 초기화
+    initSettingsTab();
+    await loadSettings();
+
+    // 히스토리 탭 초기화
+    await initHistoryTab();
+
+    // 검색 탭 초기화
+    initializeSearchTab();
+
+    // 현재 탭 정보 가져오기
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) {
+      State.setCurrentTabId(tab.id);
+      await handleTabChange(tab);
+    }
+
+    // 세션 복원
+    await restoreSession();
+
+    // 딥링크 처리
+    handleDeepLink();
+
+    logInfo('sidepanel', 'INIT', '사이드패널 초기화 완료');
+  } catch (error) {
+    logError('sidepanel', 'INIT_ERROR', '초기화 중 오류', { error: error.message });
+  }
+});
+
+// Chrome 탭 리스너
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    await handleTabChange(tab);
+  } catch (error) {
+    logError('sidepanel', 'TAB_ACTIVATED_ERROR', '탭 활성화 처리 중 오류', { error: error.message });
+  }
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (State.currentTabId === tabId && changeInfo.status === 'complete') {
+    await handleTabChange(tab);
+    await updatePageCacheStatus();
+  }
+});
+변경사항:
+
+모든 함수 정의 제거 (모듈로 이동)
+import 문만 유지
+초기화 로직 단순화
+전역 상태는 State 모듈을 통해 접근
+테스트:
+
+# 전체 기능 통합 테스트
+# 콘솔 에러 0건 확인
+✅ Phase 4: 검증
+4.1 기능 테스트
+# 체크리스트
+□ 번역 탭: 캐시 우선 번역
+□ 번역 탭: 전면 재번역
+□ 번역 탭: 원본 복원
+□ 번역 탭: 번역 상태 초기화
+□ 히스토리 탭: 목록 표시
+□ 히스토리 탭: 항목 클릭 재번역
+□ 히스토리 탭: 삭제
+□ 검색 탭: AI 추천
+□ 검색 탭: 검색 엔진 열기
+□ 설정 탭: API Key 저장
+□ 설정 탭: 설정 변경 저장
+□ 탭 전환: 정상 동작
+□ 번역 중 탭 전환: 방지 확인
+□ 권한: file:// URL 권한 요청
+□ 콘솔: 에러 0건
+4.2 순환 의존성 체크
+# madge 설치 (선택사항)
+npm install -g madge
+
+# 순환 의존성 확인
+madge --circular --extensions js modules/ sidepanel.js
+
+# 순환 의존성 발견 시
+# → 공통 함수를 별도 파일로 분리 (예: modules/common.js)
+4.3 코드 품질
+# 줄 수 확인
+wc -l sidepanel.js modules/*.js
+
+# 예상 결과:
+#   150 sidepanel.js
+#   100 modules/state.js
+#   350 modules/ui-utils.js
+#   450 modules/history.js
+#   450 modules/settings.js
+#   650 modules/translation.js
+#   310 modules/search.js
+📚 Phase 5: 문서 업데이트
+5.1 CLAUDE.md 업데이트
+파일 구조 섹션 수정:
+
+## 파일 구조
+
+chrome_ext_yt_ai/
+├── manifest.json              # Chrome 확장 메타데이터
+├── background.js              # Service Worker
+├── content.js                 # Content Script
+├── sidepanel.html             # 사이드패널 UI
+├── sidepanel.js               # 사이드패널 메인 진입점 (~150줄)
+├── sidepanel.css              # 패널 스타일
+├── logger.js                  # 공용 로깅 시스템
+├── meta.js                    # 메타 정보
+├── modules/                   # 사이드패널 모듈
+│   ├── state.js              # 전역 상태 관리 (~100줄)
+│   ├── ui-utils.js           # UI 유틸리티 (~350줄)
+│   ├── history.js            # 히스토리 관리 (~450줄)
+│   ├── settings.js           # 설정 관리 (~450줄)
+│   ├── translation.js        # 번역 핵심 로직 (~650줄)
+│   └── search.js             # 검색 기능 (~310줄)
+├── README.md                  # 사용자 가이드
+├── CLAUDE.md                  # 개발 가이드
+└── icons/                     # 확장 아이콘
+모듈 설명 추가:
+
+### modules/ 디렉토리
+
+#### state.js
+- 전역 상태 변수 관리
+- currentTabId, port, translationState 등
+- Setter/Getter 함수 제공
+
+#### ui-utils.js
+- 탭 전환 (switchTab)
+- 토스트 메시지 (showToast)
+- UI 업데이트 (updateUI)
+- 포맷 함수 (formatTime, getBatchStatusText)
+
+#### history.js
+- 히스토리 CRUD
+- 번역 완료 시 자동 저장
+- URL별 중복 제거
+
+#### settings.js
+- 설정 로드/저장
+- API Key 관리
+- 캐시 상태 표시
+
+#### translation.js
+- 번역 실행 (handleTranslateAll)
+- 권한 체크 (checkPermissions)
+- Content Script 통신 (Port)
+- 탭별 상태 관리
+
+#### search.js
+- AI 검색 추천
+- 검색 엔진 열기
+- OpenRouter API 호출
+5.2 meta.js 업데이트
+// meta.js
+export const VERSION = '2.2.0';
+export const LAST_EDITED = '2025-11-10';  // 오늘 날짜로
+export const FOOTER_TEXT = `인크로스 AI비즈솔루션팀 박영택 · 최종 수정: ${LAST_EDITED}`;
+🚀 Phase 6: 커밋 및 푸시
+6.1 커밋
+git add modules/ sidepanel.js CLAUDE.md meta.js
+git commit -m "♻️ Refactor sidepanel.js into 6 modules
+
+- Split 2,404-line file into manageable modules
+- Create modules/ directory with:
+  - state.js: Global state management (~100 lines)
+  - ui-utils.js: UI utilities (~350 lines)
+  - history.js: History CRUD (~450 lines)
+  - settings.js: Settings management (~450 lines)
+  - translation.js: Translation core (~650 lines)
+  - search.js: Search functionality (~310 lines)
+- Keep sidepanel.js as main entry point (~150 lines)
+- Update CLAUDE.md with new file structure
+- All features tested and working
+- Zero console errors
+- Chrome Extension Manifest V3 compliant
+"
+6.2 푸시
+git push -u origin claude/refactor-sidepanel-analysis-011CV142SzjPkHwDZA2D2MNb
+⚠️ 주의사항
+Import 경로
+// ✅ 올바른 경로
+import { log } from './logger.js';              // 같은 레벨
+import { state } from './modules/state.js';     // 하위 폴더
+import { log } from '../logger.js';             // 상위 폴더 (modules 내부에서)
+
+// ❌ 잘못된 경로
+import { log } from '/logger.js';               // 절대 경로 X
+import { log } from 'logger.js';                // 상대 표시 없음 X
+순환 의존성 방지
+// ❌ 순환 의존성 발생
+// history.js → translation.js → history.js
+
+// ✅ 해결 방법 1: 한쪽만 import
+// history.js → translation.js (O)
+// translation.js → history.js (X, 대신 콜백 전달)
+
+// ✅ 해결 방법 2: 공통 함수 분리
+// history.js → common.js
+// translation.js → common.js
+Chrome Extension 디버깅
+# 1. 확장 리로드
+chrome://extensions/ → "새로고침" 클릭
+
+# 2. 콘솔 확인
+사이드패널에서 F12 → Console 탭
+
+# 3. Import 에러
+"Cannot use import statement outside a module"
+→ HTML에서 <script type="module"> 확인
+
+# 4. 파일 로딩 실패
+"GET chrome-extension://xxx/modules/history.js net::ERR_FILE_NOT_FOUND"
+→ 파일 경로 및 존재 여부 확인
+각 Phase 완료 시
+# 즉시 테스트!
+# 문제 발견 시 바로 수정!
+# 다음 Phase로 넘어가기 전 커밋!
+
+git add .
+git commit -m "✅ Phase 2.X completed"
+📊 예상 결과
+Before
+sidepanel.js: 2,404줄 (75KB)
+가독성: ⭐⭐
+유지보수: ⭐⭐
+After
+sidepanel.js: ~150줄 (메인)
+6개 모듈: 100-650줄씩
+가독성: ⭐⭐⭐⭐⭐
+유지보수: ⭐⭐⭐⭐⭐
+협업 충돌: 최소화
+테스트: 모듈별 독립 테스트 가능
+🎉 완료 기준
+
+모든 모듈 파일 생성 완료
+
+sidepanel.js 150줄 이하로 슬림화
+
+전체 기능 테스트 통과
+
+콘솔 에러 0건
+
+순환 의존성 없음
+
+CLAUDE.md 업데이트
+
+Git 커밋 & 푸시 완료
+🆘 문제 해결
+Q: Import 에러 발생
+A: 파일 경로 확인, .js 확장자 포함 확인
+
+Q: 순환 의존성 발견
+A: madge로 확인 후 공통 함수 분리
+
+Q: 특정 함수를 찾을 수 없음
+A: export 키워드 추가 확인, import 문 확인
+
+Q: State가 undefined
+A: Setter 함수 사용 확인, let 변수 직접 수정 금지
+
+끝! 이제 Phase 1부터 순차적으로 진행하세요.
