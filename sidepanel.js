@@ -18,7 +18,7 @@
  */
 
 import { FOOTER_TEXT } from './meta.js';
-import { log, logInfo, logWarn, logError, logDebug, getLogs } from './logger.js';
+import { log, logInfo, logWarn, logError, logDebug, getLogs, initLogger } from './logger.js';
 
 // ===== 설정 상수 =====
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
@@ -116,6 +116,9 @@ function createDefaultTranslationState() {
  * 패널 초기화 및 이벤트 리스너 등록
  */
 document.addEventListener('DOMContentLoaded', async () => {
+  // 로거 초기화 (debugLog 설정 동기화)
+  await initLogger();
+
   // 푸터 텍스트 설정
   const footerEl = document.getElementById('footerText');
   if (footerEl) {
@@ -245,9 +248,9 @@ function initExternalLinks() {
   const openGithubRepository = async () => {
     try {
       await chrome.tabs.create({ url: GITHUB_REPO_URL, active: true });
-      logInfo('GITHUB_REPO_OPENED', { url: GITHUB_REPO_URL });
+      logInfo('sidepanel', 'GITHUB_REPO_OPENED', 'GitHub 저장소 열기', { url: GITHUB_REPO_URL });
     } catch (error) {
-      logWarn('GITHUB_REPO_OPEN_FAILED', { message: error?.message ?? String(error) });
+      logWarn('sidepanel', 'GITHUB_REPO_OPEN_FAILED', 'GitHub 저장소 열기 실패', { message: error?.message ?? String(error) }, error);
     }
   };
 

@@ -10,12 +10,14 @@ let logBuffer = [];
 let currentLogLevel = 'INFO'; // 기본값
 
 // 초기화: storage에서 설정 로드
-async function initLogger() {
+export async function initLogger() {
   try {
     const result = await chrome.storage.local.get(['debugLog']);
     currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
+    console.log('[WPT] Logger initialized with debugLog:', result.debugLog);
   } catch (error) {
     // storage 접근 실패 시 기본값 유지
+    console.error('[WPT] Logger init failed:', error);
   }
 }
 
@@ -24,9 +26,11 @@ if (typeof chrome !== 'undefined' && chrome.storage) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.debugLog) {
       currentLogLevel = changes.debugLog.newValue ? 'DEBUG' : 'INFO';
+      console.log('[WPT] Debug mode changed:', changes.debugLog.newValue);
     }
   });
-  initLogger();
+  // 로거 초기화 (sidepanel 또는 다른 곳에서 명시적으로 호출 가능)
+  initLogger().catch(err => console.error('[WPT] Deferred init failed:', err));
 }
 
 /**
