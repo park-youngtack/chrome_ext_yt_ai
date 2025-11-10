@@ -630,31 +630,6 @@ if (translationState.state === 'translating') {
 - 번역 완료: 탭 전환 정상 작동
 - 안정성 극대화
 
-### 리팩토링 이력
-
-**2025-11-10: 탭별 독립 상태 관리 & 번역 중 탭 전환 보호**
-- ✅ 탭별 UI 초기화 및 복구 로직 재설계
-- ✅ `previousTabId` 제거 (불필요한 상태)
-- ✅ `translationStateByTab`만으로 모든 로직 처리
-- ✅ 번역 중 탭 전환 방지 (early return)
-- ✅ Port 유지 조건 명확화
-- ✅ `updateUI(hasPermission)` 파라미터화
-- ✅ 깊은 복사로 상태 독립성 보장
-- ✅ 7개 docs 파일로 문서화 체계화
-
-**2025-11-07: 스마트 검색 탭 추가 (v2.2.0)**
-- ✅ OpenRouter AI 기반 검색문 추천
-- ✅ Google, Naver, Bing, ChatGPT, Perplexity 동시 검색
-- ✅ 최대 10개 검색문 누적 관리
-- ✅ Enter 키로 빠른 추천받기
-
-**2025-11-06: 확장성 개선 리팩토링**
-- ✅ 사용하지 않는 파일 제거 (popup.html/js, options.html/js)
-- ✅ background.js 정리 및 JSDoc 주석 추가
-- ✅ content.js 섹션화 및 주석 개선 (1150줄 → 명확한 13개 섹션)
-- ✅ sidepanel.js JSDoc 주석 추가 및 구조화
-- ✅ 모든 주요 함수에 매개변수/반환값 문서화
-
 ### 향후 확장 시 고려사항
 
 1. **모듈화**: 향후 content.js가 더 커지면 캐시 시스템을 별도 파일로 분리 고려
@@ -706,16 +681,6 @@ console.log('By Tab:', translationStateByTab.get(currentTabId));
 - [ ] `meta.js` LAST_EDITED 날짜 업데이트 (YYYY-MM-DD)
 - [ ] `manifest.json` version 업데이트 (필요 시)
 - [ ] README.md 업데이트 (주요 변경사항)
-- [ ] 콘솔 에러 0건 확인
-- [ ] 주요 기능 동작 확인
-  - [ ] 번역 (캐시 포함)
-  - [ ] 원본 보기
-  - [ ] 설정 저장/로드
-  - [ ] 히스토리 저장/로드
-  - [ ] 검색 추천/검색
-- [ ] 권한 없는 페이지 동작 확인
-- [ ] 번역 중 탭 전환 테스트
-- [ ] 여러 탭에서 동일 URL 테스트
 - [ ] CLAUDE.md 업데이트 (변경사항 반영)
 
 ## 릴리스 절차
