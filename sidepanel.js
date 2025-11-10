@@ -1276,7 +1276,12 @@ function initializeTranslationState() {
  * @param {object} tab - 탭 객체
  */
 async function handleTabChange(tab) {
-  // 0단계: Port 정리 (이전 탭의 메시지가 계속 오지 않도록)
+  // 번역 중이면 탭 전환 무시 (Port 유지하며 계속 진행)
+  if (translationState.state === 'translating') {
+    return;
+  }
+
+  // 0단계: Port 정리 (번역 중이 아니므로 안전하게 정리)
   if (port) {
     port.disconnect();
     port = null;
