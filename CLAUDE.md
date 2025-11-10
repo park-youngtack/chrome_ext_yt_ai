@@ -42,45 +42,69 @@ chrome_ext_yt_ai/
 ## 패널 동작 원칙 ⚠️ 중요!
 
 ### 핵심 원칙
+
 1. **패널은 Window-Level로 동작**
    - 한번 열면 해당 창의 모든 탭에서 보임
    - Chrome이 자동으로 관리 (manifest.json: `default_open_panel_on_action_click: true`)
    - background.js는 패널 상태를 추적하지 않음
 
-2. **탭별 상태 관리 금지**
-   - ❌ `panelOpenState` Map 같은 탭별 추적 코드 작성 금지
-   - ❌ `chrome.tabs.onUpdated`로 URL 변경 감지하여 경고 출력 금지
-   - ❌ 탭 이동 시마다 권한 체크하여 로그 출력 금지
+2. **탭별 번역 상태는 독립적으로 관리**
+   - ✅ `translationStateByTab` Map으로 각 탭의 번역 상태 저장
+   - ✅ 탭 전환 시 저장된 상태 복구 또는 초기화
+   - ✅ 동일한 URL도 다른 탭 ID면 독립적으로 관리
+   - ❌ **하지만 패널 자체의 열림/닫힘 상태는 추적 금지** (Window-level)
 
 3. **URL/권한 체크는 사용자 액션 시에만**
    - ✅ 번역 버튼 클릭 시 `checkPermissions()` 호출
    - ✅ 지원하지 않는 URL(chrome://, edge://)은 UI로 안내
    - ✅ sidepanel.js의 `handleTranslateAll()`에서 최종 검증
+   - ❌ 탭 이동 시 자동으로 권한 체크 로그 출력 금지
 
 4. **불필요한 로그 방지**
    - `chrome://newtab/` 같은 URL에서 패널이 보여도 경고 출력 안 함
-   - 탭 이동 시 조용한 UI 업데이트만 수행
+   - 탭 이동 시 조용한 UI 업데이트만 수행 (권한 확인)
    - 사용자가 번역 시도할 때만 에러 메시지 표시
+
+5. **번역 중 탭 전환 방지**
+   - ✅ 번역 중(state='translating')이면 탭 전환 무시
+   - ✅ Port 유지하여 진행 상태 UI 업데이트 계속
+   - ✅ 완료 후에야 탭 전환 허용
 
 ### 금지 패턴
 ```javascript
-// ❌ 절대 이런 코드 작성 금지!
+// ❌ 탭별 패널 상태(열림/닫힘) 추적 금지!
+const panelOpenState = new Map();
+chrome.action.onClicked.addListener(() => {
+  if (panelOpenState.get(tabId)) { ... }
+});
+
+// ❌ 탭 변경할 때마다 불필요한 로그 출력 금지!
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!/^https?:/.test(tab.url)) {
     logWarn('UNSUPPORTED_URL', ...); // 불필요한 경고!
   }
 });
 
-// ❌ 탭별 패널 상태 추적 금지!
-const panelOpenState = new Map();
-chrome.action.onClicked.addListener(() => {
-  if (panelOpenState.get(tabId)) { ... }
-});
+// ❌ 번역 중에 Port 끊기 금지!
+if (port) {
+  port.disconnect(); // 번역 중이면 절대 금지!
+}
 ```
 
 ### 올바른 패턴
 ```javascript
-// ✅ 사용자 액션 시에만 체크
+// ✅ 탭별 번역 상태는 Map으로 독립 관리
+const translationStateByTab = new Map();
+if (translationStateByTab.has(currentTabId)) {
+  translationState = { ...translationStateByTab.get(currentTabId) };
+}
+
+// ✅ 번역 중이면 탭 전환 무시
+if (translationState.state === 'translating') {
+  return; // 탭 전환 무시, Port 유지
+}
+
+// ✅ 사용자 액션 시에만 권한 체크
 async function handleTranslateAll() {
   if (!permissionGranted) {
     showToast('권한을 먼저 허용해주세요.', 'error');
@@ -88,12 +112,6 @@ async function handleTranslateAll() {
   }
   // 번역 진행...
 }
-
-// ✅ 탭 변경 시 조용한 UI 업데이트
-chrome.tabs.onActivated.addListener(async () => {
-  currentTabId = tab.id;
-  await checkPermissions(tab); // UI만 업데이트, 로그 최소화
-});
 ```
 
 ## UI/UX 스펙
