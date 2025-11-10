@@ -216,6 +216,15 @@ chrome.tabs.onActivated.addListener(async () => {
 8. UI 업데이트
 9. 개발자 도구
 
+## 기능별 문서
+
+각 기능의 상세한 개념, 함수, 데이터 흐름은 다음 문서를 참고하세요:
+
+- **[AI 번역 (TRANSLATE.md)](./docs/TRANSLATE.md)** - 번역 메인 기능, 캐시, 배치 처리
+- **[히스토리 (HISTORY.md)](./docs/HISTORY.md)** - 번역 히스토리 저장/관리
+- **[검색 (SEARCH.md)](./docs/SEARCH.md)** - AI 검색 추천, 멀티 엔진 검색
+- **[설정 (SETTINGS.md)](./docs/SETTINGS.md)** - API Key, 모델, 캐시 설정
+
 ## 참고 사항
 - 페이지 오버레이 문구는 전면 제거
 - 설정 페이지는 패널 내부에서만 표시 (새 탭 금지)
