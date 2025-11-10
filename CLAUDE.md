@@ -13,7 +13,7 @@
 chrome_ext_yt_ai/
 ├── manifest.json              # Chrome 확장 메타데이터 (v2.1.0)
 ├── background.js              # Service Worker - Content Script 관리
-├── content.js                 # Content Script - DOM 번역 실행 (13섹션, ~1150줄)
+├── content.js                 # Content Script - DOM 번역 실행 (14섹션, ~1700줄)
 ├── sidepanel.html             # 사이드패널 UI (번역/히스토리/검색/설정 탭)
 ├── sidepanel.js               # 사이드패널 로직 (10섹션, 탭 관리 & 상태)
 ├── sidepanel.css              # 패널 스타일 (다크 테마, 토큰 기반)
@@ -445,32 +445,34 @@ Content Script: retranslate()
 3. Content Script 관리
 4. Side Panel 관리 (주석만)
 
-### content.js (명확한 13개 섹션)
+### content.js (명확한 14개 섹션, ~1700줄)
 1. 파일 헤더 및 전역 상태
 2. IndexedDB 캐시 설정
 3. 로깅 시스템
 4. 진행 상태 관리
-5. 타이머 관리
-6. Port 연결 관리
-7. 메시지 리스너
-8. 번역 메인 로직
-9. OpenRouter API 통신
-10. 원본 복원
-11. DOM 텍스트 노드 수집
-12. IndexedDB 캐시 시스템
-13. 초기화 함수
+5. 산업군 컨텍스트 분석 (번역 품질 최적화용)
+6. 타이머 관리
+7. Port 연결 관리
+8. 메시지 리스너
+9. 번역 메인 로직
+10. OpenRouter API 통신
+11. 원본 복원
+12. DOM 텍스트 노드 수집
+13. IndexedDB 캐시 시스템
+14. 초기화 함수
 
-### sidepanel.js (명확한 10개 섹션)
+### sidepanel.js (명확한 11개 섹션, ~2100줄)
 1. 파일 헤더 및 설정 상수
 2. 전역 상태
 3. DOMContentLoaded 초기화
 4. 탭바 관리 (switchTab, handleTabChange)
 5. API Key UI 관리
-6. 설정 관리
-7. 번역 기능
-8. UI 업데이트
-9. 개발자 도구
-10. (필요 시 추가)
+6. 히스토리 관리
+7. 설정 관리
+8. 번역 기능
+9. UI 업데이트
+10. 개발자 도구
+11. 검색 탭 기능
 
 ### 코드 스타일 원칙
 
