@@ -126,7 +126,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 번역 탭 버튼 이벤트
   document.getElementById('translateAllBtn')?.addEventListener('click', () => handleTranslateAll(true));
-  document.getElementById('translateFreshBtn')?.addEventListener('click', () => handleTranslateAll(false));
   document.getElementById('restoreBtn')?.addEventListener('click', handleRestore);
   document.getElementById('resetTranslateBtn')?.addEventListener('click', handleResetTranslate);
 
@@ -1770,13 +1769,41 @@ async function handleRestore() {
 /**
  * 번역 초기화 버튼 클릭 핸들러
  */
-function handleResetTranslate() {
+async function handleResetTranslate() {
   logInfo('sidepanel', 'RESET_TRANSLATE', '번역 상태 초기화 버튼 클릭', {
     currentState: translationState.state
   });
 
+  if (!currentTabId) {
+    showToast('탭 정보를 가져올 수 없습니다.', 'error');
+    return;
+  }
+
+  try {
+    // 번역 중이면 번역 작업 취소
+    if (translationState.state === 'translating' && port) {
+      port.postMessage({
+        type: 'CANCEL_TRANSLATION',
+        reason: 'user_reset'
+      });
+      logInfo('sidepanel', 'CANCEL_ON_RESET', '초기화로 인한 번역 취소', {
+        tabId: currentTabId,
+        translatedCount: translationState.translatedCount
+      });
+    }
+
+    // 원본 복원 (번역된 페이지도 초기화)
+    await chrome.tabs.sendMessage(currentTabId, {
+      action: 'restoreOriginal'
+    });
+    logInfo('sidepanel', 'RESET_WITH_RESTORE', '초기화 + 원본 복원 완료', { tabId: currentTabId });
+  } catch (error) {
+    logInfo('sidepanel', 'RESET_NO_CONTENT_SCRIPT', '초기화: Content script 없음 (새로고침 필요)', { tabId: currentTabId });
+  }
+
+  // UI 초기화
   resetTranslateUI();
-  showToast('번역 상태가 초기화되었습니다.');
+  showToast('번역이 초기화되었습니다.');
 }
 
 /**
@@ -1803,7 +1830,6 @@ function updateUI() {
   // 상태 뱃지와 버튼 제어 (권한과 무관하게 번역 상태에 따라서만 제어)
   const statusBadge = document.getElementById('statusBadge');
   const translateAllBtn = document.getElementById('translateAllBtn');
-  const translateFreshBtn = document.getElementById('translateFreshBtn');
   const restoreBtn = document.getElementById('restoreBtn');
 
   if (state === 'translating') {
@@ -1811,28 +1837,24 @@ function updateUI() {
     statusBadge.textContent = '번역 중';
     statusBadge.className = 'status-badge active pulse';
     translateAllBtn.disabled = true;
-    translateFreshBtn.disabled = true;
     restoreBtn.disabled = false;
   } else if (state === 'completed') {
     // 번역 완료: 모든 버튼 활성화
     statusBadge.textContent = '번역 완료';
     statusBadge.className = 'status-badge active';
     translateAllBtn.disabled = false;
-    translateFreshBtn.disabled = false;
     restoreBtn.disabled = false;
   } else if (state === 'restored') {
     // 원본 보기: 번역 버튼 활성화, 원본 보기 비활성화
     statusBadge.textContent = '원본 보기';
     statusBadge.className = 'status-badge restored';
     translateAllBtn.disabled = false;
-    translateFreshBtn.disabled = false;
     restoreBtn.disabled = true;
   } else {
     // 대기 중: 번역 버튼 활성화, 원본 보기 비활성화
     statusBadge.textContent = '대기 중';
     statusBadge.className = 'status-badge';
     translateAllBtn.disabled = false;
-    translateFreshBtn.disabled = false;
     restoreBtn.disabled = true;
   }
 
