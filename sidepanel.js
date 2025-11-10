@@ -71,9 +71,10 @@ let originalSettings = {};        // 원본 설정 (취소 시 복원용)
 let lastTranslateMode = 'cache';  // 마지막 번역 모드 기록
 let lastHistoryCompletionMeta = { signature: null, ts: 0 }; // 직전 히스토리 저장 메타
 const translateModeByTab = new Map(); // 탭별 마지막 번역 모드 추적
+const translationStateByTab = new Map(); // 탭별 번역 상태 추적
 
 /**
- * 번역 진행 상태 (content script에서 port로 수신)
+ * 번역 진행 상태 기본값 (현재 탭의 상태)
  */
 let translationState = {
   state: 'inactive',       // 번역 상태
@@ -88,6 +89,25 @@ let translationState = {
   translatedTitle: '',    // 번역 후 제목
   previewText: ''         // 번역 프리뷰 텍스트
 };
+
+/**
+ * 기본 번역 상태 객체 생성
+ */
+function createDefaultTranslationState() {
+  return {
+    state: 'inactive',
+    totalTexts: 0,
+    translatedCount: 0,
+    cachedCount: 0,
+    batchCount: 0,
+    batchesDone: 0,
+    batches: [],
+    activeMs: 0,
+    originalTitle: '',
+    translatedTitle: '',
+    previewText: ''
+  };
+}
 
 // ===== 초기화 =====
 
@@ -175,6 +195,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (tabId === currentTabId && changeInfo.status === 'loading') {
       await handleTabChange(tab);
     }
+  });
+
+  // 탭 닫힘 감지 (메모리 정리)
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    translationStateByTab.delete(tabId);
+    translateModeByTab.delete(tabId);
   });
 });
 
@@ -1244,16 +1270,20 @@ function initializeTranslationState() {
 
 /**
  * 탭 변경 시 처리 (이동, 새로고침 등 모든 경우)
- * 1. 상태 초기화
+ * 1. 탭별 상태 복원 (또는 초기화)
  * 2. 권한 확인
  * 3. 번역 상태 조회
  * @param {object} tab - 탭 객체
  */
 async function handleTabChange(tab) {
-  // 1단계: 무조건 초기화
-  initializeTranslationState();
+  // 1단계: 이 탭의 저장된 상태가 있으면 복원, 없으면 초기화
+  if (translationStateByTab.has(currentTabId)) {
+    translationState = { ...translationStateByTab.get(currentTabId) };
+  } else {
+    initializeTranslationState();
+  }
 
-  // 2단계: 권한 확인
+  // 2단계: 권한 확인 + 번역 상태 조회
   await checkPermissions(tab);
 
   // 3단계: 번역 탭이 활성화되어 있으면 UI 업데이트
@@ -1523,6 +1553,8 @@ function connectToContentScript(tabId) {
         });
 
         translationState = { ...translationState, ...msg.data };
+        // 현재 탭의 상태를 저장
+        translationStateByTab.set(currentTabId, { ...translationState });
         updateUI();
 
         // 번역 완료 시 SUMMARY 로깅
