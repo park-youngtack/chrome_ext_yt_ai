@@ -697,11 +697,11 @@ async function handleHistoryItemOpen(entry) {
       });
     }
 
-    // 최신 탭 정보로 권한 확인
+    // 탭 변경 처리 (초기화 → 권한확인 → 상태조회 → UI업데이트)
     try {
       const latestTab = await chrome.tabs.get(newTab.id);
       if (latestTab) {
-        await checkPermissions(latestTab);
+        await handleTabChange(latestTab);
       }
     } catch (error) {
       logDebug('sidepanel', 'HISTORY_GET_TAB_FAILED', '탭 정보 조회 실패', {
