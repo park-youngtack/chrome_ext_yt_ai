@@ -25,7 +25,7 @@ let translatedElements = new Set(); // 번역된 요소 추적
 const DB_NAME = 'TranslationCache';
 const DB_VERSION = 1;
 const STORE_NAME = 'translations';
-const DEFAULT_TTL_MINUTES = 43200; // 기본 30일을 분 단위로 표현
+const DEFAULT_TTL_MINUTES = 525600; // 기본 365일(1년)을 분 단위로 표현
 const API_RETRY_MAX_ATTEMPTS = 3;
 const API_RETRY_BASE_DELAY_MS = 800;
 const API_RETRY_BACKOFF_FACTOR = 2;
@@ -510,7 +510,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleRestoreOriginal();
     sendResponse({ success: true });
   } else if (request.action === 'getTranslationState') {
-    sendResponse({ state: translationState });
+    sendResponse({ state: progressStatus });
   } else if (request.action === 'getTranslatedTitle') {
     sendResponse({ title: document.title });
   } else if (request.action === 'getCacheStatus') {
