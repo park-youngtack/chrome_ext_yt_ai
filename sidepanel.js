@@ -1285,43 +1285,25 @@ function updateUIByPermission() {
     return;
   }
 
+  // 권한 없으면 상태를 초기화
   if (!permissionGranted) {
-    // 권한 없음: 모든 UI 초기화 (통계, 버튼 등 모두 비활성화)
-    const translateAllBtn = document.getElementById('translateAllBtn');
-    const restoreBtn = document.getElementById('restoreBtn');
-    const statusBadge = document.getElementById('statusBadge');
-    const progressText = document.getElementById('progressText');
-    const batchInfo = document.getElementById('batchInfo');
+    translationState.state = 'inactive';
+    translationState.totalTexts = 0;
+    translationState.translatedCount = 0;
+    translationState.cachedCount = 0;
+    translationState.batchCount = 0;
+    translationState.batchesDone = 0;
+    translationState.batches = [];
+    translationState.activeMs = 0;
+  }
 
-    // 버튼 비활성화
-    if (translateAllBtn) translateAllBtn.disabled = true;
-    if (restoreBtn) restoreBtn.disabled = true;
+  // 상태에 따라 UI 렌더링 (권한 상태도 포함)
+  updateUI();
 
-    // 상태 메시지
-    if (statusBadge) {
-      statusBadge.textContent = '번역 불가';
-      statusBadge.className = 'status-badge disabled';
-    }
-    if (progressText) progressText.textContent = '이 페이지는 번역할 수 없습니다.';
-
-    // 통계 정보 숨기기
-    if (batchInfo) batchInfo.style.display = 'none';
-
-    // 통계 필드 초기화
-    const translatedCount = document.getElementById('translatedCount');
-    const cachedCount = document.getElementById('cachedCount');
-    const batchCountText = document.getElementById('batchCountText');
-    const elapsedTime = document.getElementById('elapsedTime');
-
-    if (translatedCount) translatedCount.textContent = '0';
-    if (cachedCount) cachedCount.textContent = '0';
-    if (batchCountText) batchCountText.textContent = '0';
-    if (elapsedTime) elapsedTime.textContent = '0s';
-  } else {
-    // 권한 있음: 번역 상태에 따라 일반 UI 표시
-    const batchInfo = document.getElementById('batchInfo');
-    if (batchInfo) batchInfo.style.display = '';
-    updateUI();
+  // 배치 정보는 권한에 따라서만 제어
+  const batchInfo = document.getElementById('batchInfo');
+  if (batchInfo) {
+    batchInfo.style.display = !permissionGranted ? 'none' : '';
   }
 }
 
