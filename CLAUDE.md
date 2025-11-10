@@ -223,10 +223,16 @@ async function handleTranslateAll() {
 
 각 기능의 상세한 개념, 함수, 데이터 흐름은 다음 문서를 참고하세요:
 
+### 기능 문서
 - **[AI 번역 (TRANSLATE.md)](./docs/TRANSLATE.md)** - 번역 메인 기능, 캐시, 배치 처리
 - **[히스토리 (HISTORY.md)](./docs/HISTORY.md)** - 번역 히스토리 저장/관리
 - **[검색 (SEARCH.md)](./docs/SEARCH.md)** - AI 검색 추천, 멀티 엔진 검색
 - **[설정 (SETTINGS.md)](./docs/SETTINGS.md)** - API Key, 모델, 캐시 설정
+
+### 아키텍처 & 개발 문서
+- **[아키텍처 (ARCHITECTURE.md)](./docs/ARCHITECTURE.md)** - 기능 명세, 캐시 시스템, 데이터 흐름, 에러 처리
+- **[코드 스타일 (CODE_STYLE.md)](./docs/CODE_STYLE.md)** - JSDoc, 섹션 구성, 파일별 구조, 명명 규칙
+- **[개발 가이드 (DEVELOPMENT.md)](./docs/DEVELOPMENT.md)** - 기능 추가/수정 방법, 디버깅 팁, 배포 절차
 
 ## 참고 사항
 - 페이지 오버레이 문구는 전면 제거
