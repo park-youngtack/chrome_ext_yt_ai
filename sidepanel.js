@@ -160,12 +160,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 오류 로그 개수 업데이트
   updateErrorLogCount();
 
-  // 탭 변경 감지
+  // 탭 변경 감지 (다른 탭으로 이동)
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
       currentTabId = tab.id;
       await checkPermissions(tab);
+    }
+  });
+
+  // 탭 새로고침 감지 (페이지 로딩 시 상태 초기화)
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // 현재 활성 탭이 새로고침되면 상태 초기화
+    if (tabId === currentTabId && changeInfo.status === 'loading') {
+      initializeTranslationState();
+      updateUIByPermission();
     }
   });
 });
