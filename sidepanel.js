@@ -306,7 +306,14 @@ async function switchTab(tabName) {
   // 번역 탭으로 전환 시 API key 확인 및 캐시 상태 업데이트
   if (tabName === 'translate') {
     await updateApiKeyUI();
-    await updatePageCacheStatus();
+    try {
+      await updatePageCacheStatus();
+    } catch (error) {
+      logDebug('sidepanel', 'CACHE_STATUS_UPDATE_FAILED', '캐시 상태 업데이트 실패', {
+        tabId: currentTabId,
+        reason: error?.message || '알 수 없음'
+      });
+    }
   }
 
   // 설정 탭으로 전환 시 설정 로드
@@ -650,31 +657,30 @@ async function handleHistoryItemOpen(entry) {
     });
 
     // 항상 새 탭에서 열기
-    const updatedTab = await chrome.tabs.create({ url: entry.url, active: true });
+    const newTab = await chrome.tabs.create({ url: entry.url, active: true });
+    currentTabId = newTab.id;
 
-    currentTabId = updatedTab.id;
-    await checkPermissions(updatedTab);
-
+    // 탭 로딩 대기 (URL이 제대로 설정될 때까지)
     try {
-      const tabInfo = await chrome.tabs.get(updatedTab.id);
-      if (!tabInfo || tabInfo.status !== 'complete') {
-        await waitForTabLoad(updatedTab.id).catch(() => {
-          // 로딩 상태를 감지하지 못하면 바로 진행 (일부 사이트는 status 이벤트가 제한됨)
-        });
-      }
+      await waitForTabLoad(newTab.id).catch(() => {
+        // 로딩 상태를 감지하지 못해도 계속 진행
+      });
     } catch (error) {
-      logDebug('sidepanel', 'HISTORY_WAIT_FALLBACK', '탭 상태 확인 실패, 바로 번역 실행', {
-        tabId: updatedTab.id,
-        reason: error?.message || '알 수 없음'
+      logDebug('sidepanel', 'HISTORY_WAIT_TIMEOUT', '탭 로딩 타임아웃', {
+        tabId: newTab.id,
+        url: entry.url
       });
     }
 
+    // 최신 탭 정보로 권한 확인
     try {
-      const latestTab = await chrome.tabs.get(updatedTab.id);
-      await checkPermissions(latestTab);
+      const latestTab = await chrome.tabs.get(newTab.id);
+      if (latestTab) {
+        await checkPermissions(latestTab);
+      }
     } catch (error) {
-      logDebug('sidepanel', 'HISTORY_PERMISSION_REFRESH_FAIL', '탭 권한 재확인 실패', {
-        tabId: updatedTab.id,
+      logDebug('sidepanel', 'HISTORY_GET_TAB_FAILED', '탭 정보 조회 실패', {
+        tabId: newTab.id,
         reason: error?.message || '알 수 없음'
       });
     }
