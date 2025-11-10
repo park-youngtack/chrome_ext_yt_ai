@@ -160,21 +160,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 오류 로그 개수 업데이트
   updateErrorLogCount();
 
-  // 탭 변경 감지 (다른 탭으로 이동)
+  // 탭 활성화 감지 (이동, 새로고침 등 모든 경우)
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
       currentTabId = tab.id;
+      // 탭 활성화 시 권한 확인 + 번역 상태 조회 + UI 업데이트
       await checkPermissions(tab);
     }
   });
 
-  // 탭 새로고침 감지 (페이지 로딩 시 상태 초기화)
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    // 현재 활성 탭이 새로고침되면 상태 초기화
+  // 탭 새로고침 감지
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    // 현재 활성 탭이 로딩 시작하면 상태 조회
     if (tabId === currentTabId && changeInfo.status === 'loading') {
-      initializeTranslationState();
-      updateUIByPermission();
+      await checkPermissions(tab);
     }
   });
 });
@@ -1438,7 +1438,10 @@ async function checkPermissions(tab) {
   // 번역 상태 조회
   await queryTranslationState(tab);
 
-  // 현재 탭에서 번역 탭을 보고 있으면 캐시 상태도 업데이트
+  // UI 업데이트 (상태 기반)
+  updateUIByPermission();
+
+  // 번역 탭에서는 캐시 상태도 업데이트
   const activeTab = document.querySelector('.tab-content.active');
   if (activeTab && activeTab.id === 'translateTab') {
     await updatePageCacheStatus();
