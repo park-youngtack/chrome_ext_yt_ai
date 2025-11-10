@@ -165,8 +165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
       currentTabId = tab.id;
-      // 탭 활성화 시 권한 확인 + 번역 상태 조회 + UI 업데이트
-      await checkPermissions(tab);
+      await handleTabChange(tab);
     }
   });
 
@@ -174,7 +173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     // 현재 활성 탭이 로딩 시작하면 상태 조회
     if (tabId === currentTabId && changeInfo.status === 'loading') {
-      await checkPermissions(tab);
+      await handleTabChange(tab);
     }
   });
 });
@@ -1244,6 +1243,24 @@ function initializeTranslationState() {
 }
 
 /**
+ * 탭 변경 시 처리 (이동, 새로고침 등 모든 경우)
+ * 1. 상태 초기화
+ * 2. 권한 확인
+ * 3. 번역 상태 조회
+ * @param {object} tab - 탭 객체
+ */
+async function handleTabChange(tab) {
+  // 1단계: 무조건 초기화
+  initializeTranslationState();
+
+  // 2단계: 권한 확인
+  await checkPermissions(tab);
+
+  // 3단계: 번역 탭이 활성화되어 있으면 UI 업데이트
+  updateUIByPermission();
+}
+
+/**
  * Content script에서 현재 페이지의 번역 상태 조회
  * @param {object} tab - 탭 객체
  */
@@ -1308,15 +1325,12 @@ function updateUIByPermission() {
 }
 
 /**
- * 권한 확인 (탭 이동 시 호출)
- * 권한 체크 후 번역 상태 조회 및 UI 업데이트
+ * 권한 확인 및 번역 상태 조회
  * @param {object} tab - 탭 객체
  */
 async function checkPermissions(tab) {
   if (!tab || !tab.url) {
     permissionGranted = false;
-    initializeTranslationState();
-    updateUIByPermission();
     return;
   }
 
@@ -1325,8 +1339,6 @@ async function checkPermissions(tab) {
   // 지원 불가 스킴 - 권한 없음
   if (supportType === 'unsupported') {
     permissionGranted = false;
-    initializeTranslationState();
-    updateUIByPermission();
     return;
   }
 
@@ -1335,22 +1347,15 @@ async function checkPermissions(tab) {
     try {
       const url = new URL(tab.url);
       const origin = `${url.protocol}//${url.host}/*`;
-
       const hasPermission = await chrome.permissions.contains({
         origins: [origin]
       });
-
       permissionGranted = hasPermission;
     } catch (error) {
-      console.error('File permission check failed:', error);
       permissionGranted = false;
     }
 
-    if (!permissionGranted) {
-      initializeTranslationState();
-      updateUIByPermission();
-    } else {
-      // 권한 있으면 번역 상태 조회
+    if (permissionGranted) {
       await queryTranslationState(tab);
     }
     return;
@@ -1358,17 +1363,16 @@ async function checkPermissions(tab) {
 
   // http/https 스킴 - 권한 있음
   permissionGranted = true;
-
-  // 번역 상태 조회
   await queryTranslationState(tab);
-
-  // UI 업데이트 (상태 기반)
-  updateUIByPermission();
 
   // 번역 탭에서는 캐시 상태도 업데이트
   const activeTab = document.querySelector('.tab-content.active');
   if (activeTab && activeTab.id === 'translateTab') {
-    await updatePageCacheStatus();
+    try {
+      await updatePageCacheStatus();
+    } catch (error) {
+      // 캐시 상태 조회 실패는 무시
+    }
   }
 }
 
