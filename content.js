@@ -41,24 +41,28 @@ const API_RETRY_BASE_DELAY_MS = 800;
 const API_RETRY_BACKOFF_FACTOR = 2;
 
 // ===== 로깅 시스템 =====
-// DEBUG 레벨은 설정에서 토글 가능, INFO/WARN/ERROR는 항상 출력
+// debugLog OFF: 모든 로그 차단 / ON: 모든 로그 출력
 const LEVEL_MAP = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
-let currentLogLevel = 'INFO';
+let currentLogLevel = 'INFO'; // 기본값: 로그 차단
 
 /**
  * 로거 초기화 - storage에서 디버그 설정 로드
+ * debugLog=true: currentLogLevel='DEBUG' (모든 로그 출력)
+ * debugLog=false: currentLogLevel='INFO' (모든 로그 차단)
  */
 (async () => {
   try {
     const result = await chrome.storage.local.get(['debugLog']);
     currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
   } catch (error) {
-    // storage 접근 실패 시 기본값(INFO) 유지
+    // storage 접근 실패 시 기본값(INFO=로그 차단) 유지
   }
 })();
 
 /**
- * 디버그 설정 변경 감지
+ * 디버그 설정 변경 감지 - 실시간 적용
+ * debugLog=true: currentLogLevel='DEBUG' (모든 로그 출력)
+ * debugLog=false: currentLogLevel='INFO' (모든 로그 차단)
  */
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.debugLog) {
@@ -106,7 +110,8 @@ function maskSensitive(data) {
  * @param {Error|string} err - 에러 객체 또는 메시지
  */
 function log(level, evt, msg = '', data = {}, err = null) {
-  if (level === 'DEBUG' && LEVEL_MAP[level] < LEVEL_MAP[currentLogLevel]) return;
+  // 로그 필터링: debugLog OFF면 모든 로그 차단 (currentLogLevel='INFO')
+  if (currentLogLevel === 'INFO') return;
 
   const masked = maskSensitive(data);
   const record = { ts: new Date().toISOString(), level, ns: 'content', evt, msg, ...masked };
