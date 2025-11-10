@@ -79,9 +79,8 @@ function maskSensitive(data) {
  * @param {Error|string} err - 에러 객체 또는 메시지
  */
 export function log(level, ns, evt, msg = '', data = {}, err = null) {
-  // 로그 필터링 (debugLog OFF면 모든 로그 차단, ON이면 모든 로그 출력)
+  // 로그 필터링: debugLog OFF면 모든 로그 차단
   if (currentLogLevel === 'INFO') {
-    // debugLog가 OFF인 경우 (currentLogLevel='INFO'는 로그 비활성화를 의미)
     return;
   }
 

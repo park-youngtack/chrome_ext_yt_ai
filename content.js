@@ -47,22 +47,18 @@ let currentLogLevel = 'INFO'; // 기본값: 로그 차단
 
 /**
  * 로거 초기화 - storage에서 디버그 설정 로드
- * debugLog=true: currentLogLevel='DEBUG' (모든 로그 출력)
- * debugLog=false: currentLogLevel='INFO' (모든 로그 차단)
  */
 (async () => {
   try {
     const result = await chrome.storage.local.get(['debugLog']);
     currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
   } catch (error) {
-    // storage 접근 실패 시 기본값(INFO=로그 차단) 유지
+    // storage 접근 실패 시 기본값(INFO) 유지
   }
 })();
 
 /**
- * 디버그 설정 변경 감지 - 실시간 적용
- * debugLog=true: currentLogLevel='DEBUG' (모든 로그 출력)
- * debugLog=false: currentLogLevel='INFO' (모든 로그 차단)
+ * 디버그 설정 변경 감지
  */
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.debugLog) {
@@ -110,7 +106,7 @@ function maskSensitive(data) {
  * @param {Error|string} err - 에러 객체 또는 메시지
  */
 function log(level, evt, msg = '', data = {}, err = null) {
-  // 로그 필터링: debugLog OFF면 모든 로그 차단 (currentLogLevel='INFO')
+  // 로그 필터링: debugLog OFF면 모든 로그 차단
   if (currentLogLevel === 'INFO') return;
 
   const masked = maskSensitive(data);
