@@ -2,57 +2,42 @@
 
 ## 확장 프로그램 정보
 - **이름**: 무조건 한글로 번역해드림
-- **버전**: 2.1.0
+- **버전**: 2.2.0
 - **설명**: OpenRouter AI를 사용하여 웹페이지를 한글로 번역하는 크롬 확장 프로그램
 - **개발**: 인크로스 AI비즈솔루션팀 박영택
 
-## 핵심 아키텍처
+## 파일 구조
 
-### 파일 구조
 ```
 chrome_ext_yt_ai/
-├── manifest.json         # 확장 프로그램 메타데이터
-├── background.js         # Service Worker (사이드패널 관리, 메시지 라우팅)
-├── content.js           # 콘텐츠 스크립트 (DOM 번역 로직)
-├── sidepanel.html       # 사이드패널 UI (우측 세로 탭바 레이아웃)
-├── sidepanel.js         # 사이드패널 로직 (탭 전환, 상태 관리)
-├── logger.js            # 공용 로깅 시스템 (ES6 모듈)
-├── meta.js              # 메타 정보 (푸터 텍스트, 최종 수정일)
-└── icons/               # 확장 아이콘
+├── manifest.json              # Chrome 확장 메타데이터
+├── background.js              # Service Worker (Content Script 관리)
+├── content.js                 # Content Script (DOM 번역 로직)
+├── sidepanel.html             # 패널 UI (HTML)
+├── sidepanel.js               # 패널 로직 (번역/히스토리/검색/설정)
+├── sidepanel.css              # 패널 스타일
+├── logger.js                  # 공용 로깅 시스템 (ES6 모듈)
+├── meta.js                    # 메타 정보 (최종 수정일)
+├── docs/
+│   ├── TRANSLATE.md           # AI 번역 기능 상세
+│   ├── HISTORY.md             # 히스토리 기능 상세
+│   ├── SEARCH.md              # 검색 기능 상세
+│   └── SETTINGS.md            # 설정 기능 상세
+└── icons/                     # 확장 아이콘
 ```
 
-### 주요 컴포넌트
+## 핵심 아키텍처
 
-#### 1. Background Service Worker (`background.js`)
-- **Content script 자동 등록** (persistAcrossSessions)
-- **Content script 수동 주입** (필요 시 ensureContentScript)
-- **패널은 Chrome이 자동 관리** (manifest.json의 default_open_panel_on_action_click: true)
-- ❌ **탭별 패널 상태 추적 안 함** (window-level로 동작)
-- ❌ **URL 변경 감지 안 함** (불필요한 로그 방지)
+### 파일별 역할
 
-#### 2. Content Script (`content.js`)
-- DOM 텍스트 노드 수집 및 번역
-- IndexedDB 기반 캐시 시스템 (TTL 기본 30일)
-- 배치 처리 (기본 50개 문장, 동시 3개 배치)
-- WeakMap 기반 원본 텍스트 복원
-- Port를 통한 실시간 진행 상태 푸시
-- 해시 재검증 및 대규모 변경(≥20%) 감지
-
-#### 3. Side Panel (`sidepanel.html` + `sidepanel.js`)
-- **레이아웃**: 우측 세로 탭바 (번역|설정|닫기)
-- **탭 전환**: 패널 내부에서 처리, 새 탭/창 열지 않음
-- **딥링크**: `#translate`, `#settings` 지원
-- **세션 복원**: 마지막 탭 상태 저장/복원
-- **실시간 UI**: Port를 통한 진행률/시간 업데이트 (1초마다)
-- **권한 체크**: 탭 변경 시 UI 업데이트 (조용한 체크), 번역 버튼 클릭 시 최종 검증
-- **ES6 모듈**: logger.js, meta.js import 사용
-
-#### 4. Logger (`logger.js`)
-- **공용 로거**: sidepanel.js에서 사용 (background.js와 content.js는 인라인 로거 사용)
-- **로그 레벨**: DEBUG, INFO, WARN, ERROR
-- **민감정보 마스킹**: API Key (앞 8자만), 텍스트 (20자 제한)
-- **로그 버퍼**: session storage에 최근 500개 저장
-- **개발자 도구**: 로그 복사 기능 (이슈 리포트용)
+| 파일 | 역할 | 상세 문서 |
+|------|------|----------|
+| `background.js` | Service Worker, Content Script 관리 | - |
+| `content.js` | DOM 번역, 캐시, 배치 처리 | [TRANSLATE.md](./docs/TRANSLATE.md) |
+| `sidepanel.html` | UI 마크업 (번역/히스토리/검색/설정 탭) | - |
+| `sidepanel.js` | 탭 관리, 상태 관리, 기능 통합 | 각 docs 파일 참고 |
+| `logger.js` | 로깅 시스템 | - |
+| `meta.js` | 메타 정보 (최종 수정일) | - |
 
 ## 패널 동작 원칙 ⚠️ 중요!
 
