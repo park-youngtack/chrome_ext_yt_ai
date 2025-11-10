@@ -13,10 +13,11 @@ let currentLogLevel = 'INFO'; // 기본값
 export async function initLogger() {
   try {
     const result = await chrome.storage.local.get(['debugLog']);
+    // debugLog가 ON이면 모든 로그 출력 ('DEBUG'), OFF이면 모든 로그 차단 ('INFO')
     currentLogLevel = result.debugLog ? 'DEBUG' : 'INFO';
     console.log('[WPT] Logger initialized with debugLog:', result.debugLog);
   } catch (error) {
-    // storage 접근 실패 시 기본값 유지
+    // storage 접근 실패 시 기본값 유지 (로그 차단)
     console.error('[WPT] Logger init failed:', error);
   }
 }
@@ -25,6 +26,7 @@ export async function initLogger() {
 if (typeof chrome !== 'undefined' && chrome.storage) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.debugLog) {
+      // debugLog가 ON이면 모든 로그 출력 ('DEBUG'), OFF이면 모든 로그 차단 ('INFO')
       currentLogLevel = changes.debugLog.newValue ? 'DEBUG' : 'INFO';
       console.log('[WPT] Debug mode changed:', changes.debugLog.newValue);
     }
@@ -77,8 +79,9 @@ function maskSensitive(data) {
  * @param {Error|string} err - 에러 객체 또는 메시지
  */
 export function log(level, ns, evt, msg = '', data = {}, err = null) {
-  // 레벨 필터링 (DEBUG만 토글, INFO/WARN/ERROR는 항상 출력)
-  if (level === 'DEBUG' && LEVEL_MAP[level] < LEVEL_MAP[currentLogLevel]) {
+  // 로그 필터링 (debugLog OFF면 모든 로그 차단, ON이면 모든 로그 출력)
+  if (currentLogLevel === 'INFO') {
+    // debugLog가 OFF인 경우 (currentLogLevel='INFO'는 로그 비활성화를 의미)
     return;
   }
 
