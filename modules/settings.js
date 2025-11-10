@@ -8,7 +8,7 @@
  * - 캐시 상태 조회
  */
 
-import { logInfo, logError, logDebug } from '../logger.js';
+import { logInfo, logError, logDebug, logWarn } from '../logger.js';
 import {
   currentTabId,
   originalSettings,
@@ -16,7 +16,7 @@ import {
   setSettingsChanged,
   setOriginalSettings
 } from './state.js';
-import { showToast, ensurePageContentScript } from './ui-utils.js';
+import { showToast, ensurePageContentScript, handleCopyLogs } from './ui-utils.js';
 
 // ===== 상수 =====
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
@@ -84,11 +84,9 @@ export function initSettingsTab() {
 
   // 로그 복사 버튼
   document.getElementById('copyAllLogsBtn')?.addEventListener('click', () => {
-    const { handleCopyLogs } = require('./ui-utils.js');
     handleCopyLogs('all');
   });
   document.getElementById('copyErrorLogsBtn')?.addEventListener('click', () => {
-    const { handleCopyLogs } = require('./ui-utils.js');
     handleCopyLogs('errors');
   });
 }
