@@ -225,7 +225,102 @@ chrome.tabs.onActivated.addListener(async () => {
 
 ## 코드 유지보수 가이드
 
+### ⚠️ 중요한 교훈 (2025-11-10)
+
+#### 🚫 "if if if if"를 피하는 법
+**잘못된 접근:**
+```javascript
+// ❌ 문제: 각 요구사항마다 if 조건을 추가하면 복잡도 증가
+if (condition1) { /* UI 초기화 */ }
+if (condition2) { /* Port 정리 */ }
+if (condition3) { /* 상태 복구 */ }
+if (condition4) { /* 버튼 제어 */ }
+// 계속 추가되면서 관리 불가능해짐!
+```
+
+**올바른 접근:**
+```javascript
+// ✅ 해결: 근본적인 데이터 구조와 상태 흐름으로 해결
+// 1. 탭별 상태를 Map으로 관리 (translationStateByTab)
+// 2. 상태가 있으면 복구, 없으면 초기화 (단순 로직)
+// 3. 번역 중이면 탭 전환 무시 (조건 최소화)
+
+if (translationStateByTab.has(currentTabId)) {
+  // 상태 복구
+} else {
+  // 초기화
+}
+
+if (translationState.state === 'translating') {
+  return; // 조건이 명확함
+}
+```
+
+**핵심 원칙:**
+1. **데이터 구조부터 설계** - if 조건이 필요 없도록
+2. **상태 관리 명확화** - 상태가 모든 결정의 근거
+3. **조건은 최소화** - 필수 조건만 사용
+4. **개념적 설계 우선** - 코드 작성 전에 개념 정리
+
+#### 탭별 독립 상태 관리 (2025-11-10)
+
+**개념적 설계:**
+```
+각 탭은 고유한 ID를 가짐 (browser tab ID)
+  ↓
+탭별로 번역 상태를 독립적으로 저장 (translationStateByTab Map)
+  ↓
+탭 전환 시:
+  - 저장된 상태 있음 → 복구
+  - 없음 → 초기화
+  (새 탭 vs 탭 전환 구분 필요 없음!)
+  ↓
+동일한 URL도 다른 탭 ID면 독립적으로 관리
+```
+
+**구현 포인트:**
+1. **translationStateByTab Map**: 탭 ID → 상태 매핑
+2. **깊은 복사 필수**: batches 배열 등도 독립 복사
+3. **Port 관리**: 번역 중일 때만 유지, 완료 후 정리
+4. **UI 권한 통합**: updateUI(hasPermission) 파라미터로 권한 상태 전달
+
+#### 번역 중 탭 전환 보호 (2025-11-10)
+
+**문제 상황:**
+```
+탭 A: 번역 중 (Port 연결, 데이터 계속 옴)
+  ↓
+탭 B로 이동 (Port 정리)
+  ↓
+UI 초기화 + Port 데이터 계속 들어옴
+  ↓
+탭 B의 UI에 탭 A 데이터 섞임 (UI 꼬임!)
+```
+
+**해결책:**
+```javascript
+// 번역 중이면 탭 전환 무시
+if (translationState.state === 'translating') {
+  return; // 조건 1개로 모든 문제 해결!
+}
+// 나머지 로직 (안전함)
+```
+
+**결과:**
+- 번역 중: UI 멈춤 없음, Port 유지
+- 번역 완료: 탭 전환 정상 작동
+- 안정성 극대화
+
 ### 리팩토링 이력
+**2025-11-10: 탭별 독립 상태 관리 & 번역 중 보호**
+- ✅ 탭별 UI 초기화 및 복구 로직 재설계
+- ✅ previousTabId 제거 (불필요한 상태)
+- ✅ translationStateByTab만으로 모든 로직 처리
+- ✅ 번역 중 탭 전환 방지 (early return)
+- ✅ Port 유지 조건 명확화
+- ✅ updateUI(hasPermission) 파라미터화
+- ✅ 깊은 복사로 상태 독립성 보장
+
 **2025-11-06: 확장성 개선 리팩토링**
 - ✅ 사용하지 않는 파일 제거 (popup.html/js, options.html/js)
 - ✅ background.js 정리 및 JSDoc 주석 추가
