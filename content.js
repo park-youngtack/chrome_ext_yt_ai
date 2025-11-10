@@ -17,6 +17,16 @@
  */
 
 // ===== 전역 상태 =====
+// Content script 중복 주입 방지 (SPA 환경에서 여러 번 실행될 수 있음)
+// 이미 초기화되었으면 나머지 코드는 실행하지 않음
+if (typeof window.__WPT_INITIALIZED !== 'undefined') {
+  // Content script 이미 초기화됨 - 재실행 방지
+  console.warn('[WPT] Content script already initialized, skipping reinit');
+} else {
+  // 초기화 플래그 설정
+  window.__WPT_INITIALIZED = true;
+
+// ===== 전역 상태 변수 (IIFE 내부) =====
 let translationState = 'inactive'; // 'inactive', 'translating', 'completed', 'restored'
 let originalTexts = new WeakMap(); // 원본 텍스트 저장 (GC 안전)
 let translatedElements = new Set(); // 번역된 요소 추적
@@ -1723,3 +1733,5 @@ logDebug('CONTENT_LOADED', 'Content script 로드 완료');
 chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {
   // Background가 아직 준비되지 않았을 수 있음 (무시)
 });
+
+} // 중복 주입 방지 if 블록 종료
