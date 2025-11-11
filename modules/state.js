@@ -2,7 +2,8 @@
  * Side Panel 전역 상태 관리
  *
  * 역할:
- * - 현재 탭 정보 (currentTabId, port)
+ * - 현재 탭 정보 (currentTabId)
+ * - 탭별 Port 맵 (portsByTab)
  * - 권한 상태 (permissionGranted)
  * - 번역 진행 상태 (translationState)
  * - 탭별 독립 상태 추적 (translationStateByTab, translateModeByTab)
@@ -21,7 +22,8 @@ export let currentTabId = null;
  * Content Script와의 통신 Port
  * @type {chrome.runtime.Port | null}
  */
-export let port = null;
+// 탭별 Port 맵: Map<tabId, chrome.runtime.Port>
+export const portsByTab = new Map();
 
 /**
  * 현재 탭의 권한 상태 (http/https/file:// 지원)
@@ -99,8 +101,26 @@ export function setCurrentTabId(tabId) {
  * Port 설정
  * @param {chrome.runtime.Port | null} newPort - Port 객체
  */
-export function setPort(newPort) {
-  port = newPort;
+// Port 헬퍼
+export function getPortForTab(tabId) {
+  return portsByTab.get(tabId) || null;
+}
+
+export function setPortForTab(tabId, newPort) {
+  if (typeof tabId !== 'number') return;
+  if (newPort) {
+    portsByTab.set(tabId, newPort);
+  } else {
+    portsByTab.delete(tabId);
+  }
+}
+
+export function removePortForTab(tabId, { disconnect = true } = {}) {
+  const p = portsByTab.get(tabId);
+  if (p && disconnect) {
+    try { p.disconnect(); } catch (e) { /* noop */ }
+  }
+  portsByTab.delete(tabId);
 }
 
 /**

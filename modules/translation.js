@@ -12,16 +12,17 @@
 import { logInfo, logWarn, logError, logDebug } from '../logger.js';
 import {
   currentTabId,
-  port,
   translationState,
   translationStateByTab,
   translateModeByTab,
   permissionGranted,
   setCurrentTabId,
-  setPort,
   setPermissionGranted,
   setTranslationState,
-  createDefaultTranslationState
+  createDefaultTranslationState,
+  getPortForTab,
+  setPortForTab,
+  removePortForTab
 } from './state.js';
 import { updateUI, resetTranslateUI, showToast, updateErrorLogCount } from './ui-utils.js';
 import { handleTranslationCompletedForHistory } from './history.js';
@@ -39,7 +40,12 @@ const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 export function getSupportType(url) {
   try {
     const u = new URL(url);
-    if (u.protocol === 'http:' || u.protocol === 'https:') {
+    // Chrome에서 강제 차단되는 특수 도메인(웹스토어 등)은 예외 처리
+    const denied = (
+      u.hostname === 'chromewebstore.google.com' ||
+      (u.hostname === 'chrome.google.com' && u.pathname.startsWith('/webstore'))
+    );
+    if ((u.protocol === 'http:' || u.protocol === 'https:') && !denied) {
       return 'requestable';
     }
     if (u.protocol === 'file:') {
@@ -72,6 +78,7 @@ export function initializeTranslationState() {
  * @param {object} tab - 탭 객체
  */
 export async function handleTabChange(tab) {
+  const fromId = currentTabId;
   // 번역 중이고 탭 ID가 같으면 무시 (같은 탭에서 계속 진행)
   if (translationState.state === 'translating' && tab && tab.id === currentTabId) {
     return;
@@ -88,21 +95,26 @@ export async function handleTabChange(tab) {
     setCurrentTabId(tab.id);
   }
 
-  // 1단계: 이전 탭과 다른 탭으로 이동했으면 Port 정리 (번역 중인 탭의 Port는 유지)
-  // 번역 중인 탭이 아니므로 안전하게 정리
-  if (translationState.state !== 'translating' && port) {
-    port.disconnect();
-    setPort(null);
+  // 1단계: 포트 관리
+  // - 이전 탭이 번역 중이 아니면 포트 정리 (노이즈 감소)
+  // - 번역 중이면 유지 (CLAUDE.md 권고)
+  if (fromId && fromId !== currentTabId && translationState.state !== 'translating') {
+    removePortForTab(fromId, { disconnect: true });
   }
 
-  // 2단계: 새 탭의 저장된 상태가 있으면 복원, 없으면 초기화
+  // 2단계: 새 탭의 저장된 상태 복구 정책
+  // - translating 또는 completed 상태는 복구
+  // - restored 등 기타 상태는 초기 UI 유지
   if (currentTabId && translationStateByTab.has(currentTabId)) {
-    // 이 탭의 저장된 상태 복원
     const savedState = translationStateByTab.get(currentTabId);
-    setTranslationState({
-      ...savedState,
-      batches: savedState.batches ? [...savedState.batches] : []
-    });
+    if (savedState && (savedState.state === 'translating' || savedState.state === 'completed')) {
+      setTranslationState({
+        ...savedState,
+        batches: savedState.batches ? [...savedState.batches] : []
+      });
+    } else {
+      initializeTranslationState();
+    }
   } else {
     // 저장된 상태가 없으면 초기화
     initializeTranslationState();
@@ -115,6 +127,13 @@ export async function handleTabChange(tab) {
 
   // 4단계: 번역 탭이 활성화되어 있으면 UI 업데이트
   updateUIByPermission();
+
+  logDebug('sidepanel', 'TAB_SWITCH', '탭 전환 처리', { from: fromId, to: currentTabId, state: translationState.state });
+
+  // 5단계: 새 탭이 번역 중 상태라면 포트 보장 (업데이트 수신)
+  if (translationState.state === 'translating' && !getPortForTab(currentTabId)) {
+    connectToContentScript(currentTabId);
+  }
 }
 
 /**
@@ -317,16 +336,15 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
  */
 function connectToContentScript(tabId) {
   try {
-    // 기존 port 종료
-    if (port) {
-      logDebug('sidepanel', 'PORT_DISCONNECT', '기존 포트 종료', { tabId });
-      port.disconnect();
-      setPort(null);
+    // 이미 연결된 포트가 있으면 재사용 (중복 연결 방지)
+    const existing = getPortForTab(tabId);
+    if (existing) {
+      return;
     }
 
-    // 새 port 연결
+    // 새 port 연결 (탭별 관리)
     const newPort = chrome.tabs.connect(tabId, { name: 'panel' });
-    setPort(newPort);
+    setPortForTab(tabId, newPort);
     logInfo('sidepanel', 'PORT_CONNECT', 'Content script와 포트 연결', { tabId });
 
     newPort.onMessage.addListener((msg) => {
@@ -342,10 +360,16 @@ function connectToContentScript(tabId) {
           batches: msg.data.batchesDone + '/' + msg.data.batchCount
         });
 
-        setTranslationState({ ...translationState, ...msg.data });
-        // 현재 탭의 상태를 저장
-        translationStateByTab.set(currentTabId, { ...translationState });
-        updateUI();
+        // 탭별 상태 저장
+        translationStateByTab.set(tabId, { ...msg.data });
+
+        // 활성 탭일 때만 UI에 반영
+        if (tabId === currentTabId) {
+          setTranslationState({ ...msg.data });
+          updateUI();
+        } else {
+          logDebug('sidepanel', 'PROGRESS_IGNORED', '활성 탭이 아니어서 UI 업데이트 생략', { fromTab: tabId, currentTabId });
+        }
 
         // 번역 완료 시 SUMMARY 로깅
         if (msg.data.state === 'completed') {
@@ -372,7 +396,7 @@ function connectToContentScript(tabId) {
       } else {
         logInfo('sidepanel', 'PORT_DISCONNECT', '포트 연결 끊김', { tabId });
       }
-      setPort(null);
+      removePortForTab(tabId, { disconnect: false });
     });
 
   } catch (error) {
@@ -473,8 +497,8 @@ export async function handleTranslateAll(useCache = true) {
       return;
     }
 
-    // 포트 재연결 (진행 상태 수신을 위해 필수)
-    if (!port) {
+    // 포트 연결 (진행 상태 수신을 위해 필수) - 탭별로 보유
+    if (!getPortForTab(currentTabId)) {
       connectToContentScript(currentTabId);
     }
 
@@ -572,8 +596,9 @@ export async function handleRestore() {
     }
 
     // 번역 중이면 번역 작업 취소
-    if (translationState.state === 'translating' && port) {
-      port.postMessage({
+    const _port = getPortForTab(currentTabId);
+    if (translationState.state === 'translating' && _port) {
+      _port.postMessage({
         type: 'CANCEL_TRANSLATION',
         reason: 'user_restore'
       });
@@ -611,8 +636,9 @@ export async function handleResetTranslate() {
 
   try {
     // 번역 중이면 번역 작업 취소
-    if (translationState.state === 'translating' && port) {
-      port.postMessage({
+    const _p = getPortForTab(currentTabId);
+    if (translationState.state === 'translating' && _p) {
+      _p.postMessage({
         type: 'CANCEL_TRANSLATION',
         reason: 'user_reset'
       });
@@ -633,5 +659,9 @@ export async function handleResetTranslate() {
 
   // UI 초기화
   resetTranslateUI();
+  // 이 탭의 저장 상태도 초기화하여 재진입 시 '완료' 잔상 방지
+  try {
+    translationStateByTab.set(currentTabId, createDefaultTranslationState());
+  } catch (_) {}
   showToast('번역이 초기화되었습니다.');
 }

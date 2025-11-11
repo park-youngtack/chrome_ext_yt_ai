@@ -20,7 +20,7 @@ import {
 import { initHistoryTab } from './modules/history.js';
 import { initSettingsTab, loadSettings } from './modules/settings.js';
 import { initializeSearchTab } from './modules/search.js';
-import { handleTabChange } from './modules/translation.js';
+import { handleTabChange, getSupportType } from './modules/translation.js';
 
 // ===== 초기화 =====
 
@@ -69,10 +69,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // 번역 탭 버튼 이벤트
-    const { handleTranslateAll, handleRestore, handleResetTranslate } = await import('./modules/translation.js');
+    const { handleTranslateAll, handleRestore } = await import('./modules/translation.js');
     document.getElementById('translateAllBtn')?.addEventListener('click', () => handleTranslateAll(true));
     document.getElementById('restoreBtn')?.addEventListener('click', handleRestore);
-    document.getElementById('resetTranslateBtn')?.addEventListener('click', handleResetTranslate);
 
     // 권한 요청 버튼
     const { handleRequestPermission } = await import('./modules/translation.js');
@@ -135,6 +134,26 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const tab = await chrome.tabs.get(activeInfo.tabId);
     if (tab) {
       State.setCurrentTabId(tab.id);
+      // 즉시 UI를 현재 탭의 저장 상태 또는 기본 상태로 리셋해 '번역 중' 잔상 제거
+      const saved = State.translationStateByTab.get(tab.id);
+      if (saved && (saved.state === 'translating' || saved.state === 'completed')) {
+        State.setTranslationState({
+          ...saved,
+          batches: saved.batches ? [...saved.batches] : []
+        });
+      } else {
+        // 기본 상태로 초기화
+        State.setTranslationState(State.createDefaultTranslationState());
+      }
+      // 권한 확인 전 잠깐 동안이라도 현재 탭 상태 기준으로 UI 반영
+      // (버튼은 즉시 사용 가능하게 두고, 권한 체크 후 최종 확정됨)
+      const { updateUI } = await import('./modules/ui-utils.js');
+      const type = getSupportType(tab.url || '');
+      if (type === 'unsupported') {
+        updateUI(false);
+      } else {
+        updateUI();
+      }
       await handleTabChange(tab);
     }
   } catch (error) {
@@ -147,6 +166,8 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
  */
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (State.currentTabId === tabId && changeInfo.status === 'complete') {
+    // 새로고침/네비게이션 시 이 탭의 저장 상태는 초기화하여 '완료' 잔상 방지
+    State.translationStateByTab.delete(tabId);
     await handleTabChange(tab);
     const { updatePageCacheStatus } = await import('./modules/settings.js');
     await updatePageCacheStatus();
@@ -159,4 +180,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   State.translationStateByTab.delete(tabId);
   State.translateModeByTab.delete(tabId);
+  // 탭 포트 정리 (연결 끊김 안전 처리)
+  try {
+    State.removePortForTab?.(tabId, { disconnect: true });
+  } catch (e) {
+    // noop
+  }
 });
