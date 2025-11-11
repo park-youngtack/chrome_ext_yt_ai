@@ -77,48 +77,43 @@ export async function handleTabChange(tab) {
     return;
   }
 
-  // 번역 중이고 다른 탭으로 이동했으면 번역 중단
-  if (translationState.state === 'translating' && port) {
-    port.postMessage({
-      type: 'CANCEL_TRANSLATION',
-      reason: 'tab_switch'
-    });
-    logInfo('sidepanel', 'CANCEL_ON_TAB_SWITCH', '탭 전환으로 인한 번역 중단', {
-      previousTabId: currentTabId,
-      newTabId: tab?.id
-    });
+  // 이전 탭의 번역 상태 저장 (다른 탭으로 이동할 때)
+  if (translationState.state === 'translating') {
+    translationStateByTab.set(currentTabId, { ...translationState, batches: [...translationState.batches] });
   }
 
   // 0단계: 현재 탭 ID 업데이트
+  const previousTabId = currentTabId;
   if (tab && tab.id) {
     setCurrentTabId(tab.id);
   }
 
-  // 1단계: Port 정리
-  if (port) {
+  // 1단계: 이전 탭과 다른 탭으로 이동했으면 Port 정리 (번역 중인 탭의 Port는 유지)
+  // 번역 중인 탭이 아니므로 안전하게 정리
+  if (translationState.state !== 'translating' && port) {
     port.disconnect();
     setPort(null);
   }
 
-  // 2단계: UI 항상 초기화
-  initializeTranslationState();
-
-  // 3단계: 이 탭에 저장된 상태가 있으면 복원
+  // 2단계: 새 탭의 저장된 상태가 있으면 복원, 없으면 초기화
   if (currentTabId && translationStateByTab.has(currentTabId)) {
-    // 깊은 복사로 원본과 독립적으로 관리
+    // 이 탭의 저장된 상태 복원
     const savedState = translationStateByTab.get(currentTabId);
     setTranslationState({
       ...savedState,
       batches: savedState.batches ? [...savedState.batches] : []
     });
+  } else {
+    // 저장된 상태가 없으면 초기화
+    initializeTranslationState();
   }
 
-  // 4단계: 권한 확인만 (번역 상태 조회 안 함 - URL 기반 복구 방지)
+  // 3단계: 권한 확인만 (번역 상태 조회 안 함 - URL 기반 복구 방지)
   if (tab) {
     await checkPermissions(tab);
   }
 
-  // 5단계: 번역 탭이 활성화되어 있으면 UI 업데이트
+  // 4단계: 번역 탭이 활성화되어 있으면 UI 업데이트
   updateUIByPermission();
 }
 
