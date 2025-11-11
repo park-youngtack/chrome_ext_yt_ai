@@ -102,6 +102,7 @@ export async function loadSettings() {
       'model',
       'batchSize',
       'concurrency',
+      'autoTranslate',
       'debugLog'
     ]);
 
@@ -115,6 +116,7 @@ export async function loadSettings() {
     // 번역 설정
     document.getElementById('batchSize').value = result.batchSize || 50;
     document.getElementById('concurrency').value = result.concurrency || 3;
+    document.getElementById('autoTranslate').checked = result.autoTranslate !== undefined ? result.autoTranslate : true;
 
     // 디버그 설정
     document.getElementById('debugLog').checked = result.debugLog || false;
@@ -136,6 +138,7 @@ export async function handleSaveSettings() {
   const modelInput = document.getElementById('model').value.trim();
   const batchSize = parseInt(document.getElementById('batchSize').value) || 50;
   const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
+  const autoTranslate = document.getElementById('autoTranslate').checked;
   const debugLog = document.getElementById('debugLog').checked;
 
   const model = modelInput || DEFAULT_MODEL;
@@ -162,6 +165,7 @@ export async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
+      autoTranslate,
       debugLog
     });
 
@@ -169,6 +173,7 @@ export async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
+      autoTranslate,
       debugLog
     });
 
@@ -178,6 +183,7 @@ export async function handleSaveSettings() {
       model,
       batchSize,
       concurrency,
+      autoTranslate,
       debugLog
     });
 
