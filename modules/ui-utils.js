@@ -64,7 +64,7 @@ export function initExternalLinks() {
       await chrome.tabs.create({ url: GITHUB_REPO_URL, active: true });
       logInfo('sidepanel', 'GITHUB_REPO_OPENED', 'GitHub 저장소 열기', { url: GITHUB_REPO_URL });
     } catch (error) {
-      logWarn('sidepanel', 'GITHUB_REPO_OPEN_FAILED', 'GitHub 저장소 열기 실패', { message: error?.message ?? String(error) }, error);
+      logError('sidepanel', 'GITHUB_REPO_OPEN_FAILED', 'GitHub 저장소 열기 실패', { message: error?.message ?? String(error) }, error);
     }
   };
 
@@ -191,7 +191,7 @@ export async function restoreSession() {
       switchTab(lastTab);
     }
   } catch (error) {
-    console.error('Failed to restore session:', error);
+    logError('sidepanel', 'RESTORE_SESSION_FAILED', 'Session 복원 실패', {}, error);
   }
 }
 

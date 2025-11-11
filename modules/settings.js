@@ -340,7 +340,7 @@ export async function updatePageCacheStatus() {
 export async function handleClearPageCache() {
   try {
     if (!currentTabId) {
-      logWarn('sidepanel', 'PAGE_CACHE_CLEAR_NO_TAB', 'CurrentTabId가 없음');
+      logInfo('sidepanel', 'PAGE_CACHE_CLEAR_NO_TAB', 'CurrentTabId가 없음');
       showToast('현재 탭을 확인할 수 없습니다.', 'error');
       return;
     }
@@ -363,9 +363,9 @@ export async function handleClearPageCache() {
       { action: 'clearCacheForDomain' },
       (response) => {
         if (chrome.runtime.lastError) {
-          logWarn('sidepanel', 'PAGE_CACHE_CLEAR_MSG_ERROR', 'Content script와 통신 실패', {
+          logError('sidepanel', 'PAGE_CACHE_CLEAR_MSG_ERROR', 'Content script와 통신 실패', {
             error: chrome.runtime.lastError.message
-          });
+          }, chrome.runtime.lastError);
           showToast('캐시 삭제 중 오류가 발생했습니다.', 'error');
           return;
         }
@@ -378,9 +378,9 @@ export async function handleClearPageCache() {
           updatePageCacheStatus();
         } else {
           const errorMsg = response?.error || '알 수 없는 오류';
-          logWarn('sidepanel', 'PAGE_CACHE_CLEAR_FAILED', '캐시 삭제 실패', {
+          logError('sidepanel', 'PAGE_CACHE_CLEAR_FAILED', '캐시 삭제 실패', {
             error: errorMsg
-          });
+          }, new Error(errorMsg));
           showToast('캐시 삭제 중 오류가 발생했습니다: ' + errorMsg, 'error');
         }
       }

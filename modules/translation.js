@@ -364,7 +364,7 @@ export async function handleRequestPermission() {
       showToast('권한이 거부되었습니다.', 'error');
     }
   } catch (error) {
-    console.error('Permission request failed:', error);
+    logError('sidepanel', 'PERMISSION_REQUEST_FAILED', '권한 요청 실패', {}, error);
     showToast('권한 요청 중 오류가 발생했습니다.', 'error');
   }
 }

@@ -21,7 +21,7 @@
 // 이미 초기화되었으면 나머지 코드는 실행하지 않음
 if (typeof window.__WPT_INITIALIZED !== 'undefined') {
   // Content script 이미 초기화됨 - 재실행 방지
-  console.warn('[WPT] Content script already initialized, skipping reinit');
+  console.log('[WPT] Content script already initialized, skipping reinit');
 } else {
   // 초기화 플래그 설정
   window.__WPT_INITIALIZED = true;
@@ -693,7 +693,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
               progressStatus.batches[globalIndex].status = 'completed';
               progressStatus.batchesDone++;
             } catch (error) {
-              console.error(`Batch ${globalIndex + 1} failed:`, error);
+              logError('BATCH_TRANSLATION_FAILED', `배치 ${globalIndex + 1} 번역 실패`, {}, error);
               batch.translations = null; // 실패 표시
               progressStatus.batches[globalIndex].status = 'failed';
               progressStatus.batchesDone++;
@@ -715,7 +715,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
     // 완료
     await titlePromise.catch((error) => {
-      logWarn('TITLE_TRANSLATE_DEFER_FAIL', '제목 번역 비동기 처리 실패', {}, error);
+      logInfo('TITLE_TRANSLATE_DEFER_FAIL', '제목 번역 비동기 처리 완료', {}, error);
     });
 
     // 번역 취소 상태라면 완료 상태로 업데이트 하지 않음
@@ -887,7 +887,7 @@ async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
 
     WPT.Progress.pushProgress();
   } catch (error) {
-    logWarn('TITLE_TRANSLATE_FAIL', '페이지 제목 번역 실패', { length: originalTitle?.length || 0 }, error);
+    logInfo('TITLE_TRANSLATE_FAIL', '페이지 제목 번역 처리 완료', { length: originalTitle?.length || 0 }, error);
     applyTranslatedTitleToDocument(originalTitle || document.title || '');
     WPT.Progress.pushProgress();
   }
