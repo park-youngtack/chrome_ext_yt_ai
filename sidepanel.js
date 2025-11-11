@@ -162,6 +162,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (State.currentTabId === tabId && changeInfo.status === 'complete') {
     // 새로고침/네비게이션 시 이 탭의 저장 상태는 초기화하여 '완료' 잔상 방지
     State.translationStateByTab.delete(tabId);
+    // 자동 번역 플래그도 초기화 (새로고침 시 다시 자동 번역 가능하도록)
+    State.autoTranslateTriggeredByTab.delete(tabId);
     await handleTabChange(tab);
     // 지원 불가 URL에서는 캐시 상태 업데이트/주입 시도를 생략
     const type = getSupportType(tab?.url || '');
@@ -178,6 +180,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   State.translationStateByTab.delete(tabId);
   State.translateModeByTab.delete(tabId);
+  State.autoTranslateTriggeredByTab.delete(tabId);
   // 탭 포트 정리 (연결 끊김 안전 처리)
   try {
     State.removePortForTab?.(tabId, { disconnect: true });

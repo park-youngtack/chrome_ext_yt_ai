@@ -70,6 +70,13 @@ export const translateModeByTab = new Map();
 export const translationStateByTab = new Map();
 
 /**
+ * 탭별 자동 번역 실행 플래그 (중복 실행 방지)
+ * Map<tabId, boolean>
+ * @type {Map<number, boolean>}
+ */
+export const autoTranslateTriggeredByTab = new Map();
+
+/**
  * 현재 탭의 번역 진행 상태
  * @type {object}
  */

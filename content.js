@@ -1183,81 +1183,6 @@ try {
   // 네임스페이스 노출 실패는 동작에 영향 없음
 }
 
-// ===== 자동 번역 =====
-
-/**
- * 페이지 로드 완료 시 자동 번역 체크
- * - autoTranslate 설정이 ON인지 확인
- * - 캐시 데이터가 있는지 확인
- * - 두 조건이 모두 만족하면 자동으로 번역 시작
- */
-let autoTranslateTriggered = false;
-
-async function checkAutoTranslate() {
-  // 이미 자동 번역이 실행되었거나 번역 중이면 중복 실행 방지
-  if (autoTranslateTriggered || translationState === 'translating') {
-    return;
-  }
-
-  try {
-    // 1. autoTranslate 설정 확인
-    const settings = await chrome.storage.local.get(['autoTranslate', 'apiKey', 'model', 'batchSize', 'concurrency']);
-
-    // autoTranslate가 OFF이거나 API Key가 없으면 자동 번역 안 함
-    if (!settings.autoTranslate) {
-      logDebug('AUTO_TRANSLATE_SKIP', '자동 번역 설정이 OFF', { autoTranslate: settings.autoTranslate });
-      return;
-    }
-
-    if (!settings.apiKey) {
-      logDebug('AUTO_TRANSLATE_SKIP', 'API Key가 없음', { hasApiKey: false });
-      return;
-    }
-
-    // 2. 캐시 데이터 확인
-    const hasCached = WPT.Cache && WPT.Cache.hasCachedData ? await WPT.Cache.hasCachedData() : false;
-
-    if (!hasCached) {
-      logDebug('AUTO_TRANSLATE_SKIP', '캐싱된 데이터가 없음', { hasCached: false });
-      return;
-    }
-
-    // 3. 자동 번역 실행
-    autoTranslateTriggered = true;
-    logInfo('AUTO_TRANSLATE_START', '자동 번역 시작', {
-      hasCached: true,
-      autoTranslate: settings.autoTranslate
-    });
-
-    // 번역 실행 (캐시 모드)
-    await handleTranslateFullPage(
-      settings.apiKey,
-      settings.model || 'openai/gpt-4o-mini',
-      settings.batchSize || 50,
-      settings.concurrency || 3,
-      true // useCache: true (캐시 모드)
-    );
-
-  } catch (error) {
-    logError('AUTO_TRANSLATE_ERROR', '자동 번역 실패', {}, error);
-  }
-}
-
-/**
- * 페이지 로드 완료 대기 후 자동 번역 체크
- */
-function initAutoTranslate() {
-  if (document.readyState === 'loading') {
-    // 페이지가 아직 로딩 중이면 DOMContentLoaded 이벤트 대기
-    document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(checkAutoTranslate, 500); // 0.5초 대기 후 체크
-    });
-  } else {
-    // 이미 로드 완료되었으면 즉시 체크
-    setTimeout(checkAutoTranslate, 500); // 0.5초 대기 후 체크
-  }
-}
-
 // ===== 초기화 =====
 
 logDebug('CONTENT_LOADED', 'Content script 로드 완료');
@@ -1266,8 +1191,5 @@ logDebug('CONTENT_LOADED', 'Content script 로드 완료');
 chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {
   // Background가 아직 준비되지 않았을 수 있음 (무시)
 });
-
-// 자동 번역 초기화
-initAutoTranslate();
 
 } // 중복 주입 방지 if 블록 종료
