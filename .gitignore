@@ -36,3 +36,5 @@ env/
 # Backup files
 *.bak
 *.backup
+*.backup.js
+*-backup.js
