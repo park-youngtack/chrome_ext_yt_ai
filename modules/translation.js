@@ -10,6 +10,7 @@
  */
 
 import { logInfo, logWarn, logError, logDebug } from '../logger.js';
+import { ACTIONS, PORT_MESSAGES, PORT_NAMES } from './constants.js';
 import {
   currentTabId,
   translationState,
@@ -271,7 +272,7 @@ export async function handleRequestPermission() {
 async function ensureContentScriptReady(tabId, maxRetries = 5) {
   // 1단계: 이미 준비되어 있는지 확인
   try {
-    await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
+    await chrome.tabs.sendMessage(tabId, { action: ACTIONS.GET_TRANSLATION_STATE });
     logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 이미 준비됨', { tabId });
     return true;
   } catch (error) {
@@ -304,7 +305,7 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
         await new Promise(resolve => setTimeout(resolve, waitTime));
 
         try {
-          await chrome.tabs.sendMessage(tabId, { action: 'getTranslationState' });
+          await chrome.tabs.sendMessage(tabId, { action: ACTIONS.GET_TRANSLATION_STATE });
           logInfo('sidepanel', 'CONTENT_READY_SUCCESS', `준비 완료 (${attempt}번째 시도)`, {
             tabId,
             attempt
@@ -343,12 +344,12 @@ function connectToContentScript(tabId) {
     }
 
     // 새 port 연결 (탭별 관리)
-    const newPort = chrome.tabs.connect(tabId, { name: 'panel' });
+    const newPort = chrome.tabs.connect(tabId, { name: PORT_NAMES.PANEL });
     setPortForTab(tabId, newPort);
     logInfo('sidepanel', 'PORT_CONNECT', 'Content script와 포트 연결', { tabId });
 
     newPort.onMessage.addListener((msg) => {
-      if (msg.type === 'progress') {
+      if (msg.type === PORT_MESSAGES.PROGRESS) {
         // PROGRESS_UPDATE 로깅
         logDebug('sidepanel', 'PROGRESS_UPDATE', '번역 진행 상태 수신', {
           tabId,
@@ -504,13 +505,13 @@ export async function handleTranslateAll(useCache = true) {
 
     // DISPATCH_TO_CONTENT (전)
     logDebug('sidepanel', 'DISPATCH_TO_CONTENT', 'content script에 메시지 전송', {
-      action: 'translateFullPage',
+      action: ACTIONS.TRANSLATE_FULL_PAGE,
       tabId: currentTabId
     });
 
     // 번역 시작
     await chrome.tabs.sendMessage(currentTabId, {
-      action: 'translateFullPage',
+      action: ACTIONS.TRANSLATE_FULL_PAGE,
       apiKey: settings.apiKey,
       model: settings.model || DEFAULT_MODEL,
       batchSize: settings.batchSize || 50,
@@ -520,7 +521,7 @@ export async function handleTranslateAll(useCache = true) {
 
     // DISPATCH_TO_CONTENT (후 성공)
     logDebug('sidepanel', 'DISPATCH_TO_CONTENT', '메시지 전송 성공', {
-      action: 'translateFullPage',
+      action: ACTIONS.TRANSLATE_FULL_PAGE,
       tabId: currentTabId,
       ok: true
     });
@@ -528,7 +529,7 @@ export async function handleTranslateAll(useCache = true) {
   } catch (error) {
     // DISPATCH_TO_CONTENT (후 실패)
     logError('sidepanel', 'DISPATCH_TO_CONTENT', '메시지 전송 실패', {
-      action: 'translateFullPage',
+      action: ACTIONS.TRANSLATE_FULL_PAGE,
       tabId: currentTabId,
       ok: false
     }, error);
@@ -599,7 +600,7 @@ export async function handleRestore() {
     const _port = getPortForTab(currentTabId);
     if (translationState.state === 'translating' && _port) {
       _port.postMessage({
-        type: 'CANCEL_TRANSLATION',
+        type: PORT_MESSAGES.CANCEL_TRANSLATION,
         reason: 'user_restore'
       });
       logInfo('sidepanel', 'CANCEL_ON_RESTORE', '원본 보기로 인한 번역 취소', {
@@ -609,7 +610,7 @@ export async function handleRestore() {
     }
 
     await chrome.tabs.sendMessage(currentTabId, {
-      action: 'restoreOriginal'
+      action: ACTIONS.RESTORE_ORIGINAL
     });
     logInfo('sidepanel', 'RESTORE_SUCCESS', '원본 복원 완료', { tabId: currentTabId });
 
@@ -639,7 +640,7 @@ export async function handleResetTranslate() {
     const _p = getPortForTab(currentTabId);
     if (translationState.state === 'translating' && _p) {
       _p.postMessage({
-        type: 'CANCEL_TRANSLATION',
+        type: PORT_MESSAGES.CANCEL_TRANSLATION,
         reason: 'user_reset'
       });
       logInfo('sidepanel', 'CANCEL_ON_RESET', '초기화로 인한 번역 취소', {
@@ -650,7 +651,7 @@ export async function handleResetTranslate() {
 
     // 원본 복원 (번역된 페이지도 초기화)
     await chrome.tabs.sendMessage(currentTabId, {
-      action: 'restoreOriginal'
+      action: ACTIONS.RESTORE_ORIGINAL
     });
     logInfo('sidepanel', 'RESET_WITH_RESTORE', '초기화 + 원본 복원 완료', { tabId: currentTabId });
   } catch (error) {

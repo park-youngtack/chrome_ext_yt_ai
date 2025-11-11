@@ -2,9 +2,15 @@
 
 OpenRouter AI를 활용해 영어 웹페이지를 자연스러운 한글로 바꿔주는 크롬 확장 프로그램입니다.
 
-> **개발자를 위한 문서**: [CLAUDE.md](./CLAUDE.md) - 아키텍처, 코드 구조, 개발 가이드
+> 개발자를 위한 문서: [CLAUDE.md](./CLAUDE.md)
 >
-> **기능별 상세 문서**: [docs/](./docs/) - 번역, 히스토리, 검색, 설정, 아키텍처, 코드 스타일, 개발 가이드
+> 추가 문서 모음: [docs/](./docs/)
+> - 아키텍처: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+> - 메시징 스펙: [docs/MESSAGING.md](./docs/MESSAGING.md)
+> - 상태 머신: [docs/STATE_MACHINE.md](./docs/STATE_MACHINE.md)
+> - 확장 가이드: [docs/EXTENSIBILITY.md](./docs/EXTENSIBILITY.md)
+> - 기여 가이드: [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md)
+> - 릴리스 가이드: [docs/RELEASE.md](./docs/RELEASE.md)
 
 ## 어떤 기능이 있나요?
 - **AI 번역** 버튼 한 번으로 현재 페이지 전체를 자연스러운 한글로 바꿔줘요.
