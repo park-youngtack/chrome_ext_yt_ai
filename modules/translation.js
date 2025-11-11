@@ -16,6 +16,7 @@ import {
   translationState,
   translationStateByTab,
   translateModeByTab,
+  autoTranslateTriggeredByTab,
   permissionGranted,
   setCurrentTabId,
   setPermissionGranted,
@@ -134,6 +135,111 @@ export async function handleTabChange(tab) {
   // 5단계: 새 탭이 번역 중 상태라면 포트 보장 (업데이트 수신)
   if (translationState.state === 'translating' && !getPortForTab(currentTabId)) {
     connectToContentScript(currentTabId);
+  }
+
+  // 6단계: 자동 번역 체크 (조건이 맞으면 번역 버튼 트리거)
+  // - 권한이 있고, 번역 탭이 활성화되어 있고, 번역 중이 아닐 때
+  // - 이미 자동 번역이 실행되지 않았을 때만
+  if (permissionGranted && !autoTranslateTriggeredByTab.get(currentTabId) && translationState.state !== 'translating') {
+    // 비동기로 자동 번역 체크 (UI 블로킹 방지)
+    setTimeout(() => checkAutoTranslate(), 300);
+  }
+}
+
+/**
+ * 자동 번역 조건 체크 및 실행
+ * 조건:
+ * - autoTranslate 설정이 ON
+ * - API Key가 설정되어 있음
+ * - 캐싱된 데이터가 존재
+ */
+async function checkAutoTranslate() {
+  if (!currentTabId || !permissionGranted) {
+    return;
+  }
+
+  // 이미 자동 번역이 실행되었으면 스킵
+  if (autoTranslateTriggeredByTab.get(currentTabId)) {
+    return;
+  }
+
+  try {
+    // 1. 설정 확인
+    const settings = await chrome.storage.local.get(['autoTranslate', 'apiKey']);
+
+    if (!settings.autoTranslate) {
+      logDebug('sidepanel', 'AUTO_TRANSLATE_SKIP', '자동 번역 설정이 OFF', { autoTranslate: false });
+      return;
+    }
+
+    if (!settings.apiKey) {
+      logDebug('sidepanel', 'AUTO_TRANSLATE_SKIP', 'API Key가 없음', { hasApiKey: false });
+      return;
+    }
+
+    // 2. 캐시 데이터 확인
+    const hasCached = await checkHasCachedData();
+
+    if (!hasCached) {
+      logDebug('sidepanel', 'AUTO_TRANSLATE_SKIP', '캐싱된 데이터가 없음', { hasCached: false });
+      return;
+    }
+
+    // 3. 자동 번역 실행 플래그 설정 (중복 실행 방지)
+    autoTranslateTriggeredByTab.set(currentTabId, true);
+
+    logInfo('sidepanel', 'AUTO_TRANSLATE_TRIGGER', '자동 번역 트리거', {
+      tabId: currentTabId,
+      hasCached: true,
+      autoTranslate: true
+    });
+
+    // 4. 번역 버튼 클릭 시뮬레이션 (캐시 모드)
+    await handleTranslateAll(true);
+
+  } catch (error) {
+    logError('sidepanel', 'AUTO_TRANSLATE_ERROR', '자동 번역 체크 실패', { tabId: currentTabId }, error);
+  }
+}
+
+/**
+ * 캐시 데이터 존재 여부 확인
+ * @returns {Promise<boolean>}
+ */
+async function checkHasCachedData() {
+  if (!currentTabId) {
+    return false;
+  }
+
+  try {
+    // Content script에 캐시 상태 조회
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(
+        currentTabId,
+        { action: 'getCacheStatus' },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logDebug('sidepanel', 'AUTO_TRANSLATE_CACHE_CHECK_ERROR', 'Content script와 통신 실패', {
+              error: chrome.runtime.lastError.message
+            });
+            resolve(false);
+            return;
+          }
+
+          if (response && response.success && response.count > 0) {
+            logDebug('sidepanel', 'AUTO_TRANSLATE_CACHE_CHECK_SUCCESS', '캐시 데이터 확인', {
+              count: response.count
+            });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        }
+      );
+    });
+  } catch (error) {
+    logError('sidepanel', 'AUTO_TRANSLATE_CACHE_CHECK_ERROR', '캐시 확인 실패', { tabId: currentTabId }, error);
+    return false;
   }
 }
 
