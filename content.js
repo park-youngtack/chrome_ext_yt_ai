@@ -365,12 +365,30 @@ let inflight = 0;
  */
 let port = null;
 
+// ===== 네임스페이스 및 상수 =====
+// Content script는 ES 모듈을 사용할 수 없으므로 전역 네임스페이스에 내부 모듈을 노출한다.
+window.WPT = window.WPT || {};
+const WPT = window.WPT;
+WPT.Constants = WPT.Constants || {
+  PORT_NAMES: { PANEL: 'panel' },
+  PORT_MESSAGES: { PROGRESS: 'progress', CANCEL_TRANSLATION: 'CANCEL_TRANSLATION' },
+  ACTIONS: {
+    PING: 'PING',
+    TRANSLATE_FULL_PAGE: 'translateFullPage',
+    RESTORE_ORIGINAL: 'restoreOriginal',
+    GET_TRANSLATION_STATE: 'getTranslationState',
+    GET_TRANSLATED_TITLE: 'getTranslatedTitle',
+    GET_CACHE_STATUS: 'getCacheStatus',
+    CLEAR_CACHE_FOR_DOMAIN: 'clearCacheForDomain'
+  }
+};
+
 /**
  * Port 연결 리스너
  * sidepanel이 열릴 때마다 연결되며, 현재 상태를 즉시 푸시
  */
 chrome.runtime.onConnect.addListener((p) => {
-  if (p.name === 'panel') {
+  if (p.name === WPT.Constants.PORT_NAMES.PANEL) {
     port = p;
     log('Side panel connected');
 
@@ -379,7 +397,7 @@ chrome.runtime.onConnect.addListener((p) => {
 
     // Port로부터 메시지 수신 (원본 복원 시 번역 작업 중단)
     port.onMessage.addListener((msg) => {
-      if (msg.type === 'CANCEL_TRANSLATION') {
+      if (msg.type === WPT.Constants.PORT_MESSAGES.CANCEL_TRANSLATION) {
         logInfo('CANCEL_TRANSLATION', '번역 취소 요청 수신', {
           reason: msg.reason
         });
@@ -474,7 +492,7 @@ function pushProgress() {
 
   try {
     port.postMessage({
-      type: 'progress',
+      type: WPT.Constants.PORT_MESSAGES.PROGRESS,
       data: {
         ...progressStatus,
         activeMs
@@ -509,22 +527,22 @@ function pushProgress() {
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // PING: Content script 준비 상태 확인
-  if (request.type === 'PING') {
+  if (request.type === WPT.Constants.ACTIONS.PING) {
     sendResponse({ ok: true });
     return true;
   }
 
-  if (request.action === 'translateFullPage') {
+  if (request.action === WPT.Constants.ACTIONS.TRANSLATE_FULL_PAGE) {
     handleTranslateFullPage(request.apiKey, request.model, request.batchSize, request.concurrency, request.useCache);
     sendResponse({ success: true });
-  } else if (request.action === 'restoreOriginal') {
+  } else if (request.action === WPT.Constants.ACTIONS.RESTORE_ORIGINAL) {
     handleRestoreOriginal();
     sendResponse({ success: true });
-  } else if (request.action === 'getTranslationState') {
+  } else if (request.action === WPT.Constants.ACTIONS.GET_TRANSLATION_STATE) {
     sendResponse({ state: progressStatus });
-  } else if (request.action === 'getTranslatedTitle') {
+  } else if (request.action === WPT.Constants.ACTIONS.GET_TRANSLATED_TITLE) {
     sendResponse({ title: document.title });
-  } else if (request.action === 'getCacheStatus') {
+  } else if (request.action === WPT.Constants.ACTIONS.GET_CACHE_STATUS) {
     // Sidepanel에서 현재 도메인의 캐시 상태 요청
     getCacheStatus().then(result => {
       sendResponse(result);
@@ -532,7 +550,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, count: 0, size: 0, error: error.message });
     });
     return true; // 비동기 응답
-  } else if (request.action === 'clearCacheForDomain') {
+  } else if (request.action === WPT.Constants.ACTIONS.CLEAR_CACHE_FOR_DOMAIN) {
     // Sidepanel에서 현재 도메인의 캐시 삭제 요청
     handleClearCacheForDomain().then(result => {
       sendResponse(result);
@@ -1724,6 +1742,36 @@ async function handleClearCacheForDomain() {
     logError('CACHE_CLEAR_ERROR', '캐시 삭제 중 오류 발생', {}, error);
     return { success: false, error: error.message };
   }
+}
+
+// ===== 내부 모듈 노출 (네임스페이스) =====
+try {
+  WPT.Api = Object.assign({}, WPT.Api || {}, {
+    executeWithRetry,
+    requestOpenRouter,
+    wait
+  });
+
+  WPT.Cache = Object.assign({}, WPT.Cache || {}, {
+    openDB,
+    getTTL,
+    getCachedTranslation,
+    setCachedTranslation,
+    clearAllCache,
+    clearPageCache,
+    getCacheStatus,
+    handleClearCacheForDomain
+  });
+
+  WPT.Progress = Object.assign({}, WPT.Progress || {}, {
+    pushProgress
+  });
+
+  WPT.Industry = Object.assign({}, WPT.Industry || {}, {
+    ensureIndustryContext
+  });
+} catch (_) {
+  // 네임스페이스 노출 실패는 동작에 영향 없음
 }
 
 // ===== 초기화 =====
