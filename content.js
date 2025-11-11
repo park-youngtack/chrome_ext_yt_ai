@@ -439,7 +439,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
           return null;
         }
 
-        return getCachedTranslation(text).then(cached => ({
+        return (WPT.Cache && WPT.Cache.getCachedTranslation ? WPT.Cache.getCachedTranslation(text) : Promise.resolve(null)).then(cached => ({
           index: i,
           element,
           text,
@@ -802,8 +802,8 @@ async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
           progressStatus.translatedCount++;
 
           // 캐시에 저장
-          if (useCache) {
-            setCachedTranslation(originalText, translation, model);
+          if (useCache && WPT.Cache && WPT.Cache.setCachedTranslation) {
+            WPT.Cache.setCachedTranslation(originalText, translation, model);
           }
         } else {
           skipped++;
@@ -1168,132 +1168,7 @@ function extractTexts(textNodes) {
  * IndexedDB 열기
  * @returns {Promise<IDBDatabase>}
  */
-async function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'hash' });
-      }
-    };
-  });
-}
-
-/**
- * SHA1 해시 생성 (캐시 키로 사용)
- * @param {string} text - 원본 텍스트
- * @returns {Promise<string>} SHA1 해시 (hex)
- */
-async function sha1Hash(text) {
-  const normalized = normalizeText(text);
-  const msgBuffer = new TextEncoder().encode(normalized);
-  const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * 텍스트 정규화 (공백 및 줄바꿈 처리)
- * @param {string} text - 원본 텍스트
- * @returns {string} 정규화된 텍스트
- */
-function normalizeText(text) {
-  return text
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n');
-}
-
-/**
- * TTL 가져오기 (storage에서 설정 로드)
- * @returns {Promise<number>} TTL (밀리초)
- */
-async function getTTL() {
-  try {
-    const result = await chrome.storage.local.get(['cacheTTL']);
-    return (result.cacheTTL || DEFAULT_TTL_MINUTES) * 60 * 1000;
-  } catch (error) {
-    console.error('Failed to get TTL:', error);
-    return DEFAULT_TTL_MINUTES * 60 * 1000;
-  }
-}
-
-/**
- * 캐시 저장
- * @param {string} text - 원본 텍스트
- * @param {string} translation - 번역 텍스트
- * @param {string} model - AI 모델
- */
-async function setCachedTranslation(text, translation, model) {
-  try {
-    const db = await openDB();
-    const hash = await sha1Hash(text);
-    const ts = Date.now();
-
-    const tx = db.transaction([STORE_NAME], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-
-    await store.put({
-      hash,
-      translation,
-      ts,
-      model
-    });
-
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-
-    db.close();
-  } catch (error) {
-    console.error('Failed to set cache:', error);
-  }
-}
-
-/**
- * 캐시 가져오기 (TTL 검증 포함)
- * @param {string} text - 원본 텍스트
- * @returns {Promise<string|null>} 번역 텍스트 (캐시 없거나 만료 시 null)
- */
-async function getCachedTranslation(text) {
-  try {
-    const db = await openDB();
-    const hash = await sha1Hash(text);
-    const ttl = await getTTL();
-
-    const tx = db.transaction([STORE_NAME], 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-
-    const result = await new Promise((resolve, reject) => {
-      const request = store.get(hash);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-
-    db.close();
-
-    if (!result) {
-      return null;
-    }
-
-    const now = Date.now();
-    if (now - result.ts > ttl) {
-      return null; // 만료
-    }
-
-    return result.translation;
-  } catch (error) {
-    console.error('Failed to get cache:', error);
-    return null;
-  }
-}
+// 캐시 상세 유틸은 WPT.Cache로 이동
 
 /**
  * 전역 캐시 비우기
