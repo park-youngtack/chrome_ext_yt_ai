@@ -256,7 +256,7 @@ export async function ensurePageContentScript(tabId) {
         try {
         await chrome.scripting.executeScript({
           target: { tabId },
-          files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/progress.js']
+          files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/dom.js', 'content/title.js', 'content/progress.js']
         });
           logDebug('sidepanel', 'CONTENT_PATCH_SUCCESS', '보조 스크립트 주입 완료', { tabId });
         } catch (e) {
@@ -273,7 +273,7 @@ export async function ensurePageContentScript(tabId) {
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/progress.js', 'content.js']
+        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/dom.js', 'content/title.js', 'content/progress.js', 'content.js']
       });
       logDebug('sidepanel', 'CONTENT_INJECT_SUCCESS', 'Content script 주입 완료', { tabId });
     } catch (error) {

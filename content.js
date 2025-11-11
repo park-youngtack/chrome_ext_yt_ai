@@ -371,7 +371,10 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     WPT.Progress.reset();
   }
 
-  resetIndustryContext();
+  // 산업군 컨텍스트 초기화(모듈 분리 이후)
+  if (WPT.Industry && WPT.Industry.reset) {
+    WPT.Industry.reset();
+  }
 
   progressStatus = {
     state: 'translating',
@@ -393,8 +396,21 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
   try {
     // 텍스트 노드 수집
-    const textNodes = getAllTextNodes();
-    const { texts, elements } = extractTexts(textNodes);
+    if (WPT.Dom && WPT.Dom.setEnv) {
+      WPT.Dom.setEnv({
+        getProgressStatus: () => progressStatus,
+        originalTextsRef: originalTexts,
+        translatedElementsRef: translatedElements,
+        capturePreview: capturePreviewFromTranslation,
+        setCachedTranslation: WPT.Cache && WPT.Cache.setCachedTranslation ? WPT.Cache.setCachedTranslation : null,
+        progressPush: WPT.Progress && WPT.Progress.pushProgress ? WPT.Progress.pushProgress : null,
+        logDebug: (evt, msg, data) => logDebug(evt, msg, data)
+      });
+    }
+    const textNodes = (WPT.Dom && WPT.Dom.getAllTextNodes) ? WPT.Dom.getAllTextNodes() : [];
+    const extracted = (WPT.Dom && WPT.Dom.extractTexts) ? WPT.Dom.extractTexts(textNodes) : { texts: [], elements: [] };
+    const texts = extracted.texts;
+    const elements = extracted.elements;
 
     logDebug('TEXT_NODES_COLLECTED', '텍스트 노드 수집 완료', {
       textNodes: textNodes.length,
@@ -406,7 +422,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
   await (WPT.Industry && WPT.Industry.ensureIndustryContext ? WPT.Industry.ensureIndustryContext(texts, apiKey, model) : Promise.resolve());
 
-    titlePromise = translateDocumentTitle(apiKey, model, useCache, progressStatus.originalTitle);
+    titlePromise = (WPT.Title && WPT.Title.translateDocumentTitle ? WPT.Title.translateDocumentTitle(apiKey, model, useCache, progressStatus.originalTitle, () => progressStatus) : Promise.resolve());
 
     // 캐시 확인 및 분류
     const cachedItems = [];
@@ -632,7 +648,9 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
               continue;
             }
 
-            await applyTranslationsToDom(targetBatch, useCache, cacheOffset + nextDomIndex, model);
+            if (WPT.Dom && WPT.Dom.applyTranslationsToDom) {
+              await WPT.Dom.applyTranslationsToDom(targetBatch, { useCache, batchIdx: cacheOffset + nextDomIndex, model });
+            }
             targetBatch.applied = true;
             nextDomIndex++;
           }

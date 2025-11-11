@@ -245,7 +245,7 @@ export async function handleRequestPermission() {
       // Content script 주입
       await chrome.scripting.executeScript({
         target: { tabId: currentTabId },
-        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/progress.js', 'content.js']
+        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/dom.js', 'content/title.js', 'content/progress.js', 'content.js']
       });
 
       // 잠시 대기
@@ -297,7 +297,7 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
 
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/progress.js', 'content.js']
+        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/dom.js', 'content/title.js', 'content/progress.js', 'content.js']
       });
 
       logInfo('sidepanel', 'INJECT_CONTENT', 'Content script 재주입 완료', { tabId });
