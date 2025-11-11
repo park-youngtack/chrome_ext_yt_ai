@@ -72,9 +72,21 @@ export function initializeTranslationState() {
  * @param {object} tab - 탭 객체
  */
 export async function handleTabChange(tab) {
-  // 번역 중이면 탭 전환 무시 (Port 유지하며 계속 진행)
-  if (translationState.state === 'translating') {
+  // 번역 중이고 탭 ID가 같으면 무시 (같은 탭에서 계속 진행)
+  if (translationState.state === 'translating' && tab && tab.id === currentTabId) {
     return;
+  }
+
+  // 번역 중이고 다른 탭으로 이동했으면 번역 중단
+  if (translationState.state === 'translating' && port) {
+    port.postMessage({
+      type: 'CANCEL_TRANSLATION',
+      reason: 'tab_switch'
+    });
+    logInfo('sidepanel', 'CANCEL_ON_TAB_SWITCH', '탭 전환으로 인한 번역 중단', {
+      previousTabId: currentTabId,
+      newTabId: tab?.id
+    });
   }
 
   // 0단계: 현재 탭 ID 업데이트
@@ -82,7 +94,7 @@ export async function handleTabChange(tab) {
     setCurrentTabId(tab.id);
   }
 
-  // 1단계: Port 정리 (번역 중이 아니므로 안전하게 정리)
+  // 1단계: Port 정리
   if (port) {
     port.disconnect();
     setPort(null);
