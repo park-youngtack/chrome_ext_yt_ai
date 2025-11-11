@@ -11,6 +11,7 @@
  */
 
 import { logInfo, logWarn, logDebug, logError, getLogs } from '../logger.js';
+import { ACTIONS } from './constants.js';
 import {
   currentTabId,
   translationState,
@@ -248,7 +249,7 @@ export async function ensurePageContentScript(tabId) {
 
     // PING으로 content script 존재 확인
     try {
-      const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      const response = await chrome.tabs.sendMessage(tabId, { type: ACTIONS.PING });
       if (response && response.ok) {
         logDebug('sidepanel', 'CONTENT_PING_SUCCESS', 'Content script 이미 준비됨', { tabId });
         // 최신 환경 보장: bootstrap/progress를 항상 주입(멱등)

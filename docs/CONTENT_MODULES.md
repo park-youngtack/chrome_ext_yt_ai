@@ -17,16 +17,15 @@
 4) content/industry.js → WPT.Industry (분야 분석)
 5) content/main.js → 메인(현재 content.js 역할)
 
-주입 순서 예시(등록/수동 주입 동일)
+주입 순서(등록/수동 주입 동일)
 1. 'content/bootstrap.js'
-2. 'content/api.js' (선택)
-3. 'content/progress.js' (선택)
-4. 'content/cache.js' (선택)
-5. 'content/industry.js' (선택)
-6. 'content.js' 또는 'content/main.js'
+2. 'content/api.js'
+3. 'content/cache.js'
+4. 'content/industry.js'
+5. 'content/progress.js'
+6. 'content.js' (메인)
 
 가이드라인
 - content 스크립트는 ES 모듈 import를 사용하지 않음 → window.WPT로 연결
 - background.js와 sidepanel의 executeScript에서도 동일 순서로 파일 배열을 전달
 - 파일 개수가 늘어나면 background의 registerContentScripts를 업데이트
-
