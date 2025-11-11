@@ -365,6 +365,20 @@ let port = null;
 // 부트스트랩에서 WPT 네임스페이스를 노출한다. 부트스트랩 미주입 시에도 기존 동작 유지되도록 안전하게 접근한다.
 window.WPT = window.WPT || {};
 const WPT = window.WPT;
+// 진행 모듈이 아직 없다면 안전한 no-op 셈
+if (!WPT.Progress) {
+  WPT.Progress = {
+    setPort: function() {},
+    clearPort: function() {},
+    setStatusGetter: function() {},
+    startTimer: function() {},
+    stopTimer: function() {},
+    onBatchStart: function() {},
+    onBatchEnd: function() {},
+    pushProgress: function() {},
+    getActiveMs: function() { return 0; }
+  };
+}
 
 /**
  * Port 연결 리스너

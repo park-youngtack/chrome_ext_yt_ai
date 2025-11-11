@@ -274,6 +274,15 @@ async function ensureContentScriptReady(tabId, maxRetries = 5) {
   try {
     await chrome.tabs.sendMessage(tabId, { action: ACTIONS.GET_TRANSLATION_STATE });
     logDebug('sidepanel', 'CONTENT_READY_CHECK', 'Content script 이미 준비됨', { tabId });
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content/bootstrap.js', 'content/progress.js']
+      });
+      logDebug('sidepanel', 'CONTENT_READY_PATCH', '부트스트랩/프로그레스 주입 완료', { tabId });
+    } catch (e) {
+      logDebug('sidepanel', 'CONTENT_READY_PATCH_FAIL', '보조 주입 실패(무시 가능)', { tabId, reason: e?.message || String(e) });
+    }
     return true;
   } catch (error) {
     if (error.message && error.message.includes('Receiving end does not exist')) {

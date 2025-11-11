@@ -240,6 +240,16 @@ export async function ensurePageContentScript(tabId) {
     const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
     if (response && response.ok) {
       logDebug('sidepanel', 'CONTENT_PING_SUCCESS', 'Content script 이미 준비됨', { tabId });
+      // 최신 환경 보장: bootstrap/progress를 항상 주입(멱등)
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content/bootstrap.js', 'content/progress.js']
+        });
+        logDebug('sidepanel', 'CONTENT_PATCH_SUCCESS', '보조 스크립트 주입 완료', { tabId });
+      } catch (e) {
+        logDebug('sidepanel', 'CONTENT_PATCH_FAILED', '보조 스크립트 주입 실패(무시 가능)', { tabId, reason: e?.message || String(e) });
+      }
       return;
     }
   } catch (error) {
