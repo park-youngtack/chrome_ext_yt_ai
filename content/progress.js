@@ -72,11 +72,15 @@
 
     WPT.Progress = {
       setPort, clearPort, setStatusGetter,
-      startTimer, stopTimer, onBatchStart, onBatchEnd,
+      startTimer, stopTimer, reset, onBatchStart, onBatchEnd,
       pushProgress, getActiveMs
     };
   } catch (_) {
     // no-op
   }
 })();
-
+    function reset() {
+      try { stopTimer(); } catch (_) {}
+      activeMs = 0;
+      inflight = 0;
+    }

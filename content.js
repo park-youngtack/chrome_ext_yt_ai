@@ -517,8 +517,9 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
   // 상태 초기화
   translationState = 'translating';
-  activeMs = 0;
-  inflight = 0;
+  if (WPT.Progress && WPT.Progress.reset) {
+    WPT.Progress.reset();
+  }
 
   resetIndustryContext();
 
@@ -536,7 +537,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     previewText: ''
   };
 
-  pushProgress();
+  WPT.Progress.pushProgress();
 
   let titlePromise = Promise.resolve();
 
@@ -551,7 +552,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     });
 
     progressStatus.totalTexts = texts.length;
-    pushProgress();
+    WPT.Progress.pushProgress();
 
     await ensureIndustryContext(texts, apiKey, model);
 
@@ -608,7 +609,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     }
 
     progressStatus.cachedCount = cachedItems.length;
-    pushProgress();
+    WPT.Progress.pushProgress();
 
     // CACHE_STATS 로깅
     logInfo('CACHE_STATS', '캐시 조회 완료', {
@@ -640,7 +641,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         }
 
         progressStatus.cachedCount = 0;
-        pushProgress();
+        WPT.Progress.pushProgress();
       }
     }
 
@@ -677,7 +678,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         }
 
         progressStatus.batches[i].status = 'processing';
-        pushProgress();
+        WPT.Progress.pushProgress();
 
         await new Promise(resolve => {
           requestAnimationFrame(() => {
@@ -731,7 +732,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         status: 'pending'
       }));
       progressStatus.batches.push(...newBatchInfo);
-      pushProgress();
+      WPT.Progress.pushProgress();
 
       // BATCH_PLAN 로깅
       logInfo('BATCH_PLAN', '배치 계획 생성', {
@@ -831,7 +832,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
             }
 
             WPT.Progress.onBatchEnd();
-            pushProgress();
+            WPT.Progress.pushProgress();
             await flushReadyBatches();
           }
         };
@@ -853,7 +854,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     if (translationState.state !== 'cancelled') {
       translationState = 'completed';
       progressStatus.state = 'completed';
-      pushProgress();
+      WPT.Progress.pushProgress();
     }
 
     // 완료 요약 로깅
@@ -873,7 +874,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
     translationState = 'inactive';
     progressStatus.state = 'error';
-    pushProgress();
+    WPT.Progress.pushProgress();
   }
 }
 
@@ -949,7 +950,7 @@ async function applyTranslationsToDom(batch, useCache, batchIdx, model) {
         mode: useCache ? 'fast' : 'fresh'
       });
 
-      pushProgress();
+      WPT.Progress.pushProgress();
       resolve();
     });
   });
@@ -999,7 +1000,7 @@ async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
       const cached = await getCachedTranslation(originalTitle);
       if (cached && cached.trim().length > 0) {
         applyTranslatedTitleToDocument(cached.trim());
-        pushProgress();
+        WPT.Progress.pushProgress();
         return;
       }
     }
@@ -1014,11 +1015,11 @@ async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
       await setCachedTranslation(originalTitle, finalTitle, model);
     }
 
-    pushProgress();
+    WPT.Progress.pushProgress();
   } catch (error) {
     logWarn('TITLE_TRANSLATE_FAIL', '페이지 제목 번역 실패', { length: originalTitle?.length || 0 }, error);
     applyTranslatedTitleToDocument(originalTitle || document.title || '');
-    pushProgress();
+    WPT.Progress.pushProgress();
   }
 }
 
@@ -1342,7 +1343,7 @@ function handleRestoreOriginal() {
   progressStatus.previewText = '';
   progressStatus.translatedTitle = progressStatus.originalTitle;
 
-  pushProgress();
+  WPT.Progress.pushProgress();
 }
 
 // ===== DOM 텍스트 노드 수집 =====
