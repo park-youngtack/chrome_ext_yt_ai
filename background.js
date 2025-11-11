@@ -91,7 +91,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   try {
     await chrome.scripting.registerContentScripts([{
       id: 'content-script',
-      js: ['content.js'],
+      js: ['content.bootstrap.js', 'content.js'],
       matches: ['https://*/*', 'http://*/*'],
       runAt: 'document_start',
       persistAcrossSessions: true, // 브라우저 재시작 후에도 유지
@@ -143,7 +143,7 @@ async function ensureContentScript(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ['content.js'],
+      files: ['content.bootstrap.js', 'content.js'],
     });
     logInfo('CONTENT_INJECT_DONE', 'Content script 수동 주입 완료', { tabId });
   } catch (error) {

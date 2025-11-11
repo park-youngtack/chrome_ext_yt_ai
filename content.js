@@ -365,23 +365,9 @@ let inflight = 0;
  */
 let port = null;
 
-// ===== 네임스페이스 및 상수 =====
-// Content script는 ES 모듈을 사용할 수 없으므로 전역 네임스페이스에 내부 모듈을 노출한다.
+// 부트스트랩에서 WPT 네임스페이스를 노출한다. 부트스트랩 미주입 시에도 기존 동작 유지되도록 안전하게 접근한다.
 window.WPT = window.WPT || {};
 const WPT = window.WPT;
-WPT.Constants = WPT.Constants || {
-  PORT_NAMES: { PANEL: 'panel' },
-  PORT_MESSAGES: { PROGRESS: 'progress', CANCEL_TRANSLATION: 'CANCEL_TRANSLATION' },
-  ACTIONS: {
-    PING: 'PING',
-    TRANSLATE_FULL_PAGE: 'translateFullPage',
-    RESTORE_ORIGINAL: 'restoreOriginal',
-    GET_TRANSLATION_STATE: 'getTranslationState',
-    GET_TRANSLATED_TITLE: 'getTranslatedTitle',
-    GET_CACHE_STATUS: 'getCacheStatus',
-    CLEAR_CACHE_FOR_DOMAIN: 'clearCacheForDomain'
-  }
-};
 
 /**
  * Port 연결 리스너
