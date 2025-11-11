@@ -251,7 +251,7 @@ export async function ensurePageContentScript(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ['content.bootstrap.js', 'content.js']
+      files: ['content/bootstrap.js', 'content.js']
     });
     logDebug('sidepanel', 'CONTENT_INJECT_SUCCESS', 'Content script 주입 완료', { tabId });
   } catch (error) {
