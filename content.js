@@ -481,7 +481,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ title: document.title });
   } else if (request.action === CONST.ACTIONS.GET_CACHE_STATUS) {
     // Sidepanel에서 현재 도메인의 캐시 상태 요청
-    getCacheStatus().then(result => {
+    (WPT.Cache && WPT.Cache.getCacheStatus ? WPT.Cache.getCacheStatus() : Promise.resolve({ success: false, count: 0, size: 0 })).then(result => {
       sendResponse(result);
     }).catch(error => {
       sendResponse({ success: false, count: 0, size: 0, error: error.message });
@@ -489,7 +489,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // 비동기 응답
   } else if (request.action === CONST.ACTIONS.CLEAR_CACHE_FOR_DOMAIN) {
     // Sidepanel에서 현재 도메인의 캐시 삭제 요청
-    handleClearCacheForDomain().then(result => {
+    (WPT.Cache && WPT.Cache.handleClearCacheForDomain ? WPT.Cache.handleClearCacheForDomain() : Promise.resolve({ success: false, error: 'not_supported' })).then(result => {
       sendResponse(result);
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
@@ -568,7 +568,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
     progressStatus.totalTexts = texts.length;
     WPT.Progress.pushProgress();
 
-    await ensureIndustryContext(texts, apiKey, model);
+  await (WPT.Industry && WPT.Industry.ensureIndustryContext ? WPT.Industry.ensureIndustryContext(texts, apiKey, model) : Promise.resolve());
 
     titlePromise = translateDocumentTitle(apiKey, model, useCache, progressStatus.originalTitle);
 
@@ -630,7 +630,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       hits: cachedItems.length,
       misses: newTexts.length,
       total: texts.length,
-      ttlMin: await getTTL()
+      ttlMin: (WPT.Cache && WPT.Cache.getTTL ? await WPT.Cache.getTTL() : 0)
     });
 
     // 대규모 변경 확인 (≥20% 변경 시 자동 전면 재번역)
@@ -1011,7 +1011,7 @@ async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
     progressStatus.translatedTitle = originalTitle;
 
     if (useCache) {
-      const cached = await getCachedTranslation(originalTitle);
+      const cached = WPT.Cache && WPT.Cache.getCachedTranslation ? await WPT.Cache.getCachedTranslation(originalTitle) : null;
       if (cached && cached.trim().length > 0) {
         applyTranslatedTitleToDocument(cached.trim());
         WPT.Progress.pushProgress();
@@ -1026,7 +1026,9 @@ async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
     applyTranslatedTitleToDocument(finalTitle);
 
     if (useCache && finalTitle !== originalTitle) {
-      await setCachedTranslation(originalTitle, finalTitle, model);
+      if (WPT.Cache && WPT.Cache.setCachedTranslation) {
+        await WPT.Cache.setCachedTranslation(originalTitle, finalTitle, model);
+      }
     }
 
     WPT.Progress.pushProgress();
@@ -1258,7 +1260,7 @@ async function executeWithRetry(asyncTask, {
  */
 async function translateWithOpenRouter(texts, apiKey, model) {
   const batchIdx = progressStatus.batchesDone;
-  const instruction = buildIndustryInstruction(industryContext);
+  const instruction = (WPT.Industry && WPT.Industry.buildIndustryInstruction ? WPT.Industry.buildIndustryInstruction(null) : '- 페이지의 내용을 고려하여 자연스럽고 정확한 한국어로 번역해주세요.');
 
   const prompt = `다음 텍스트들을 한국어로 번역해주세요.
 
@@ -1274,11 +1276,11 @@ ${instruction}
 - 번역만 제공하고 다른 설명은 추가하지 마세요.
 - HTML 태그가 있다면 그대로 유지해주세요.`;
 
-  const translatedText = await requestOpenRouter(prompt, apiKey, model, {
+  const translatedText = await (WPT.Api && WPT.Api.requestOpenRouter ? WPT.Api.requestOpenRouter(prompt, apiKey, model, {
     purpose: 'translation',
     batchIdx,
     itemCount: texts.length
-  });
+  }) : Promise.resolve(''));
 
   return parseTranslationResult(translatedText, texts.length);
 }

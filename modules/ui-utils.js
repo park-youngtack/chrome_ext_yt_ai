@@ -236,37 +236,54 @@ export function showToast(message, type = 'success') {
  */
 export async function ensurePageContentScript(tabId) {
   try {
-    // PING으로 content script 존재 확인
-    const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (response && response.ok) {
-      logDebug('sidepanel', 'CONTENT_PING_SUCCESS', 'Content script 이미 준비됨', { tabId });
-      // 최신 환경 보장: bootstrap/progress를 항상 주입(멱등)
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: ['content/bootstrap.js', 'content/progress.js']
-        });
-        logDebug('sidepanel', 'CONTENT_PATCH_SUCCESS', '보조 스크립트 주입 완료', { tabId });
-      } catch (e) {
-        logDebug('sidepanel', 'CONTENT_PATCH_FAILED', '보조 스크립트 주입 실패(무시 가능)', { tabId, reason: e?.message || String(e) });
-      }
+    // 탭 정보 및 지원 여부 확인
+    const tab = await chrome.tabs.get(tabId);
+    const { getSupportType } = await import('./translation.js');
+    const type = getSupportType(tab?.url || '');
+    if (type === 'unsupported') {
+      // 정책상 스크립팅 불가 페이지(chrome://, webstore 등)에서는 조용히 스킵
+      logDebug('sidepanel', 'CONTENT_INJECT_SKIPPED_UNSUPPORTED', '지원 불가 URL로 주입 생략', { tabId, url: tab?.url || '' });
       return;
     }
-  } catch (error) {
-    // PING 실패 → content script 미주입
-    logDebug('sidepanel', 'CONTENT_PING_FAILED', 'Content script 미주입, 주입 시작', { tabId });
-  }
 
-  // Content script 주입
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['content/bootstrap.js', 'content/progress.js', 'content.js']
-    });
-    logDebug('sidepanel', 'CONTENT_INJECT_SUCCESS', 'Content script 주입 완료', { tabId });
-  } catch (error) {
-    logError('sidepanel', 'CONTENT_INJECT_FAILED', 'Content script 주입 실패', { tabId }, error);
-    throw error;
+    // PING으로 content script 존재 확인
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      if (response && response.ok) {
+        logDebug('sidepanel', 'CONTENT_PING_SUCCESS', 'Content script 이미 준비됨', { tabId });
+        // 최신 환경 보장: bootstrap/progress를 항상 주입(멱등)
+        try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/progress.js']
+        });
+          logDebug('sidepanel', 'CONTENT_PATCH_SUCCESS', '보조 스크립트 주입 완료', { tabId });
+        } catch (e) {
+          logDebug('sidepanel', 'CONTENT_PATCH_FAILED', '보조 스크립트 주입 실패(무시 가능)', { tabId, reason: e?.message || String(e) });
+        }
+        return;
+      }
+    } catch (error) {
+      // PING 실패 → content script 미주입
+      logDebug('sidepanel', 'CONTENT_PING_FAILED', 'Content script 미주입, 주입 시작', { tabId });
+    }
+
+    // Content script 주입
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content/bootstrap.js', 'content/api.js', 'content/cache.js', 'content/industry.js', 'content/progress.js', 'content.js']
+      });
+      logDebug('sidepanel', 'CONTENT_INJECT_SUCCESS', 'Content script 주입 완료', { tabId });
+    } catch (error) {
+      // 정책 제한 등은 에러로 올 수 있으므로, 사용자 경험 차원에서 DEBUG로 낮춤
+      logDebug('sidepanel', 'ENSURE_CONTENT_SCRIPT_FAILED', 'Content script 준비 실패', { error: error?.message || String(error) });
+      // 상위 호출부가 계속 시도하지 않도록 조용히 반환
+      return;
+    }
+  } catch (outerError) {
+    logDebug('sidepanel', 'ENSURE_CONTENT_SCRIPT_FAILED', 'Content script 준비 실패', { error: outerError?.message || String(outerError) });
+    return;
   }
 }
 
