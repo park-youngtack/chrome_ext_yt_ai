@@ -352,10 +352,7 @@ async function ensureIndustryContext(texts, apiKey, model) {
  * - timerId: setInterval ID
  * - inflight: 현재 진행 중인 배치 수 (0이 되면 타이머 정지)
  */
-let activeMs = 0;
-let lastTick = null;
-let timerId = null;
-let inflight = 0;
+// 진행/타이머 관리는 WPT.Progress로 이관
 
 // ===== Port 연결 관리 =====
 /**
@@ -379,9 +376,10 @@ chrome.runtime.onConnect.addListener((p) => {
     log('Side panel connected');
 
     // 현재 상태 즉시 푸시
-    pushProgress();
+    WPT.Progress.pushProgress();
 
     // Port로부터 메시지 수신 (원본 복원 시 번역 작업 중단)
+    WPT.Progress.setPort(port);
     port.onMessage.addListener((msg) => {
       if (msg.type === WPT.Constants.PORT_MESSAGES.CANCEL_TRANSLATION) {
         logInfo('CANCEL_TRANSLATION', '번역 취소 요청 수신', {
@@ -410,6 +408,7 @@ chrome.runtime.onConnect.addListener((p) => {
       } else {
         log('Side panel disconnected');
       }
+      WPT.Progress.clearPort();
       port = null;
     });
   }
@@ -419,84 +418,8 @@ chrome.runtime.onConnect.addListener((p) => {
  * 타이머 시작
  * 첫 번째 배치 시작 시 자동 호출
  */
-function startTimer() {
-  if (timerId) return; // 이미 실행 중
-  lastTick = performance.now();
-  timerId = setInterval(() => {
-    const now = performance.now();
-    activeMs += (now - lastTick);
-    lastTick = now;
-    pushProgress(); // 1초마다 sidepanel로 푸시
-  }, 1000);
-  logDebug('TIMER_START', '번역 타이머 시작');
-}
-
-/**
- * 타이머 정지
- * 모든 배치 완료 시 자동 호출
- */
-function stopTimer() {
-  if (!timerId) return; // 이미 정지됨
-  clearInterval(timerId);
-  if (lastTick) {
-    activeMs += performance.now() - lastTick;
-  }
-  timerId = null;
-  lastTick = null;
-  pushProgress();
-  logDebug('TIMER_STOP', '번역 타이머 정지', { totalMs: Math.round(activeMs) });
-}
-
-/**
- * 배치 시작 콜백
- * inflight 카운터 증가, 첫 배치 시 타이머 시작
- */
-function onBatchStart() {
-  inflight++;
-  if (inflight === 1) {
-    startTimer();
-  }
-}
-
-/**
- * 배치 완료 콜백
- * inflight 카운터 감소, 모든 배치 완료 시 타이머 정지
- */
-function onBatchEnd() {
-  inflight--;
-  if (inflight === 0) {
-    stopTimer();
-  }
-}
-
-/**
- * 진행 상태 푸시
- * port를 통해 sidepanel에 실시간 진행 상태 전송
- */
-function pushProgress() {
-  if (!port) return;
-
-  try {
-    port.postMessage({
-      type: WPT.Constants.PORT_MESSAGES.PROGRESS,
-      data: {
-        ...progressStatus,
-        activeMs
-      }
-    });
-    // chrome.runtime.lastError를 확인하여 에러를 조용히 처리
-    if (chrome.runtime.lastError) {
-      // Port가 이미 끊어진 경우 조용히 처리
-      port = null;
-    }
-  } catch (error) {
-    // Port 연결 끊김 등의 에러는 조용히 처리
-    port = null;
-    logDebug('PUSH_PROGRESS_ERROR', 'Port 메시지 전송 실패 (연결 끊김)', {
-      error: error.message
-    });
-  }
-}
+// 진행 상태 getter를 Progress 모듈에 연결
+WPT.Progress && WPT.Progress.setStatusGetter && WPT.Progress.setStatusGetter(() => progressStatus);
 
 // ===== 메시지 리스너 =====
 /**
@@ -756,7 +679,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
             progressStatus.batches[i].status = 'completed';
             progressStatus.batchesDone++;
-            pushProgress();
+            WPT.Progress.pushProgress();
             resolve();
           });
         });
@@ -876,9 +799,9 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
 
             // 배치 상태 업데이트
             progressStatus.batches[globalIndex].status = 'processing';
-            pushProgress();
+            WPT.Progress.pushProgress();
 
-            onBatchStart();
+            WPT.Progress.onBatchStart();
 
             try {
               // API 호출 실행 후 즉시 결과 저장
@@ -893,7 +816,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
               progressStatus.batchesDone++;
             }
 
-            onBatchEnd();
+            WPT.Progress.onBatchEnd();
             pushProgress();
             await flushReadyBatches();
           }
@@ -924,7 +847,7 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
       totalTexts: progressStatus.totalTexts,
       translated: progressStatus.translatedCount,
       cacheHits: progressStatus.cachedCount,
-      elapsedMs: Math.round(activeMs),
+      elapsedMs: Math.round(WPT.Progress.getActiveMs ? WPT.Progress.getActiveMs() : 0),
       batches: progressStatus.batchCount
     });
 
