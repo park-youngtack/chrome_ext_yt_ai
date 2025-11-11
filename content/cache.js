@@ -116,7 +116,18 @@
       }catch(error){ return { success: false, error: error.message }; }
     }
 
-    WPT.Cache = { openDB, getTTL, getCachedTranslation, setCachedTranslation, clearAllCache, clearPageCache, getCacheStatus, handleClearCacheForDomain };
+    /**
+     * 캐시 데이터가 존재하는지 확인
+     * @returns {Promise<boolean>} 캐시 데이터가 있으면 true, 없으면 false
+     */
+    async function hasCachedData(){
+      try{
+        const status = await getCacheStatus();
+        return status.success && status.count > 0;
+      }catch{ return false; }
+    }
+
+    WPT.Cache = { openDB, getTTL, getCachedTranslation, setCachedTranslation, clearAllCache, clearPageCache, getCacheStatus, handleClearCacheForDomain, hasCachedData };
   } catch(_) { /* no-op */ }
 })();
 
