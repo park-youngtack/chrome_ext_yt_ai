@@ -43,13 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initTabbar();
     initExternalLinks();
 
-    // GitHub 링크 버튼
-    const githubBtn = document.getElementById('githubLinkBtn');
-    if (githubBtn) {
-      githubBtn.addEventListener('click', () => {
-        chrome.tabs.create({ url: 'https://github.com/park-youngtack/chrome_ext_yt_ai' });
-      });
-    }
+    // GitHub 링크 버튼은 initExternalLinks에서 바인딩됨 (중복 방지)
 
     // 설정 탭 초기화
     initSettingsTab();
@@ -169,8 +163,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     // 새로고침/네비게이션 시 이 탭의 저장 상태는 초기화하여 '완료' 잔상 방지
     State.translationStateByTab.delete(tabId);
     await handleTabChange(tab);
-    const { updatePageCacheStatus } = await import('./modules/settings.js');
-    await updatePageCacheStatus();
+    // 지원 불가 URL에서는 캐시 상태 업데이트/주입 시도를 생략
+    const type = getSupportType(tab?.url || '');
+    if (type !== 'unsupported') {
+      const { updatePageCacheStatus } = await import('./modules/settings.js');
+      await updatePageCacheStatus();
+    }
   }
 });
 

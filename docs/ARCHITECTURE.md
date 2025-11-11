@@ -25,3 +25,22 @@
 가드/원칙
 - 번역 중 포트 끊지 않기, 활성 탭만 UI 반영, 지원 불가 URL에서 조용한 처리
 
+모듈 구성(요약)
+- content/bootstrap.js: WPT 네임스페이스/상수 정의
+- content/api.js: OpenRouter API 호출/재시도 (WPT.Api)
+- content/cache.js: IndexedDB 캐시 유틸 (WPT.Cache)
+- content/industry.js: 산업군 추론/지시문 (WPT.Industry)
+- content/dom.js: 텍스트 수집/DOM 적용 (WPT.Dom, setEnv로 상태 주입)
+- content/title.js: 제목 번역/적용 (WPT.Title)
+- content/progress.js: 진행/타이머/푸시 (WPT.Progress)
+- content.js: 오케스트레이터(파이프라인 본체)
+
+주입 순서
+1. content/bootstrap.js
+2. content/api.js
+3. content/cache.js
+4. content/industry.js
+5. content/dom.js
+6. content/title.js
+7. content/progress.js
+8. content.js (메인)
