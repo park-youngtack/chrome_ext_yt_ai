@@ -365,12 +365,26 @@ let port = null;
 // 부트스트랩에서 WPT 네임스페이스를 노출한다. 부트스트랩 미주입 시에도 기존 동작 유지되도록 안전하게 접근한다.
 window.WPT = window.WPT || {};
 const WPT = window.WPT;
+// 상수 폴백 (부트스트랩 미주입 대비)
+const CONST = (WPT.Constants && WPT.Constants.PORT_NAMES && WPT.Constants.PORT_MESSAGES && WPT.Constants.ACTIONS) ? WPT.Constants : {
+  PORT_NAMES: { PANEL: 'panel' },
+  PORT_MESSAGES: { PROGRESS: 'progress', CANCEL_TRANSLATION: 'CANCEL_TRANSLATION' },
+  ACTIONS: {
+    PING: 'PING',
+    TRANSLATE_FULL_PAGE: 'translateFullPage',
+    RESTORE_ORIGINAL: 'restoreOriginal',
+    GET_TRANSLATION_STATE: 'getTranslationState',
+    GET_TRANSLATED_TITLE: 'getTranslatedTitle',
+    GET_CACHE_STATUS: 'getCacheStatus',
+    CLEAR_CACHE_FOR_DOMAIN: 'clearCacheForDomain'
+  }
+};
 // 진행 모듈이 아직 없다면 안전한 no-op 셈
 if (!WPT.Progress) {
   WPT.Progress = {
-    setPort: function() {},
-    clearPort: function() {},
-    setStatusGetter: function() {},
+    setPort: function(p) { try { WPT.__portRef = p || null; } catch(_){} },
+    clearPort: function() { try { WPT.__portRef = null; } catch(_){} },
+    setStatusGetter: function(fn) { try { WPT.__statusGetter = typeof fn === 'function' ? fn : null; } catch(_){} },
     startTimer: function() {},
     stopTimer: function() {},
     onBatchStart: function() {},
@@ -385,7 +399,7 @@ if (!WPT.Progress) {
  * sidepanel이 열릴 때마다 연결되며, 현재 상태를 즉시 푸시
  */
 chrome.runtime.onConnect.addListener((p) => {
-  if (p.name === WPT.Constants.PORT_NAMES.PANEL) {
+  if (p.name === CONST.PORT_NAMES.PANEL) {
     port = p;
     log('Side panel connected');
 
@@ -395,7 +409,7 @@ chrome.runtime.onConnect.addListener((p) => {
     // Port로부터 메시지 수신 (원본 복원 시 번역 작업 중단)
     WPT.Progress.setPort(port);
     port.onMessage.addListener((msg) => {
-      if (msg.type === WPT.Constants.PORT_MESSAGES.CANCEL_TRANSLATION) {
+      if (msg.type === CONST.PORT_MESSAGES.CANCEL_TRANSLATION) {
         logInfo('CANCEL_TRANSLATION', '번역 취소 요청 수신', {
           reason: msg.reason
         });
@@ -450,22 +464,22 @@ WPT.Progress && WPT.Progress.setStatusGetter && WPT.Progress.setStatusGetter(() 
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // PING: Content script 준비 상태 확인
-  if (request.type === WPT.Constants.ACTIONS.PING) {
+  if (request.type === CONST.ACTIONS.PING) {
     sendResponse({ ok: true });
     return true;
   }
 
-  if (request.action === WPT.Constants.ACTIONS.TRANSLATE_FULL_PAGE) {
+  if (request.action === CONST.ACTIONS.TRANSLATE_FULL_PAGE) {
     handleTranslateFullPage(request.apiKey, request.model, request.batchSize, request.concurrency, request.useCache);
     sendResponse({ success: true });
-  } else if (request.action === WPT.Constants.ACTIONS.RESTORE_ORIGINAL) {
+  } else if (request.action === CONST.ACTIONS.RESTORE_ORIGINAL) {
     handleRestoreOriginal();
     sendResponse({ success: true });
-  } else if (request.action === WPT.Constants.ACTIONS.GET_TRANSLATION_STATE) {
+  } else if (request.action === CONST.ACTIONS.GET_TRANSLATION_STATE) {
     sendResponse({ state: progressStatus });
-  } else if (request.action === WPT.Constants.ACTIONS.GET_TRANSLATED_TITLE) {
+  } else if (request.action === CONST.ACTIONS.GET_TRANSLATED_TITLE) {
     sendResponse({ title: document.title });
-  } else if (request.action === WPT.Constants.ACTIONS.GET_CACHE_STATUS) {
+  } else if (request.action === CONST.ACTIONS.GET_CACHE_STATUS) {
     // Sidepanel에서 현재 도메인의 캐시 상태 요청
     getCacheStatus().then(result => {
       sendResponse(result);
@@ -473,7 +487,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, count: 0, size: 0, error: error.message });
     });
     return true; // 비동기 응답
-  } else if (request.action === WPT.Constants.ACTIONS.CLEAR_CACHE_FOR_DOMAIN) {
+  } else if (request.action === CONST.ACTIONS.CLEAR_CACHE_FOR_DOMAIN) {
     // Sidepanel에서 현재 도메인의 캐시 삭제 요청
     handleClearCacheForDomain().then(result => {
       sendResponse(result);

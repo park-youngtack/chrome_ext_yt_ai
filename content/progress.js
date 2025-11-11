@@ -14,12 +14,12 @@
     let lastTick = null;
     let timerId = null;
     let inflight = 0;
-    let portRef = null;
-    let getStatus = null;
+    let portRef = (WPT.__portRef !== undefined) ? WPT.__portRef : null;
+    let getStatus = (typeof WPT.__statusGetter === 'function') ? WPT.__statusGetter : null;
 
-    function setPort(port) { portRef = port || null; }
-    function clearPort() { portRef = null; }
-    function setStatusGetter(fn) { getStatus = typeof fn === 'function' ? fn : null; }
+    function setPort(port) { portRef = port || null; try { WPT.__portRef = portRef; } catch(_){} }
+    function clearPort() { portRef = null; try { WPT.__portRef = null; } catch(_){} }
+    function setStatusGetter(fn) { getStatus = typeof fn === 'function' ? fn : null; try { WPT.__statusGetter = getStatus; } catch(_){} }
     function getActiveMs() { return activeMs; }
 
     function startTimer() {
