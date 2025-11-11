@@ -178,171 +178,7 @@ let progressStatus = {
  * @property {string} rationale - 산업군 판별 근거 요약
  */
 
-/** @type {IndustryContext|null} */
-let industryContext = null;
-
-/**
- * 번역 시작 시 산업군 컨텍스트를 초기화한다.
- */
-function resetIndustryContext() {
-  industryContext = null;
-}
-
-/**
- * 산업군 판별에 사용할 샘플 텍스트를 추출한다.
- * @param {Array<string>} texts - 원본 텍스트 배열
- * @param {number} maxSegments - 최대 샘플 개수
- * @param {number} maxChars - 샘플 누적 최대 길이
- * @returns {Array<string>} 정제된 샘플 텍스트 배열
- */
-function buildIndustrySampleSegments(texts, maxSegments = 24, maxChars = 2500) {
-  if (!Array.isArray(texts) || texts.length === 0) {
-    return [];
-  }
-
-  const segments = [];
-  let totalChars = 0;
-
-  for (const text of texts) {
-    if (segments.length >= maxSegments || totalChars >= maxChars) {
-      break;
-    }
-
-    if (typeof text !== 'string') {
-      continue;
-    }
-
-    const trimmed = text.replace(/\s+/g, ' ').trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    const limited = trimmed.slice(0, 220);
-    segments.push(limited);
-    totalChars += limited.length;
-  }
-
-  return segments;
-}
-
-/**
- * OpenRouter 응답으로부터 산업군 정보를 추출한다.
- * @param {string} responseText - OpenRouter 모델 응답 텍스트
- * @returns {IndustryContext|null} 추출된 산업군 정보
- */
-function parseIndustryContext(responseText) {
-  if (typeof responseText !== 'string' || responseText.trim().length === 0) {
-    return null;
-  }
-
-  const startIdx = responseText.indexOf('{');
-  const endIdx = responseText.lastIndexOf('}');
-
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    return null;
-  }
-
-  try {
-    const jsonText = responseText.slice(startIdx, endIdx + 1);
-    const parsed = JSON.parse(jsonText);
-
-    const industry = typeof parsed.industry === 'string' ? parsed.industry.trim() : '';
-    if (!industry) {
-      return null;
-    }
-
-    const keywords = Array.isArray(parsed.keywords)
-      ? parsed.keywords.map((item) => String(item).trim()).filter(Boolean)
-      : [];
-
-    const tone = typeof parsed.tone === 'string' ? parsed.tone.trim() : '';
-    const rationale = typeof parsed.summary === 'string'
-      ? parsed.summary.trim()
-      : (typeof parsed.rationale === 'string' ? parsed.rationale.trim() : '');
-
-    return {
-      industry,
-      keywords,
-      tone,
-      rationale
-    };
-  } catch (error) {
-    logWarn('INDUSTRY_PARSE_FAIL', '산업군 분석 응답 파싱 실패', {}, error);
-    return null;
-  }
-}
-
-/**
- * 번역 프롬프트에 추가할 산업군 설명을 생성한다.
- * @param {IndustryContext|null} context - 판별된 산업군 정보
- * @returns {string} 프롬프트에 삽입할 지침 문자열
- */
-function buildIndustryInstruction(context) {
-  if (!context) {
-    return '- 페이지의 내용을 고려하여 자연스럽고 정확한 한국어로 번역해주세요.';
-  }
-
-  const keywordLine = context.keywords.length > 0
-    ? `- 핵심 용어: ${context.keywords.slice(0, 8).join(', ')}.`
-    : '';
-  const toneLine = context.tone ? `- 권장 어조: ${context.tone}.` : '';
-  const rationaleLine = context.rationale ? `- 산업군 참고 설명: ${context.rationale}.` : '';
-
-  return [
-    `- 이 페이지는 "${context.industry}" 산업군의 콘텐츠입니다.`,
-    keywordLine,
-    toneLine,
-    rationaleLine,
-    '- 산업군 특유의 전문 용어와 뉘앙스를 유지하면서 자연스럽게 번역해주세요.'
-  ].filter(Boolean).join('\n');
-}
-
-/**
- * 산업군 정보를 추론하여 전역 컨텍스트로 저장한다.
- * @param {Array<string>} texts - 페이지에서 수집한 텍스트 배열
- * @param {string} apiKey - OpenRouter API Key
- * @param {string} model - 사용할 모델 이름
- * @returns {Promise<void>} 분석 완료 시 resolve되는 Promise
- */
-async function ensureIndustryContext(texts, apiKey, model) {
-  const samples = buildIndustrySampleSegments(texts);
-
-  if (samples.length === 0) {
-    logDebug('INDUSTRY_SKIP', '산업군 분석을 생략합니다', { reason: 'empty_sample' });
-    industryContext = null;
-    return;
-  }
-
-  try {
-    const prompt = `다음은 웹페이지에서 발췌한 텍스트 일부입니다. 콘텐츠가 속한 산업군을 분석하고, 번역 시 참고할 핵심 정보를 JSON으로 제공해주세요.\n\n샘플 텍스트:\n${samples.map((segment, idx) => `[${idx}] ${segment}`).join('\n')}\n\n응답 형식 (JSON만 반환): {"industry": "산업군 이름", "keywords": ["용어1", ...], "tone": "권장 어조", "summary": "두 문장 이내 근거"}`;
-
-    const response = await requestOpenRouter(prompt, apiKey, model, {
-      purpose: 'industry-detect',
-      itemCount: samples.length
-    });
-
-    const parsed = parseIndustryContext(response);
-
-    if (parsed) {
-      industryContext = parsed;
-      logInfo('INDUSTRY_DETECTED', '산업군 분석 완료', {
-        industry: parsed.industry,
-        keywords: parsed.keywords.slice(0, 5),
-        tone: parsed.tone || null
-      });
-    } else {
-      industryContext = null;
-      logWarn('INDUSTRY_DETECTED', '산업군 분석 결과가 유효하지 않습니다', {
-        sampleCount: samples.length
-      });
-    }
-  } catch (error) {
-    industryContext = null;
-    logWarn('INDUSTRY_DETECT_FAIL', '산업군 분석에 실패했습니다', {
-      sampleCount: samples.length
-    }, error);
-  }
-}
+// Industry 로직은 WPT.Industry로 분리됨
 
 // ===== 타이머 관리 =====
 /**
@@ -1052,116 +888,7 @@ async function translateDocumentTitle(apiKey, model, useCache, originalTitle) {
  * @param {number} [meta.itemCount] - 처리 대상 텍스트 개수
  * @returns {Promise<string>} 모델 응답 텍스트
  */
-async function requestOpenRouter(prompt, apiKey, model, meta = {}) {
-  const reqId = Math.random().toString(36).substring(7);
-  const purpose = meta.purpose || 'translation';
-  const batchIdx = typeof meta.batchIdx === 'number' ? meta.batchIdx : null;
-  const itemCount = typeof meta.itemCount === 'number' ? meta.itemCount : null;
-  const tokenEstimate = Math.round(prompt.length / 4);
-
-  const startTime = performance.now();
-  let attempts = 0;
-
-  logInfo('API_REQUEST_START', 'API 요청 시작', {
-    reqId,
-    purpose,
-    batchIdx,
-    model,
-    itemCount,
-    tokenEstimate,
-    maxAttempts: API_RETRY_MAX_ATTEMPTS
-  });
-
-  try {
-    const responseText = await executeWithRetry(async (attempt) => {
-      attempts = attempt;
-      const attemptStart = performance.now();
-
-      logDebug('API_REQUEST_ATTEMPT', 'API 요청 실행', {
-        reqId,
-        purpose,
-        batchIdx,
-        attempt
-      });
-
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': window.location.href,
-          'X-Title': 'Web Page Translator'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }]
-        })
-      });
-
-      const attemptDurationMs = Math.round(performance.now() - attemptStart);
-
-      if (!response.ok) {
-        const error = new Error(`API error: ${response.statusText}`);
-        error.status = response.status;
-        error.retryable = response.status >= 500 || response.status === 429;
-
-        logWarn('API_REQUEST_ATTEMPT', 'API 응답 오류', {
-          reqId,
-          purpose,
-          batchIdx,
-          attempt,
-          status: response.status,
-          durationMs: attemptDurationMs
-        }, error);
-
-        throw error;
-      }
-
-      const data = await response.json();
-
-      logDebug('API_REQUEST_ATTEMPT', 'API 요청 성공', {
-        reqId,
-        purpose,
-        batchIdx,
-        attempt,
-        durationMs: attemptDurationMs
-      });
-
-      return data.choices?.[0]?.message?.content || '';
-    }, {
-      maxAttempts: API_RETRY_MAX_ATTEMPTS,
-      baseDelayMs: API_RETRY_BASE_DELAY_MS,
-      backoffFactor: API_RETRY_BACKOFF_FACTOR
-    });
-
-    const durationMs = Math.round(performance.now() - startTime);
-
-    logInfo('API_REQUEST_END', 'API 요청 완료', {
-      reqId,
-      purpose,
-      batchIdx,
-      durationMs,
-      attempts
-    });
-
-    return responseText;
-  } catch (error) {
-    const durationMs = Math.round(performance.now() - startTime);
-
-    logError('API_REQUEST_END', 'API 요청 에러', {
-      reqId,
-      purpose,
-      batchIdx,
-      durationMs,
-      attempts
-    }, error);
-
-    throw error;
-  }
-}
+// requestOpenRouter는 WPT.Api.requestOpenRouter로 이동
 
 /**
  * 번역된 제목을 document.title과 progressStatus에 반영한다.
@@ -1194,9 +921,7 @@ function applyTranslatedTitleToDocument(titleText) {
  * @param {number} delayMs - 대기할 시간(ms)
  * @returns {Promise<void>} 지정 시간 이후 resolve되는 Promise
  */
-function wait(delayMs) {
-  return new Promise(resolve => setTimeout(resolve, delayMs));
-}
+// wait/executeWithRetry는 WPT.Api로 이동
 
 /**
  * 네트워크 요청 재시도를 일관되게 처리하는 헬퍼
@@ -1207,44 +932,7 @@ function wait(delayMs) {
  * @param {number} [options.backoffFactor=API_RETRY_BACKOFF_FACTOR] - 재시도마다 곱해지는 지수 백오프 계수
  * @returns {Promise<any>} asyncTask에서 반환된 값
  */
-async function executeWithRetry(asyncTask, {
-  maxAttempts = API_RETRY_MAX_ATTEMPTS,
-  baseDelayMs = API_RETRY_BASE_DELAY_MS,
-  backoffFactor = API_RETRY_BACKOFF_FACTOR
-} = {}) {
-  let attempt = 0;
-  let lastError = null;
-
-  while (attempt < maxAttempts) {
-    attempt++;
-    try {
-      return await asyncTask(attempt);
-    } catch (error) {
-      lastError = error;
-
-      const isNetworkError = error instanceof TypeError || (typeof error?.message === 'string' && error.message.includes('Failed to fetch'));
-      const isExplicitRetryable = error?.retryable === true;
-      const isExplicitNonRetryable = error?.retryable === false;
-      const shouldRetry = attempt < maxAttempts && !isExplicitNonRetryable && (isExplicitRetryable || isNetworkError);
-
-      if (!shouldRetry) {
-        throw error;
-      }
-
-      const delayMs = baseDelayMs * Math.pow(backoffFactor, attempt - 1);
-
-      logWarn('API_REQUEST_RETRY', 'API 요청 재시도', {
-        attempt,
-        maxAttempts,
-        delayMs
-      }, error);
-
-      await wait(delayMs);
-    }
-  }
-
-  throw lastError;
-}
+//
 
 /**
  * OpenRouter API를 사용한 배치 번역
@@ -1260,7 +948,7 @@ async function executeWithRetry(asyncTask, {
  */
 async function translateWithOpenRouter(texts, apiKey, model) {
   const batchIdx = progressStatus.batchesDone;
-  const instruction = (WPT.Industry && WPT.Industry.buildIndustryInstruction ? WPT.Industry.buildIndustryInstruction(null) : '- 페이지의 내용을 고려하여 자연스럽고 정확한 한국어로 번역해주세요.');
+  const instruction = (WPT.Industry && WPT.Industry.buildIndustryInstruction ? WPT.Industry.buildIndustryInstruction() : '- 페이지의 내용을 고려하여 자연스럽고 정확한 한국어로 번역해주세요.');
 
   const prompt = `다음 텍스트들을 한국어로 번역해주세요.
 
@@ -1593,123 +1281,11 @@ async function getCachedTranslation(text) {
  * 전역 캐시 비우기
  * @returns {Promise<boolean>}
  */
-async function clearAllCache() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction([STORE_NAME], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-
-    // store.clear()는 IDBRequest를 반환하므로 Promise로 래핑
-    await new Promise((resolve, reject) => {
-      const request = store.clear();
-      request.onsuccess = resolve;
-      request.onerror = () => reject(request.error);
-    });
-
-    // 트랜잭션 완료 대기
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-
-    db.close();
-    log('All cache cleared');
-    return true;
-  } catch (error) {
-    logError('Failed to clear cache:', error);
-    return false;
-  }
-}
-
-/**
- * 페이지 캐시 비우기
- * @returns {Promise<boolean>}
- */
-async function clearPageCache() {
-  return await clearAllCache();
-}
-
-/**
- * 현재 페이지(도메인)의 캐시 상태 조회
- * Sidepanel에서 요청할 때 사용
- * @returns {Promise<{success: boolean, count: number, size: number, error?: string}>}
- */
-async function getCacheStatus() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction([STORE_NAME], 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-
-    // 모든 캐시 항목 조회
-    const result = await new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => {
-        const items = request.result;
-        let totalSize = 0;
-
-        items.forEach(item => {
-          totalSize += JSON.stringify(item).length;
-        });
-
-        resolve({ success: true, count: items.length, size: totalSize });
-      };
-      request.onerror = () => reject(request.error);
-    });
-
-    db.close();
-    return result;
-  } catch (error) {
-    logError('CACHE_STATUS_ERROR', '캐시 상태 조회 실패', {}, error);
-    return { success: false, count: 0, size: 0, error: error.message };
-  }
-}
-
-/**
- * 현재 페이지(도메인)의 캐시 비우기 핸들러
- * Sidepanel의 "이 페이지 캐시 비우기" 버튼에서 호출
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-async function handleClearCacheForDomain() {
-  try {
-    const success = await clearPageCache();
-    if (success) {
-      logInfo('CACHE_CLEARED', '현재 도메인 캐시 삭제 완료');
-      return { success: true };
-    } else {
-      return { success: false, error: '캐시 삭제 실패' };
-    }
-  } catch (error) {
-    logError('CACHE_CLEAR_ERROR', '캐시 삭제 중 오류 발생', {}, error);
-    return { success: false, error: error.message };
-  }
-}
+// 캐시 관련 유틸은 WPT.Cache로 이동
 
 // ===== 내부 모듈 노출 (네임스페이스) =====
 try {
-  WPT.Api = Object.assign({}, WPT.Api || {}, {
-    executeWithRetry,
-    requestOpenRouter,
-    wait
-  });
-
-  WPT.Cache = Object.assign({}, WPT.Cache || {}, {
-    openDB,
-    getTTL,
-    getCachedTranslation,
-    setCachedTranslation,
-    clearAllCache,
-    clearPageCache,
-    getCacheStatus,
-    handleClearCacheForDomain
-  });
-
-  WPT.Progress = Object.assign({}, WPT.Progress || {}, {
-    pushProgress
-  });
-
-  WPT.Industry = Object.assign({}, WPT.Industry || {}, {
-    ensureIndustryContext
-  });
+  // 내부 모듈 노출은 개별 파일로 분리됨
 } catch (_) {
   // 네임스페이스 노출 실패는 동작에 영향 없음
 }
