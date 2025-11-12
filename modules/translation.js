@@ -138,9 +138,10 @@ export async function handleTabChange(tab) {
   }
 
   // 6단계: 자동 번역 체크 (조건이 맞으면 번역 버튼 트리거)
-  // - 권한이 있고, 번역 탭이 활성화되어 있고, 번역 중이 아닐 때
+  // - 권한이 있고, 번역이 아직 시작되지 않았을 때만 (inactive)
   // - 이미 자동 번역이 실행되지 않았을 때만
-  if (permissionGranted && !autoTranslateTriggeredByTab.get(currentTabId) && translationState.state !== 'translating') {
+  // - completed나 restored 상태에서는 자동 번역 안 함 (중복 실행 방지)
+  if (permissionGranted && !autoTranslateTriggeredByTab.get(currentTabId) && translationState.state === 'inactive') {
     // 비동기로 자동 번역 체크 (UI 블로킹 방지)
     setTimeout(() => checkAutoTranslate(), 300);
   }
@@ -731,6 +732,9 @@ export async function handleRestore() {
 
     // UI 초기화
     resetTranslateUI();
+
+    // 자동 번역 플래그 초기화 (원본 복원 후 다시 자동 번역 가능하도록)
+    autoTranslateTriggeredByTab.delete(currentTabId);
   } catch (error) {
     logError('sidepanel', 'RESTORE_ERROR', '원본 복원 실패', { tabId: currentTabId }, error);
     showToast('원본 복원 중 오류가 발생했습니다: ' + error.message, 'error');
