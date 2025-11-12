@@ -420,14 +420,43 @@ function myFunction(paramName) {
 
 ## 새 기능 추가 시
 
-1. `meta.js` LAST_EDITED 날짜 업데이트 (YYYY-MM-DD)
-2. **기능 타입별로:**
-   - 번역 관련 → `content.js`
-   - UI 변경 → `sidepanel.html` + `sidepanel.js`
+### 개발 체크리스트 (필수)
+1. **코드 작성** - 기능 타입별로:
+   - 번역 관련 → `content.js` + `content/` 모듈
+   - UI 변경 → `sidepanel.html` + `sidepanel.js` + `modules/` 모듈
    - 백그라운드 작업 → `background.js`
-3. 권한 필요 시 `manifest.json` 업데이트
-4. **코드의 JSDoc 주석을 충분히 작성** (최우선!)
-5. README.md 업데이트
+2. **JSDoc 주석 작성** (최우선!) - @param, @returns, @example 포함
+3. **권한 업데이트** (필요 시)
+   - `manifest.json` 권한 추가
+   - `.claude/settings.local.json` Bash 권한 확인
+
+### 문서 업데이트 체크리스트 (필수)
+문서 업데이트는 **"문서 업데이트해줘"라고 요청하면 자동으로 수행됩니다**:
+
+1. **CLAUDE.md** - 개발자 문서
+   - 새 모듈/탭 추가 시 "주요 기능" 섹션에 기능 설명 추가
+   - 아키텍처 변경 시 "코드 구조" 섹션 업데이트
+   - 새로운 교훈이 있으면 "주요 교훈" 섹션에 추가
+
+2. **README.md** - 사용자 가이드
+   - "어떤 기능이 있나요?" 섹션에 기능 요약 추가
+   - "어떻게 사용하나요?" 섹션에 사용 가이드 추가
+   - "최근 업데이트 내역"에 변경 사항 추가 (현재 버전, 날짜 포함)
+
+3. **manifest.json** - 버전 업그레이드
+   - version: X.Y.Z → X.Y.(Z+1) 또는 X.(Y+1).0
+
+4. **meta.js** - 최종 수정 날짜 (YYYY-MM-DD)
+   - git commit 시 자동으로 업데이트 됨
+
+### 자동 문서 업데이트 프로세스 (향후)
+사용자가 **"문서 업데이트해줘"** 또는 **"CLAUDE.md/README.md 업데이트"**라고 요청하면:
+- CLAUDE.md의 해당 섹션 자동 업데이트
+- README.md의 기능/사용법 섹션 자동 업데이트
+- manifest.json 버전 자동 증가
+- 최종 커밋 및 푸시
+
+이 프로세스는 Claude Code의 Task/Agent를 활용하여 구현 가능합니다.
 
 ## 주요 교훈 (2025-11-10)
 
