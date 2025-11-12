@@ -21,6 +21,7 @@ import { initHistoryTab } from './modules/history.js';
 import { initSettingsTab, loadSettings } from './modules/settings.js';
 import { initializeSearchTab } from './modules/search.js';
 import { initQuickTranslateTab } from './modules/quick-translate.js';
+import { initRecurringTab } from './modules/recurring.js';
 import { handleTabChange, getSupportType } from './modules/translation.js';
 
 // ===== 초기화 =====
@@ -58,6 +59,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 텍스트 번역 탭 초기화
     await initQuickTranslateTab();
+
+    // 반복관리 탭 초기화
+    await initRecurringTab();
 
     // 현재 탭 정보 가져오기
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
