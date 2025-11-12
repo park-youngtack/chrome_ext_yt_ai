@@ -549,13 +549,37 @@ async function handleTranslateFullPage(apiKey, model, batchSize = 50, concurrenc
         await new Promise(resolve => {
           requestAnimationFrame(() => {
             cacheBatches[i].items.forEach(({ element, text, translation }) => {
-              if (!originalTexts.has(element)) {
-                originalTexts.set(element, element.textContent);
+              // element는 Semantic Chunking의 그룹 객체일 수 있음
+              // 그룹 객체인지 확인: { block, nodes: [...], texts: [...] }
+              if (element && element.nodes && Array.isArray(element.nodes)) {
+                // Semantic Chunking: 그룹의 모든 노드에 적용
+                element.nodes.forEach((node, nodeIdx) => {
+                  if (!originalTexts.has(node)) {
+                    originalTexts.set(node, node.textContent);
+                  }
+
+                  // 첫 번째 노드에만 전체 번역, 나머지는 비움
+                  if (nodeIdx === 0) {
+                    node.textContent = translation;
+                  } else {
+                    node.textContent = '';
+                  }
+
+                  translatedElements.add(node);
+                  progressStatus.translatedCount++;
+                });
+
+                capturePreviewFromTranslation(translation);
+              } else {
+                // 일반 텍스트 노드 (fallback)
+                if (!originalTexts.has(element)) {
+                  originalTexts.set(element, element.textContent);
+                }
+                element.textContent = translation;
+                capturePreviewFromTranslation(translation);
+                translatedElements.add(element);
+                progressStatus.translatedCount++;
               }
-              element.textContent = translation;
-              capturePreviewFromTranslation(translation);
-              translatedElements.add(element);
-              progressStatus.translatedCount++;
             });
 
             progressStatus.batches[i].status = 'completed';
