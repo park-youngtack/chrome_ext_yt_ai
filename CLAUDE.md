@@ -155,59 +155,84 @@ if (translationState.state === 'translating') {
   2. `calculateScores()` - 카테고리별 점수 계산
   3. `getImprovement()` - LLM에 상위 3개 개선 사항 요청
 
-#### LLM 프롬프트 규격 (중요!)
-LLM이 반드시 따라야 할 형식 (geo-audit.js의 prompt 참고):
+#### LLM 응답 규격 - JSON 스키마 (중요!)
+LLM이 반드시 따라야 할 형식 (`response_format: {type: 'json_object'}`로 강제):
 
-```
-## 가장 중요한 3가지 개선 사항
-
-### 1. [제목]
-**구체적인 실행 방법:**
-- 방법 1
-- 방법 2
-- 방법 3
-
-**실제 코드 예시:**
-`&lt;meta name="description" content="155-160자의 설명"&gt;`
-
-**예상 효과:**
-- 효과 1
-- 효과 2
-
-### 2. [제목]
-[동일한 구조]
-
-### 3. [제목]
-[동일한 구조]
-
-## 종합 기대 효과
-[3-4문장 요약]
+```json
+{
+  "improvements": [
+    {
+      "title": "메타 설명 최적화",
+      "methods": [
+        "155-160자로 제한",
+        "주요 키워드 포함",
+        "행동 유도 문구 추가"
+      ],
+      "codeExample": "&lt;meta name=&quot;description&quot; content=&quot;BBC News는 전 세계 뉴스, 정치, 비즈니스, 과학 정보를 제공합니다. 최신 뉴스 기사와 분석을 지금 읽어보세요.&quot;&gt;",
+      "effects": [
+        "검색 결과에서 설명이 온전히 표시됨",
+        "CTR 15-20% 증가"
+      ]
+    },
+    {
+      "title": "구조화된 데이터 추가",
+      "methods": [
+        "JSON-LD 스크립트 삽입",
+        "Article 또는 NewsArticle 타입 사용",
+        "headline, description, datePublished 포함"
+      ],
+      "codeExample": "&lt;script type=&quot;application/ld+json&quot;&gt;{\n  &quot;@type&quot;: &quot;NewsArticle&quot;,\n  &quot;headline&quot;: &quot;...&quot;,\n  &quot;description&quot;: &quot;...&quot;\n}&lt;/script&gt;",
+      "effects": [
+        "AI 생성형 엔진이 콘텐츠 이해도 향상",
+        "검색 결과 확장 표시 가능성 증가"
+      ]
+    },
+    {
+      "title": "페이지 제목 최적화",
+      "methods": [
+        "50-60자 범위로 조정",
+        "주요 키워드를 앞부분에 배치",
+        "브랜드명은 뒤에 추가"
+      ],
+      "codeExample": "&lt;title&gt;BBC News - Breaking News, Politics, Business, Science&lt;/title&gt;",
+      "effects": [
+        "검색 결과에서 제목 전체 표시",
+        "클릭률(CTR) 5-10% 증가"
+      ]
+    }
+  ],
+  "summary": "메타 정보와 구조화 데이터를 함께 최적화하면 검색엔진과 생성형 AI 모두에게 명확한 정보를 전달할 수 있습니다. 이를 통해 검색 결과 가시성이 크게 향상되고, AI가 생성하는 답변에 당신의 콘텐츠가 인용될 확률도 높아집니다."
+}
 ```
 
 **필수 규칙:**
-1. 마크다운 헤더: `##` (h3), `###` (h4) 정확히 사용
-2. **"실제 코드 예시:" 섹션은 반드시 포함** (없으면 안 됨!)
-3. HTML 코드: 반드시 `&lt;`, `&gt;`로 변환 (절대 `<`, `>` 금지!)
-4. JSON은 그대로: `{"@type": "...", "name": "..."}`
-5. 백틱 안의 코드는 구체적이고 복사-붙여넣기 가능한 수준
-6. 소제목 뒤에 반드시 콜론(`:`) 붙이기
-7. 각 소제목 아래 `-` 불릿 목록으로 작성
+1. **JSON 구조 정확히 따르기** (마크다운 아님!)
+   - `improvements` 배열: 정확히 3개 항목
+   - 각 항목: `title`, `methods`, `codeExample`, `effects` 필드 필수
+   - `summary`: 3-4문장의 종합 효과
 
-**예시 - 정확한 형식:**
+2. **HTML 코드 인코딩 필수** (절대 중요!)
+   - `<` → `&lt;` 변환
+   - `>` → `&gt;` 변환
+   - `"` → `&quot;` 변환
+   - 예: `&lt;meta name=&quot;description&quot; content=&quot;...&quot;&gt;`
+
+3. **메서드와 효과 배열**
+   - `methods`: 배열, 최소 3개 문자열
+   - `effects`: 배열, 최소 2개 문자열
+   - 각 항목은 구체적이고 실행 가능해야 함
+
+4. **코드 예시 작성 팁**
+   - HTML은 완전한 태그 (속성까지 포함)
+   - JSON은 실제 적용 가능한 수준
+   - 멀티라인 코드는 `\n`으로 줄바꿈
+
+**처리 흐름:**
 ```
-### 1. 메타 설명 최적화
-
-**구체적인 실행 방법:**
-- 155-160자로 제한
-- 주요 키워드 포함
-- 행동 유도 문구 추가
-
-**실제 코드 예시:**
-`&lt;meta name="description" content="BBC News는 전 세계 뉴스, 정치, 비즈니스, 과학 정보를 제공합니다. 최신 뉴스 기사와 분석을 지금 읽어보세요."&gt;`
-
-**예상 효과:**
-- 검색 결과에서 설명이 온전히 표시됨
-- CTR 15-20% 증가
+LLM (JSON 강제) → geo-audit.js (파싱+검증)
+  → formatImprovement() (JSON→HTML 변환)
+  → decodeHtmlEntities(&lt; → <)
+  → <pre><code> 안에 안전하게 표시
 ```
 
 - **SSR/CSR 인식**:
