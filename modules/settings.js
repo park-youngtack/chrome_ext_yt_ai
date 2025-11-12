@@ -24,6 +24,26 @@ const DEFAULT_CACHE_TTL_MINUTES = 43200; // 기본 30일
 const CACHE_TTL_MIN_MINUTES = 5;
 const CACHE_TTL_MAX_MINUTES = 525600; // 365일
 
+// ===== API Key/모델 조회 =====
+
+/**
+ * 저장된 API Key 조회
+ * @returns {Promise<string>} API Key
+ */
+export async function getApiKey() {
+  const result = await chrome.storage.local.get(['apiKey']);
+  return result.apiKey || '';
+}
+
+/**
+ * 저장된 모델 조회
+ * @returns {Promise<string>} 모델명
+ */
+export async function getModel() {
+  const result = await chrome.storage.local.get(['model']);
+  return result.model || DEFAULT_MODEL;
+}
+
 // ===== API Key UI 관리 =====
 
 /**
