@@ -101,13 +101,16 @@ export async function runAudit() {
       const passed = checkItem.validator(selected);
 
       // 3. 결과 기록
+      // hint가 함수이면 실행, 문자열이면 그대로 사용
+      const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+
       results.push({
         id: checkItem.id,
         title: checkItem.title,
         category: checkItem.category,
         weight: checkItem.weight,
         passed,
-        hint: checkItem.hint
+        hint
       });
 
       // 통계
@@ -115,13 +118,16 @@ export async function runAudit() {
       else failedCount++;
     } catch (error) {
       // selector/validator 에러는 fail 처리
+      // hint가 함수이면 실행, 문자열이면 그대로 사용
+      const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+
       results.push({
         id: checkItem.id,
         title: checkItem.title,
         category: checkItem.category,
         weight: checkItem.weight,
         passed: false,
-        hint: checkItem.hint,
+        hint,
         error: error.message
       });
       failedCount++;
