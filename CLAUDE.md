@@ -154,10 +154,62 @@ if (translationState.state === 'translating') {
   1. `runAudit()` - 각 항목 selector/validator 실행
   2. `calculateScores()` - 카테고리별 점수 계산
   3. `getImprovement()` - LLM에 상위 3개 개선 사항 요청
-- **LLM 개선 의견**:
-  - 마크다운 형식으로 정렬된 개선사항 반환
-  - 각 항목마다 "구체적인 실행 방법" + "예상 효과" 제시
-  - 코드 예시 포함 (HTML/JSON)
+
+#### LLM 프롬프트 규격 (중요!)
+LLM이 반드시 따라야 할 형식 (geo-audit.js의 prompt 참고):
+
+```
+## 가장 중요한 3가지 개선 사항
+
+### 1. [제목]
+**구체적인 실행 방법:**
+- 방법 1
+- 방법 2
+- 방법 3
+
+**실제 코드 예시:**
+`&lt;meta name="description" content="155-160자의 설명"&gt;`
+
+**예상 효과:**
+- 효과 1
+- 효과 2
+
+### 2. [제목]
+[동일한 구조]
+
+### 3. [제목]
+[동일한 구조]
+
+## 종합 기대 효과
+[3-4문장 요약]
+```
+
+**필수 규칙:**
+1. 마크다운 헤더: `##` (h3), `###` (h4) 정확히 사용
+2. **"실제 코드 예시:" 섹션은 반드시 포함** (없으면 안 됨!)
+3. HTML 코드: 반드시 `&lt;`, `&gt;`로 변환 (절대 `<`, `>` 금지!)
+4. JSON은 그대로: `{"@type": "...", "name": "..."}`
+5. 백틱 안의 코드는 구체적이고 복사-붙여넣기 가능한 수준
+6. 소제목 뒤에 반드시 콜론(`:`) 붙이기
+7. 각 소제목 아래 `-` 불릿 목록으로 작성
+
+**예시 - 정확한 형식:**
+```
+### 1. 메타 설명 최적화
+
+**구체적인 실행 방법:**
+- 155-160자로 제한
+- 주요 키워드 포함
+- 행동 유도 문구 추가
+
+**실제 코드 예시:**
+`&lt;meta name="description" content="BBC News는 전 세계 뉴스, 정치, 비즈니스, 과학 정보를 제공합니다. 최신 뉴스 기사와 분석을 지금 읽어보세요."&gt;`
+
+**예상 효과:**
+- 검색 결과에서 설명이 온전히 표시됨
+- CTR 15-20% 증가
+```
+
 - **SSR/CSR 인식**:
   - SSR(Server-Side Rendering): HTML에 직접 포함 → 검색봇 읽음 (✅)
   - CSR(Client-Side Rendering): JavaScript 동적 추가 → 검색봇 못 읽음 (❌)
@@ -166,11 +218,12 @@ if (translationState.state === 'translating') {
   - 점수 카드: 4열 그리드, 모두 동일 높이 (80px)
   - 개선 의견: 마크다운 완전 지원 (h2/h3/h4, 리스트, 코드블록, 인라인 코드)
   - 섹션 제목: "제목:" 패턴 자동 감지 → 파란 스타일 적용
+  - escapeHtml() 함수로 코드 안전성 강화 (이중 처리)
 - **저장소**: Chrome Local Storage (번역 기능과 독립)
 - **파일 구조**:
-  - `modules/geo-audit.js` - 검사 엔진 핵심 로직
+  - `modules/geo-audit.js` - 검사 엔진 + LLM 프롬프트 관리
   - `modules/geo-checklist.js` - 18개 체크리스트 정의
-  - `modules/geo-ui.js` - UI 렌더링 및 마크다운 변환
+  - `modules/geo-ui.js` - UI 렌더링 + 마크다운 변환 + HTML 엔터티 처리
   - `modules/geo-tab.js` - 탭 이벤트 핸들러
 
 ### 설정 탭 (Settings)
