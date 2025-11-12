@@ -188,21 +188,29 @@ function calculateScores(results) {
 }
 
 /**
- * LLM에 개선 의견 요청
+ * LLM에 개선 의견 요청 (Claude Haiku 고정 사용)
  *
  * 동작:
  * 1. 검사 결과에서 실패 항목만 추출
- * 2. 프롬프트 구성 (점수, 실패 항목 정보 포함)
- * 3. OpenRouter API 호출 (설정된 모델 사용)
- * 4. 마크다운 형식의 응답 반환
+ * 2. JSON 스키마 프롬프트 구성 (점수, 실패 항목 정보 포함)
+ * 3. OpenRouter API 호출 (anthropic/claude-haiku-4.5 강제)
+ * 4. JSON 형식의 응답 반환
  *
  * 응답 형식:
- * - ## 제목 형식의 섹션
- * - 1. 항목 형식의 번호 목록
- * - **굵은 텍스트**로 강조
+ * {
+ *   "improvements": [
+ *     {"title": "...", "methods": [...], "codeExample": "...", "effects": [...]},
+ *     ...
+ *   ],
+ *   "summary": "..."
+ * }
+ *
+ * 모델 선택:
+ * - GEO 검사: Claude Haiku (지시문 준수율 높음, 저렴)
+ * - 번역: 사용자가 설정한 모델
  *
  * @param {AuditResult} auditResult - runAudit()의 검사 결과
- * @returns {Promise<string>} LLM 응답 (마크다운 형식, geo-ui.js의 formatImprovement로 HTML 변환됨)
+ * @returns {Promise<Object>} LLM 응답 (JSON 객체, geo-ui.js의 formatImprovement로 HTML 변환됨)
  *
  * @example
  * // geo-ui.js에서 호출:
@@ -309,6 +317,10 @@ ${failedItems}
 12. 구체적이고 실용적인 조언을 제공하세요`;
 
   try {
+    // GEO 검사는 Claude Haiku로 강제 (지시문 준수율 높고 저렴함)
+    // 번역 작업은 사용자가 선택한 모델 사용
+    const geoModel = 'anthropic/claude-haiku-4.5';
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -316,7 +328,7 @@ ${failedItems}
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: model || 'openai/gpt-4o-mini',
+        model: geoModel,  // GEO 검사는 무조건 Haiku 사용
         messages: [
           {
             role: 'user',
