@@ -240,86 +240,75 @@ export async function getImprovement(auditResult) {
     .map(r => `- ${r.title}: ${r.hint}`)
     .join('\n');
 
-  const prompt = `당신은 GEO (Generative Engine Optimization) 전문가입니다.
+  const prompt = `당신은 웹사이트 SEO 및 GEO(Generative Engine Optimization) 전문가입니다.
+현재 사이트의 검사 결과를 바탕으로, 가장 중요한 3가지 개선 사항을 JSON 형식으로 제안해주세요.
 
-다음은 웹사이트의 검사 결과입니다:
+## 검사 결과
+- **총점**: ${auditResult.scores.total}/100
+- **SEO**: ${auditResult.scores.seo}/100
+- **AEO**: ${auditResult.scores.aeo}/100
+- **GEO**: ${auditResult.scores.geo}/100
 
-**검사 결과 요약**
-- 총점: ${auditResult.scores.total}/100
-- SEO 점수: ${auditResult.scores.seo}/100
-- AEO 점수: ${auditResult.scores.aeo}/100
-- GEO 점수: ${auditResult.scores.geo}/100
-
-**개선 필요 항목**
+## 개선 필요 항목 (우선순위 순)
 ${failedItems}
 
-위 결과를 분석하여, **반드시 정확하게** 다음과 같은 JSON 형식으로만 답변해주세요:
-- JSON 형식만 답변 (다른 텍스트는 절대 금지!)
-- 각 항목마다 구체적인 코드 예시 필수 (빈 칸 절대 금지!)
-- 코드 예시를 건너뛰지 말 것
+## 요청사항
+위 개선 필요 항목 중에서 **가장 영향력 있는 상위 3가지**를 선택하여 다음 JSON 형식으로 답변해주세요.
+각 항목마다 구체적인 구현 방법과 실제 코드 예시, 기대 효과를 포함해주세요.
 
+## JSON 응답 형식 (반드시 정확히 따르세요)
 \`\`\`json
 {
   "improvements": [
     {
-      "title": "첫 번째 항목 제목",
+      "title": "개선 항목 제목 (명확하고 구체적으로)",
       "methods": [
-        "구체적인 방법 1",
-        "구체적인 방법 2",
-        "구체적인 방법 3"
+        "첫 번째 구현 방법 (실행 가능한 구체적 단계)",
+        "두 번째 구현 방법",
+        "세 번째 구현 방법",
+        "네 번째 구현 방법 (선택 사항)"
       ],
-      "codeExample": "&lt;meta name=\\"description\\" content=\\"155-160자의 설명\\"&gt;",
+      "codeExample": "&lt;meta name=&quot;description&quot; content=&quot;155-160자 범위의 구체적인 설명을 여기에 작성하세요. SEO 키워드를 포함하고 사용자 클릭을 유도하는 문구를 넣으세요.&quot;&gt;",
       "effects": [
-        "기대 효과 1",
-        "기대 효과 2"
+        "기대 효과 1 (구체적인 수치 또는 결과 포함 권장)",
+        "기대 효과 2",
+        "기대 효과 3"
       ]
     },
     {
-      "title": "두 번째 항목 제목",
+      "title": "두 번째 개선 항목",
       "methods": ["방법 1", "방법 2", "방법 3"],
-      "codeExample": "[HTML 또는 JSON-LD 코드]",
+      "codeExample": "&lt;meta property=&quot;og:title&quot; content=&quot;소셜 미디어용 제목&quot;&gt;",
       "effects": ["효과 1", "효과 2"]
     },
     {
-      "title": "세 번째 항목 제목",
+      "title": "세 번째 개선 항목",
       "methods": ["방법 1", "방법 2", "방법 3"],
-      "codeExample": "[HTML 또는 JSON-LD 코드]",
+      "codeExample": "&lt;script type=&quot;application/ld+json&quot;&gt;{\n  &quot;@context&quot;: &quot;https://schema.org&quot;,\n  &quot;@type&quot;: &quot;Article&quot;,\n  &quot;headline&quot;: &quot;제목&quot;,\n  &quot;description&quot;: &quot;설명&quot;,\n  &quot;author&quot;: {\n    &quot;@type&quot;: &quot;Person&quot;,\n    &quot;name&quot;: &quot;저자명&quot;\n  }\n}&lt;/script&gt;",
       "effects": ["효과 1", "효과 2"]
     }
   ],
-  "summary": "최종 기대 효과 설명 - 3-4문장으로 요약"
+  "summary": "3가지 개선 사항을 함께 적용하면, 검색 엔진과 AI 생성형 검색 엔진(생성형 AI) 모두에서 사이트의 가시성이 크게 향상됩니다. 메타 정보와 구조화된 데이터는 검색봇과 AI가 콘텐츠를 정확하게 이해하도록 돕습니다."
 }
 \`\`\`
 
-**필수 규칙:**
-1. 한국어로만 답변하세요
-2. JSON 형식만 전송 (설명 텍스트 절대 금지!)
-3. 위 JSON 구조를 정확히 따르세요 (추가 필드나 수정 금지)
-4. "improvements" 배열은 **정확히 3개** 항목이어야 합니다
-5. 각 항목의 "methods" 배열은 **최소 3개 이상** 필수
-6. 각 항목의 "effects" 배열은 **최소 2개 이상** 필수
-7. **"codeExample" 필드는 절대 비워두면 안 됨!** (중복 강조)
-   - 각 항목마다 반드시 하나씩 구체적인 코드를 작성해야 함
-   - 빈 문자열, 대괄호, 공백만 있으면 안 됨
-8. **HTML 코드는 반드시 HTML 엔터티로 완전히 변환하세요:**
-   - < 를 &lt; 로 변환 (절대 < 금지!)
-   - > 를 &gt; 로 변환 (절대 > 금지!)
-   - " 를 &quot; 로 변환
-   - & 를 &amp; 로 변환 (먼저 처리!)
-   - 예1: "&lt;meta name=&quot;description&quot; content=&quot;...&quot;&gt;"
-   - 예2: "&lt;script type=&quot;application/ld+json&quot;&gt;{...}&lt;/script&gt;"
-   - 불완전한 예시는 안 됨 (반드시 완전한 태그와 속성 포함)
-9. **JSON 코드도 엔터티로 변환:**
-   - {"@type": "Article"} → {"&quot;@type&quot;: &quot;Article&quot;"}
-   - 중괄호는 그대로 유지: { }
-10. JSON의 큰따옴표: string 안의 큰따옴표는 \\" 로 이스케이프
-11. 각 codeExample은 실제 복사-붙여넣기 가능한 완전한 코드여야 함
-12. 구체적이고 실용적인 조언을 제공하세요`;
+## 필수 지침
+1. **JSON만 출력**: 마크다운, 설명, 추가 텍스트 절대 금지
+2. **항목 정확히 3개**: improvements 배열은 반드시 3개 항목
+3. **코드 예시 필수**: 각 항목의 codeExample은 비워두면 안 됨
+4. **HTML 엔터티 변환 필수**:
+   - \`<\` → \`&lt;\`
+   - \`>\` → \`&gt;\`
+   - \`"\` → \`&quot;\`
+   - \`&\` → \`&amp;\`
+5. **methods 배열**: 최소 3개 항목 (구체적이고 실행 가능한 단계)
+6. **effects 배열**: 최소 2개 항목 (구체적인 결과)
+7. **summary**: 3-4문장으로 3가지 개선 사항의 종합 효과 설명`;
 
   try {
-    // GEO 검사는 Claude Haiku로 강제 (지시문 준수율 높고 저렴함)
+    // GEO 검사는 Claude를 사용 (JSON 규격 준수율 높음, 지시문 이해도 우수)
     // 번역 작업은 사용자가 선택한 모델 사용
-    const geoModel = 'anthropic/claude-haiku-4.5';
+    const geoModel = 'anthropic/claude-3-5-sonnet';
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -353,8 +342,15 @@ ${failedItems}
     const content = data.choices[0].message.content;
 
     try {
-      // response_format: {type: 'json_object'}로 강제되어 content는 반드시 유효한 JSON
-      const parsed = JSON.parse(content);
+      // 마크다운 코드블록 제거 (Anthropic 모델이 ```json으로 감싸서 보낼 수 있음)
+      let jsonStr = content.trim();
+      if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+
+      const parsed = JSON.parse(jsonStr);
 
       // 유효한 JSON 구조 확인
       if (!parsed.improvements || !Array.isArray(parsed.improvements) || parsed.improvements.length !== 3) {
@@ -367,13 +363,19 @@ ${failedItems}
         if (!item.title || !item.methods || !item.effects) {
           throw new Error(`항목 ${idx + 1}: title, methods, effects가 모두 필요합니다`);
         }
-        // codeExample이 비어있거나 플레이스홀더만 있는 경우 체크
+
+        // [DEBUG] 실제 codeExample 값 확인
+        console.log(`[DETAIL] 항목 ${idx + 1}: "${item.title}"`);
+        console.log(`[DETAIL]   codeExample 길이: ${item.codeExample ? item.codeExample.length : 0}`);
+        console.log(`[DETAIL]   codeExample 값: "${item.codeExample}"`);
+        console.log(`[DETAIL]   codeExample trim 길이: ${item.codeExample ? item.codeExample.trim().length : 0}`);
+
+        // codeExample이 비어있거나 플레이스홀더만 있는 경우 체크 (경고만 함)
         if (!item.codeExample || item.codeExample.trim() === '' ||
             item.codeExample.includes('[여기에') || (item.codeExample.includes('...') && item.codeExample.length < 10)) {
           hasEmptyCodeExample = true;
           console.warn(`⚠️ 경고: 항목 ${idx + 1}의 codeExample이 구체적이지 않습니다`);
-          // codeExample이 비어있으면 빈 문자열로 설정 (UI에서 숨김)
-          item.codeExample = '';
+          // codeExample은 그대로 둠 (UI에서 판단)
         }
       });
 
