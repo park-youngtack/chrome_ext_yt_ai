@@ -164,7 +164,7 @@ export async function runAudit() {
  * const scores = calculateScores(auditResult.results);
  * console.log(scores); // { seo: 85, aeo: 90, geo: 78, total: 84 }
  */
-function calculateScores(results) {
+export function calculateScores(results) {
   const weights = calculateTotalWeights();
   const grouped = groupChecklistByCategory();
 
