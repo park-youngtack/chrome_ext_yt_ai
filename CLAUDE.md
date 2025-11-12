@@ -154,6 +154,9 @@ if (translationState.state === 'translating') {
   1. `runAudit()` - 각 항목 selector/validator 실행
   2. `calculateScores()` - 카테고리별 점수 계산
   3. `getImprovement()` - LLM에 상위 3개 개선 사항 요청
+    - **모델**: Claude Haiku (고정)
+    - **이유**: JSON 규격 준수율 높고 저렴함
+    - **비교**: 번역은 사용자 설정 모델 사용
 
 #### LLM 응답 규격 - JSON 스키마 (중요!)
 LLM이 반드시 따라야 할 형식 (`response_format: {type: 'json_object'}`로 강제):
