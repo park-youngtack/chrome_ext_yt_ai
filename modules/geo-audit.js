@@ -255,7 +255,7 @@ ${failedItems}
 - [구체적인 방법 2]
 - [구체적인 방법 3]
 
-예시: \`<meta name="description" content="..."\`> 또는 \`{"@type": "...", "name": "..."\`}
+예시: \`&lt;meta name="description" content="..."&gt;\` 또는 \`{"@type": "...", "name": "..."}\`
 
 **예상 효과:**
 - [기대 효과 1]
@@ -289,9 +289,13 @@ ${failedItems}
 1. 한국어로만 답변하세요
 2. "구체적인 실행 방법:", "예상 효과:" 등 소제목 뒤에 **반드시 콜론(:)을 붙이세요**
 3. 각 항목마다 "### 번호. 제목" 형식을 사용하세요
-4. 코드 예시는 백틱(\`)으로 감싸세요: \`<meta name="..."\`>
-5. 각 소제목 아래 "-" 불릿 목록으로 작성하세요
-6. 실용적이고 구체적인 조언을 제공하세요`;
+4. **HTML 코드는 반드시 HTML 엔터티로 변환해서 백틱 안에 넣으세요:**
+   - &lt; 는 < 를 의미
+   - &gt; 는 > 를 의미
+   - 예: \`&lt;meta name="description"&gt;\` (절대 \`<meta>\` 이런 식으로 쓰지 마세요)
+5. JSON은 그대로 백틱으로 감싸세요: \`{"name": "value"}\`
+6. 각 소제목 아래 "-" 불릿 목록으로 작성하세요
+7. 실용적이고 구체적인 조언을 제공하세요`;
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {

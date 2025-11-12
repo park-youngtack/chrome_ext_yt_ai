@@ -227,6 +227,29 @@ function renderCheckItem(result) {
 }
 
 /**
+ * HTML 문자를 엔터티로 이스케이프
+ * 브라우저가 < > & 등을 태그로 해석하지 않도록 보호
+ *
+ * @param {string} text - 원본 텍스트
+ * @returns {string} 이스케이프된 텍스트
+ *
+ * @example
+ * escapeHtml('<meta name="description">')
+ * // "&lt;meta name=&quot;description&quot;&gt;"
+ */
+function escapeHtml(text) {
+  if (!text) return text;
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+/**
  * LLM 개선 의견 포맷팅 (마크다운 → HTML)
  *
  * 지원하는 마크다운 형식:
@@ -239,7 +262,10 @@ function renderCheckItem(result) {
  * - ```code```        → <pre><code>code</code></pre>
  * - 빈 줄            → <p> 단락 구분
  *
- * @param {string} text - LLM 응답 텍스트 (마크다운 형식)
+ * **중요**: LLM이 보내는 모든 HTML 코드는 &lt; &gt; 형태의 엔터티로 변환되어야 함
+ * 이렇게 하면 코드가 텍스트로 표시되고 브라우저가 해석하지 않음
+ *
+ * @param {string} text - LLM 응답 텍스트 (마크다운 형식, HTML은 엔터티로)
  * @returns {string} HTML 문자열 (렌더링 가능)
  *
  * @example
@@ -271,12 +297,19 @@ function formatImprovement(text) {
     .replace(/^# (.+)$/gm, '<h2 class="geo-improvement-h2">$1</h2>');
 
   // 코드블록 변환 (```code``` → <pre><code>)
+  // HTML 엔터티는 그대로 유지 (displayCode로 전달되어 텍스트로 표시됨)
   html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
-    return `<pre><code>${code.trim()}</code></pre>`;
+    const trimmedCode = code.trim();
+    // HTML 엔터티를 다시 디코딩하지 않음 (이미 &lt; &gt; 형태)
+    return `<pre><code>${escapeHtml(trimmedCode)}</code></pre>`;
   });
 
   // 인라인 코드 변환 (`code` → <code class="inline-code">)
-  html = html.replace(/`([^`]+)`/g, '<code class="geo-inline-code">$1</code>');
+  // HTML 엔터티와 실제 HTML을 모두 안전하게 처리
+  html = html.replace(/`([^`]+)`/g, (match, code) => {
+    // 백틱 안의 내용을 다시 한 번 escapeHtml 처리 (이중 안전 장치)
+    return `<code class="geo-inline-code">${escapeHtml(code)}</code>`;
+  });
 
   // 굵은 텍스트 (**text**)
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
