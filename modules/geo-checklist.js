@@ -29,15 +29,26 @@ export const GEO_CHECKLIST = [
     title: '메타 설명',
     description: '페이지 <head>의 메타 설명 태그가 있는지 확인\n\n💡 권장사항:\n- 최적: 150-160자 (검색결과에서 완전히 표시)\n- 일반적: 120-150자\n- 최소: 100자 이상\n\n⚠️ SSR/CSR 주의:\n- SSR: <meta name="description"> 태그가 HTML에 직접 있으면 검색봇이 읽음 (✅ 통과)\n- CSR: JavaScript에서 동적으로 추가된 메타 설명은 검색봇이 못 읽음 (❌ 실패)\n→ 페이지 소스(Ctrl+U)를 보고 <meta> 태그가 있는지 확인하세요',
     weight: 8,
-    selector: () => document.querySelector('meta[name="description"]'),
+    selector: () => {
+      // 다양한 형식의 메타 설명 태그 모두 찾기
+      return document.querySelector('meta[name="description"]') ||
+             document.querySelector('meta[property="description"]') ||
+             // og:description도 메타 설명으로 간주
+             document.querySelector('meta[property="og:description"]');
+    },
     validator: (elem) => {
       // 존재 여부만 확인 (글자수는 LLM 의견에서 제시)
       if (!elem) return false;
       const content = elem.getAttribute('content')?.trim() || '';
       return content.length > 0;
     },
-    hint: '메타 설명을 150-160자 범위로 작성하면 검색결과에서 완전히 표시됩니다 (현재: ' +
-          (document.querySelector('meta[name="description"]')?.getAttribute('content')?.length || 0) + '자)'
+    hint: () => {
+      const elem = document.querySelector('meta[name="description"]') ||
+                   document.querySelector('meta[property="description"]') ||
+                   document.querySelector('meta[property="og:description"]');
+      const length = elem?.getAttribute('content')?.length || 0;
+      return `메타 설명을 150-160자 범위로 작성하면 검색결과에서 완전히 표시됩니다 (현재: ${length}자)`;
+    }
   },
 
   {
