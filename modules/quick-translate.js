@@ -297,7 +297,7 @@ function renderTranslationHistory(history) {
     return;
   }
 
-  listContainer.style.display = 'block';
+  listContainer.style.display = 'flex';
   emptyEl.style.display = 'none';
 
   // 히스토리 아이템 렌더링 (최신순)
