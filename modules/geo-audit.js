@@ -359,13 +359,34 @@ export async function runDualAudit(url) {
     throw new Error(response.error || 'HTML 가져오기 실패');
   }
 
-  // 3. DOMParser로 파싱
+  // 3. DOMParser로 파싱 (봇이 보는 HTML)
   const parser = new DOMParser();
   const botDoc = parser.parseFromString(response.html, 'text/html');
 
-  // 4. 두 번 검사
+  // 4. 봇 검사 (서버 HTML)
   const botResult = await runAudit(botDoc);
-  const clientResult = await runAudit(document);
+
+  // 5. 브라우저 검사 (현재 탭의 document에서 실행)
+  // Content Script에서 현재 HTML을 받아서 파싱
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+
+  if (!tabId) {
+    throw new Error('활성 탭을 찾을 수 없습니다');
+  }
+
+  // Content Script에서 현재 HTML 가져오기
+  const clientResponse = await chrome.tabs.sendMessage(tabId, {
+    action: 'GET_CURRENT_HTML'
+  });
+
+  if (!clientResponse || clientResponse.error) {
+    throw new Error(clientResponse?.error || '브라우저 HTML 가져오기 실패');
+  }
+
+  // DOMParser로 파싱 (JavaScript 실행된 후의 HTML)
+  const clientDoc = parser.parseFromString(clientResponse.html, 'text/html');
+  const clientResult = await runAudit(clientDoc);
 
   // 5. 차이점 계산
   const differences = [];

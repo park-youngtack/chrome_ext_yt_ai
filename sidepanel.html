@@ -2524,6 +2524,88 @@
               margin-right: 4px;
             }
 
+            /* Dual Audit - 항목별 나란히 비교 */
+            .geo-dual-comparison {
+              margin-top: 24px;
+            }
+
+            .geo-dual-item {
+              background: var(--bg-secondary);
+              border: 1px solid var(--border-color);
+              border-radius: var(--radius-md);
+              padding: 16px;
+              margin-bottom: 12px;
+            }
+
+            .geo-dual-header {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 16px;
+              padding-bottom: 12px;
+              border-bottom: 1px solid var(--border-color);
+            }
+
+            .geo-dual-header .geo-item-title {
+              font-size: 14px;
+              font-weight: 600;
+              color: var(--text-primary);
+              flex: 1;
+            }
+
+            .geo-dual-header .geo-item-weight {
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--status-active);
+              background: rgba(42, 108, 240, 0.1);
+              padding: 4px 8px;
+              border-radius: 12px;
+            }
+
+            .geo-dual-results {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 16px;
+            }
+
+            .geo-dual-col {
+              background: var(--bg-primary);
+              border: 1px solid var(--border-color);
+              border-radius: var(--radius-md);
+              padding: 12px;
+            }
+
+            .geo-dual-label {
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--text-secondary);
+              margin-bottom: 8px;
+            }
+
+            .geo-dual-status {
+              font-size: 13px;
+              font-weight: 600;
+              margin-bottom: 8px;
+            }
+
+            .geo-dual-status.passed {
+              color: var(--status-success);
+            }
+
+            .geo-dual-status.failed {
+              color: var(--status-error);
+            }
+
+            .geo-dual-col .geo-item-hint {
+              font-size: 12px;
+              color: var(--text-secondary);
+              margin-top: 8px;
+              padding: 8px;
+              background: rgba(245, 158, 11, 0.05);
+              border-left: 3px solid rgba(245, 158, 11, 0.4);
+              border-radius: 4px;
+            }
+
             @keyframes spin {
               to { transform: rotate(360deg); }
             }

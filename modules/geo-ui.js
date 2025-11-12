@@ -274,34 +274,29 @@ function displayDualAuditResult(elements, dualResult, improvement = '') {
     </div>
   `;
 
-  // 봇 결과
+  // 항목별 나란히 비교
   const grouped = groupChecklistByCategory();
-  let botHtml = '<div class="geo-audit-section bot-section"><h3>🤖 봇이 보는 것 (초기 HTML)</h3>';
-  Object.entries(grouped).forEach(([category, items]) => {
-    const categoryResults = botResult.results.filter(r => r.category === category);
-    const categoryLabel = { seo: 'SEO', aeo: 'AEO', geo: 'GEO' }[category];
-    botHtml += `<div class="geo-category">
-      <h4 class="geo-category-title">${categoryLabel}</h4>
-      <div class="geo-items">
-        ${categoryResults.map(result => renderCheckItem(result, differences)).join('')}
-      </div>
-    </div>`;
-  });
-  botHtml += '</div>';
+  let comparisonHtml = '<div class="geo-dual-comparison">';
 
-  // 브라우저 결과
-  let clientHtml = '<div class="geo-audit-section client-section"><h3>👤 브라우저가 보는 것 (JavaScript 실행 후)</h3>';
   Object.entries(grouped).forEach(([category, items]) => {
-    const categoryResults = clientResult.results.filter(r => r.category === category);
     const categoryLabel = { seo: 'SEO', aeo: 'AEO', geo: 'GEO' }[category];
-    clientHtml += `<div class="geo-category">
-      <h4 class="geo-category-title">${categoryLabel}</h4>
-      <div class="geo-items">
-        ${categoryResults.map(result => renderCheckItem(result, differences)).join('')}
-      </div>
-    </div>`;
+    comparisonHtml += `<div class="geo-category">
+      <h3 class="geo-category-title">${categoryLabel}</h3>
+      <div class="geo-items">`;
+
+    // 각 항목별로 봇/브라우저 나란히 표시
+    items.forEach(item => {
+      const botItem = botResult.results.find(r => r.id === item.id);
+      const clientItem = clientResult.results.find(r => r.id === item.id);
+      const isDifferent = differences.some(d => d.id === item.id);
+
+      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent);
+    });
+
+    comparisonHtml += `</div></div>`;
   });
-  clientHtml += '</div>';
+
+  comparisonHtml += '</div>';
 
   // LLM 의견 (botResult 기준으로 생성)
   let improvementHtml = '';
@@ -317,7 +312,7 @@ function displayDualAuditResult(elements, dualResult, improvement = '') {
 
   // 전체 조합
   elements.scoreCard.innerHTML = diffWarning + scoreComparison;
-  elements.checklistContainer.innerHTML = botHtml + clientHtml;
+  elements.checklistContainer.innerHTML = comparisonHtml;
   if (elements.improvementSection) {
     elements.improvementSection.innerHTML = improvementHtml;
   }
@@ -383,6 +378,50 @@ function renderCheckItem(result, differences = []) {
 
       <!-- 실패 항목: 개선 방법 -->
       ${!result.passed ? `<div class="geo-item-hint">💡 ${result.hint}</div>` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Dual Audit용 항목별 비교 렌더링 (봇 vs 브라우저)
+ *
+ * @param {CheckResult} botItem - 봇 검사 결과
+ * @param {CheckResult} clientItem - 브라우저 검사 결과
+ * @param {boolean} isDifferent - 차이점 여부
+ * @returns {string} HTML 문자열
+ */
+function renderDualCheckItem(botItem, clientItem, isDifferent) {
+  const diffClass = isDifferent ? 'geo-item-diff' : '';
+  const diffBadge = isDifferent ? '<span class="geo-diff-badge">⚠️ 차이</span>' : '';
+
+  const botIcon = botItem.passed ? '✅' : '❌';
+  const clientIcon = clientItem.passed ? '✅' : '❌';
+
+  return `
+    <div class="geo-dual-item ${diffClass}">
+      <div class="geo-dual-header">
+        <span class="geo-item-title">${botItem.title}</span>
+        ${diffBadge}
+        <span class="geo-item-weight">${botItem.weight}pt</span>
+      </div>
+
+      <div class="geo-dual-results">
+        <div class="geo-dual-col bot-col">
+          <div class="geo-dual-label">🤖 봇</div>
+          <div class="geo-dual-status ${botItem.passed ? 'passed' : 'failed'}">
+            ${botIcon} ${botItem.passed ? '통과' : '실패'} (${botItem.weight}pt)
+          </div>
+          ${!botItem.passed ? `<div class="geo-item-hint">💡 ${botItem.hint}</div>` : ''}
+        </div>
+
+        <div class="geo-dual-col client-col">
+          <div class="geo-dual-label">👤 브라우저</div>
+          <div class="geo-dual-status ${clientItem.passed ? 'passed' : 'failed'}">
+            ${clientIcon} ${clientItem.passed ? '통과' : '실패'} (${clientItem.weight}pt)
+          </div>
+          ${!clientItem.passed ? `<div class="geo-item-hint">💡 ${clientItem.hint}</div>` : ''}
+        </div>
+      </div>
     </div>
   `;
 }
