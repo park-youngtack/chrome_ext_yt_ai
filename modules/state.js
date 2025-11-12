@@ -97,6 +97,14 @@ export let translationState = {
 // ===== Setter 함수 =====
 
 /**
+ * 현재 탭 ID 조회
+ * @returns {number | null} 현재 탭 ID
+ */
+export function getCurrentTabId() {
+  return currentTabId;
+}
+
+/**
  * 현재 탭 ID 설정
  * @param {number} tabId - 탭 ID
  */

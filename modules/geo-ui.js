@@ -175,12 +175,39 @@ function displayAuditResult(elements, auditResult, improvement = '') {
 /**
  * 개별 체크 항목 렌더링
  *
+ * 표시 내용:
+ * - 체크 결과 (✅/❌)
+ * - 항목 제목
+ * - 가중치
+ * - 상세 설명 (description) - SSR/CSR 주의사항 포함
+ * - 실패 항목: 개선 방법 (hint)
+ *
  * @param {CheckResult} result - 체크 결과
  * @returns {string} HTML 문자열
  */
 function renderCheckItem(result) {
   const icon = result.passed ? '✅' : '❌';
   const status = result.passed ? 'passed' : 'failed';
+
+  // description의 \n을 <br>로 변환하여 줄바꿈 표시
+  const formattedDescription = result.description
+    ? result.description.split('\n').map(line => {
+        // 불릿 항목 (- 로 시작)을 보기 좋게 포맷팅
+        if (line.trim().startsWith('-')) {
+          return `<div class="geo-item-bullet">${line}</div>`;
+        }
+        // 화살표 (→) 로 시작하는 행동 유도 텍스트
+        if (line.trim().startsWith('→')) {
+          return `<div class="geo-item-action">${line}</div>`;
+        }
+        // 일반 텍스트
+        if (line.trim()) {
+          return `<div>${line}</div>`;
+        }
+        // 빈 줄 (단락 구분)
+        return '<div style="height: 8px;"></div>';
+      }).join('')
+    : '';
 
   return `
     <div class="geo-item ${status}">
@@ -189,6 +216,11 @@ function renderCheckItem(result) {
         <span class="geo-item-title">${result.title}</span>
         <span class="geo-item-weight">${result.weight}pt</span>
       </div>
+
+      <!-- 상세 설명 (SSR/CSR 주의사항 포함) -->
+      ${formattedDescription ? `<div class="geo-item-description">${formattedDescription}</div>` : ''}
+
+      <!-- 실패 항목: 개선 방법 -->
       ${!result.passed ? `<div class="geo-item-hint">💡 ${result.hint}</div>` : ''}
     </div>
   `;
@@ -197,18 +229,162 @@ function renderCheckItem(result) {
 /**
  * LLM 개선 의견 포맷팅 (마크다운 → HTML)
  *
- * @param {string} text - LLM 응답 텍스트
- * @returns {string} HTML 문자열
+ * 지원하는 마크다운 형식:
+ * - ### 세 번째 제목  → <h4>제목</h4>
+ * - ## 두 번째 제목   → <h3>제목</h3>
+ * - # 첫 번째 제목    → <h2>제목</h2>
+ * - **굵은텍스트**    → <strong>굵은텍스트</strong>
+ * - 1. 번호 항목      → <ol><li>번호 항목</li></ol>
+ * - - 불릿 항목      → <ul><li>불릿 항목</li></ul>
+ * - ```code```        → <pre><code>code</code></pre>
+ * - 빈 줄            → <p> 단락 구분
+ *
+ * @param {string} text - LLM 응답 텍스트 (마크다운 형식)
+ * @returns {string} HTML 문자열 (렌더링 가능)
+ *
+ * @example
+ * // LLM이 실제로 보내는 형식:
+ * const response = `### 1. 제목 최적화
+ * 구체적인 실행 방법:
+ * - 30-60자 사이로 조정
+ * - 주요 키워드 포함
+ *
+ * 예상 효과:
+ * - CTR 증가
+ * - AI 응답 포함 가능성 증대`;
+ *
+ * // 결과:
+ * const html = formatImprovement(response);
+ * // <h4>1. 제목 최적화</h4>
+ * // <p>구체적인 실행 방법:</p>
+ * // <ul><li>30-60자 사이로 조정</li><li>주요 키워드 포함</li></ul>
+ * // <p>예상 효과:</p>
+ * // <ul><li>CTR 증가</li><li>AI 응답 포함 가능성 증대</li></ul>
  */
 function formatImprovement(text) {
-  return text
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\d\.\s/g, '<br><strong>$&</strong>')
-    .replace(/^(.+)$/gm, (match) => {
-      if (match.startsWith('<')) return match;
-      return `<p>${match}</p>`;
-    });
+  if (!text) return '';
+
+  let html = text
+    // 마크다운 제목 변환 (### → h4, ## → h3, # → h2)
+    .replace(/^### (.+)$/gm, '<h4 class="geo-improvement-h4">$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 class="geo-improvement-h3">$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2 class="geo-improvement-h2">$1</h2>');
+
+  // 코드블록 변환 (```code``` → <pre><code>)
+  html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+    return `<pre><code>${code.trim()}</code></pre>`;
+  });
+
+  // 인라인 코드 변환 (`code` → <code class="inline-code">)
+  html = html.replace(/`([^`]+)`/g, '<code class="geo-inline-code">$1</code>');
+
+  // 굵은 텍스트 (**text**)
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // 이탤릭 (*text*) - 주의: ** 이미 처리됨
+  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+
+  // 소제목 패턴 강화: "제목:" 형식을 <strong> 태그로 변환
+  // 예: "구체적인 실행 방법:" → <strong class="geo-section-title">구체적인 실행 방법:</strong>
+  html = html.replace(/^(.+?):(\s*)$/gm, (match, title, space) => {
+    // h1-h4 제목이 아닌 경우만 변환
+    if (!title.startsWith('<')) {
+      return `<strong class="geo-section-title">${title}:</strong>${space}`;
+    }
+    return match;
+  });
+
+  // 줄 단위 처리 (번호 목록, 불릿 처리)
+  const lines = html.split('\n');
+  let inOrderedList = false;
+  let inUnorderedList = false;
+  let inOrderedSection = null; // 현재 섹션 제목 저장 (들여쓰기용)
+  let listBuffer = '';
+  const result = [];
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+
+    // 빈 줄 처리
+    if (trimmed === '') {
+      if (inOrderedList) {
+        result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
+        inOrderedList = false;
+        listBuffer = '';
+      }
+      if (inUnorderedList) {
+        result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
+        inUnorderedList = false;
+        listBuffer = '';
+      }
+      result.push('');
+      return;
+    }
+
+    // 번호 목록 (1. 2. 3. ...)
+    const orderedMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+    if (orderedMatch) {
+      if (inUnorderedList) {
+        result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
+        inUnorderedList = false;
+        listBuffer = '';
+      }
+      inOrderedList = true;
+      listBuffer += `<li>${orderedMatch[2]}</li>`;
+      return;
+    }
+
+    // 불릿 목록 (- •)
+    const bulletMatch = trimmed.match(/^[-•]\s+(.+)$/);
+    if (bulletMatch) {
+      if (inOrderedList) {
+        result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
+        inOrderedList = false;
+        listBuffer = '';
+      }
+      inUnorderedList = true;
+      listBuffer += `<li>${bulletMatch[1]}</li>`;
+      return;
+    }
+
+    // 목록 종료, 일반 텍스트 또는 소제목
+    if (inOrderedList) {
+      result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
+      inOrderedList = false;
+      listBuffer = '';
+    }
+    if (inUnorderedList) {
+      result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
+      inUnorderedList = false;
+      listBuffer = '';
+    }
+
+    // 제목, 코드블록, 강조(strong) 처리된 소제목이면 그대로, 아니면 단락으로 감싸기
+    if (trimmed.startsWith('<')) {
+      result.push(line);
+    } else if (trimmed.length > 0) {
+      result.push(`<p>${line}</p>`);
+    } else {
+      result.push(line);
+    }
+  });
+
+  // 남은 목록 처리
+  if (inOrderedList) {
+    result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
+  }
+  if (inUnorderedList) {
+    result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
+  }
+
+  // 빈 줄 기준으로 최종 정리
+  html = result
+    .join('\n')
+    .split('\n\n')
+    .filter(s => s.trim() !== '')
+    .join('\n');
+
+  return html;
 }
 
 /**

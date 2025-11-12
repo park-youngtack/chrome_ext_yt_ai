@@ -11,8 +11,12 @@
  * @property {string} category - 'seo' | 'aeo' | 'geo'
  * @property {string} title - 검사항목 제목
  * @property {string} description - 상세 설명
+ *   참고: 이 검사는 **클라이언트 렌더링(CSR) 기준**입니다.
+ *   - SSR 페이지: 서버에서 HTML 생성 → 검색봇이 완전히 읽을 수 있음
+ *   - CSR 페이지: JavaScript로 동적 생성 → 검색봇이 실행 불가 시 못 읽음
+ *   따라서 SSR 페이지인 경우, 페이지 소스(HTML)에 요소가 있는지 확인하세요.
  * @property {number} weight - 점수 가중치 (1-10)
- * @property {Function} selector - DOM 선택자 또는 검사 함수
+ * @property {Function} selector - DOM 선택자 또는 검사 함수 (현재 페이지에서 실행)
  * @property {Function} validator - 검사 로직 (element/data → boolean)
  * @property {string} hint - 실패 시 개선 방법 힌트
  */
@@ -23,15 +27,17 @@ export const GEO_CHECKLIST = [
     id: 'meta_description',
     category: 'seo',
     title: '메타 설명',
-    description: '페이지 메타 설명 태그가 120-160자 범위인지 확인',
+    description: '페이지 <head>의 메타 설명 태그가 있는지 확인\n\n💡 권장사항:\n- 최적: 150-160자 (검색결과에서 완전히 표시)\n- 일반적: 120-150자\n- 최소: 100자 이상\n\n⚠️ SSR/CSR 주의:\n- SSR: <meta name="description"> 태그가 HTML에 직접 있으면 검색봇이 읽음 (✅ 통과)\n- CSR: JavaScript에서 동적으로 추가된 메타 설명은 검색봇이 못 읽음 (❌ 실패)\n→ 페이지 소스(Ctrl+U)를 보고 <meta> 태그가 있는지 확인하세요',
     weight: 8,
     selector: () => document.querySelector('meta[name="description"]'),
     validator: (elem) => {
+      // 존재 여부만 확인 (글자수는 LLM 의견에서 제시)
       if (!elem) return false;
-      const length = elem.getAttribute('content')?.length || 0;
-      return length >= 120 && length <= 160;
+      const content = elem.getAttribute('content')?.trim() || '';
+      return content.length > 0;
     },
-    hint: '메타 설명을 120-160자 범위로 작성하세요'
+    hint: '메타 설명을 150-160자 범위로 작성하면 검색결과에서 완전히 표시됩니다 (현재: ' +
+          (document.querySelector('meta[name="description"]')?.getAttribute('content')?.length || 0) + '자)'
   },
 
   {
@@ -49,22 +55,27 @@ export const GEO_CHECKLIST = [
     id: 'title_tag',
     category: 'seo',
     title: '페이지 제목',
-    description: '페이지 제목이 50-60자 범위인지 확인',
+    description: '페이지 <title> 태그가 있는지 확인 (기본값이 아닌지 확인)\n\n💡 권장사항:\n- 최적: 50-60자 (검색결과에서 줄바꿈 없이 표시)\n- 일반적: 50-70자 (BBC, NYT 등 대형 매체도 이 범위)\n- 최소: 30자 이상\n\n⚠️ SSR/CSR의 가장 흔한 실패 사례:\n- 화면에 보이는 제목: "내 서비스 소개" (CSR로 렌더링된 제목)\n- 검색봇이 읽는 제목: "Untitled" (HTML 서버 소스의 기본 제목)\n→ 페이지 소스(Ctrl+U)의 <title> 태그를 확인하세요!\n→ 검색봇은 JavaScript 실행 불가 시 서버의 원본 HTML 제목만 봅니다',
     weight: 9,
     selector: () => document.title,
-    validator: (title) => title.length >= 50 && title.length <= 60,
-    hint: '페이지 제목을 50-60자 범위로 설정하세요'
+    validator: (title) => {
+      // 제목이 있고 기본값이 아닌지 확인 (기본값: Untitled, Home, 등)
+      const trimmed = title?.trim() || '';
+      const defaultTitles = ['untitled', 'home', 'page', 'new page', 'welcome'];
+      return trimmed.length > 0 && !defaultTitles.includes(trimmed.toLowerCase());
+    },
+    hint: '페이지 제목을 50-60자 범위로 설정하면 가장 좋습니다 (현재: ' + (document.title?.length || 0) + '자)'
   },
 
   {
     id: 'structured_data',
     category: 'seo',
     title: '구조화된 데이터',
-    description: 'JSON-LD 또는 Schema.org 마크업이 있는지 확인',
+    description: '<head> 내 JSON-LD 스크립트 태그가 있는지 확인\n\n💡 권장사항:\n- Article, NewsArticle, BlogPosting 스키마 추가\n- Product, Organization, LocalBusiness 등\n\n⚠️ SSR/CSR 주의:\n- SSR: <script type="application/ld+json"> 태그가 HTML 서버 소스에 있음 (✅ 통과)\n- CSR: JavaScript에서 동적으로 추가된 구조화된 데이터는 검색봇이 못 읽음 (❌ 실패)\n→ 페이지 소스(Ctrl+U)의 <head>에 JSON-LD가 있는지 확인\n→ JSON 형식이 유효한지 https://validator.schema.org에서 검증하세요',
     weight: 7,
     selector: () => document.querySelector('script[type="application/ld+json"]'),
     validator: (elem) => elem !== null && elem.textContent.trim().length > 0,
-    hint: 'Schema.org JSON-LD 구조화된 데이터를 추가하세요'
+    hint: 'Schema.org JSON-LD 형식으로 Article, Product 등 적절한 구조화된 데이터를 서버 HTML에 포함시키세요'
   },
 
   {
@@ -98,55 +109,59 @@ export const GEO_CHECKLIST = [
     id: 'og_title',
     category: 'aeo',
     title: 'OG 제목',
-    description: 'Open Graph og:title이 설정되어 있는지 확인',
+    description: '<head>에 Open Graph og:title 메타 태그가 있는지 확인\n\n💡 권장사항:\n- og:title: 페이지 제목과 동일하게 설정 (50-60자 권장)\n\n⚠️ SSR/CSR 주의:\n- SSR: 서버에서 각 페이지의 og:title을 HTML에 직접 포함 (✅ 통과)\n- CSR: JavaScript에서 og:title을 동적으로 추가하면, 소셜 미디어 크롤러가 못 읽을 수 있음\n→ 페이지 소스에 <meta property="og:title"> 태그가 있는지 확인\n→ Twitter, Facebook 공유 시 미리보기를 테스트하세요',
     weight: 7,
     selector: () => document.querySelector('meta[property="og:title"]'),
     validator: (elem) => elem !== null && elem.getAttribute('content')?.trim().length > 0,
-    hint: 'OG 메타 태그를 추가하여 소셜 미디어 공유를 최적화하세요'
+    hint: 'OG 제목을 서버 HTML의 <head>에 포함시키세요 (페이지 제목과 동일하게, 50-60자 권장)'
   },
 
   {
     id: 'og_description',
     category: 'aeo',
     title: 'OG 설명',
-    description: 'Open Graph og:description이 설정되어 있는지 확인',
+    description: '<head>에 Open Graph og:description 메타 태그가 있는지 확인\n\n💡 권장사항:\n- og:description: 메타 설명과 동일하게 설정\n- 길이: 150-160자 (소셜 공유 시 완전히 표시됨)\n\n⚠️ SSR/CSR 주의:\n- SSR: 서버에서 미리 생성 (✅ 소셜 공유 정상)\n- CSR: 동적 추가 시 공유 미리보기에 반영 안 될 수 있음',
     weight: 7,
     selector: () => document.querySelector('meta[property="og:description"]'),
     validator: (elem) => elem !== null && elem.getAttribute('content')?.trim().length > 0,
-    hint: 'OG 설명을 추가하세요'
+    hint: 'OG 설명을 서버 HTML에 포함시키세요 (메타 설명과 동일, 150-160자 권장)'
   },
 
   {
     id: 'og_image',
     category: 'aeo',
     title: 'OG 이미지',
-    description: 'Open Graph og:image가 설정되어 있는지 확인',
+    description: '<head>에 Open Graph og:image 메타 태그가 있는지 확인\n\n💡 권장사항:\n- 이미지 크기: 1200x630px (이상적)\n- 최소: 600x315px\n- 형식: JPG, PNG (GIF 피하기)',
     weight: 7,
     selector: () => document.querySelector('meta[property="og:image"]'),
     validator: (elem) => elem !== null && elem.getAttribute('content')?.trim().length > 0,
-    hint: '고품질 og:image를 추가하세요 (1200x630px 권장)'
+    hint: '고품질 og:image를 서버 HTML에 추가하세요 (1200x630px 권장)'
   },
 
   {
     id: 'twitter_card',
     category: 'aeo',
     title: 'Twitter Card',
-    description: 'Twitter Card 메타 태그가 설정되어 있는지 확인',
+    description: 'Twitter Card 메타 태그가 있는지 확인\n\n💡 권장사항:\n- twitter:card: "summary_large_image" (권장)\n- twitter:title, twitter:description 함께 설정',
     weight: 6,
     selector: () => document.querySelector('meta[name="twitter:card"]'),
     validator: (elem) => elem !== null && elem.getAttribute('content')?.trim().length > 0,
-    hint: 'Twitter Card 메타 태그를 추가하세요'
+    hint: 'Twitter Card 메타 태그를 서버 HTML에 추가하세요 (summary_large_image 권장)'
   },
 
   {
     id: 'content_length',
     category: 'aeo',
     title: '콘텐츠 길이',
-    description: '본문 콘텐츠가 500자 이상인지 확인',
+    description: '본문 콘텐츠가 충분히 있는지 확인\n\n💡 권장사항:\n- 최소: 500자 이상\n- 이상적: 1000자 이상 (깊이 있는 콘텐츠)\n- AI 답변 포함: 2000자 이상 권장',
     weight: 8,
     selector: () => document.body.innerText,
-    validator: (text) => text.replace(/\s/g, '').length >= 500,
-    hint: '최소 500자 이상의 상세한 콘텐츠를 작성하세요'
+    validator: (text) => {
+      const cleanText = text.replace(/\s/g, '');
+      return cleanText.length > 0; // 존재 여부만 확인
+    },
+    hint: '최소 500자 이상의 상세한 콘텐츠를 작성하면 좋습니다 (현재: ' +
+          (document.body.innerText.replace(/\s/g, '').length) + '자)'
   },
 
   // ===== GEO 체크리스트 =====
@@ -174,11 +189,11 @@ export const GEO_CHECKLIST = [
     id: 'clear_summary',
     category: 'geo',
     title: '명확한 요약',
-    description: '페이지 시작 부분에 150자 이상의 명확한 요약이 있는지 확인',
+    description: '페이지 시작 부분에 명확한 요약 내용이 있는지 확인\n\n💡 권장사항:\n- 길이: 150-300자\n- 위치: 페이지 최상단 또는 첫 단락\n- 내용: 핵심을 명확하게 설명 (AI 답변 답로 사용됨)',
     weight: 8,
-    selector: () => document.body.innerText.split('\n')[0],
-    validator: (text) => text?.trim().length >= 150,
-    hint: '페이지 시작에 명확한 요약 문장을 추가하세요 (AI 답변에 포함될 가능성 증가)'
+    selector: () => document.body.innerText,
+    validator: (text) => text?.trim().length > 0, // 콘텐츠 존재 여부만
+    hint: '페이지 시작에 명확한 요약 문장을 150-300자로 추가하세요 (AI 답변에 포함될 가능성 증가)'
   },
 
   {
