@@ -250,22 +250,59 @@ function escapeHtml(text) {
 }
 
 /**
- * LLM 개선 의견 포맷팅 (마크다운 → HTML)
+ * HTML 엔터티를 실제 문자로 디코딩 (이미 &lt;&gt;로 인코딩된 코드 표시용)
+ * LLM이 보낸 &lt;meta&gt;를 <meta>로 변환하여 pre/code에 표시
  *
- * 지원하는 마크다운 형식:
- * - ### 세 번째 제목  → <h4>제목</h4>
- * - ## 두 번째 제목   → <h3>제목</h3>
- * - # 첫 번째 제목    → <h2>제목</h2>
- * - **굵은텍스트**    → <strong>굵은텍스트</strong>
- * - 1. 번호 항목      → <ol><li>번호 항목</li></ol>
- * - - 불릿 항목      → <ul><li>불릿 항목</li></ul>
- * - ```code```        → <pre><code>code</code></pre>
- * - 빈 줄            → <p> 단락 구분
+ * @param {string} text - HTML 엔터티로 인코딩된 텍스트
+ * @returns {string} 디코딩된 텍스트
  *
- * **중요**: LLM이 보내는 모든 HTML 코드는 &lt; &gt; 형태의 엔터티로 변환되어야 함
- * 이렇게 하면 코드가 텍스트로 표시되고 브라우저가 해석하지 않음
+ * @example
+ * decodeHtmlEntities('&lt;meta name=&quot;description&quot;&gt;')
+ * // '<meta name="description">'
+ */
+function decodeHtmlEntities(text) {
+  if (!text) return text;
+  const map = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#039;': "'"
+  };
+  // 역순으로 처리 (& 먼저 처리하면 &lt;가 꼬임)
+  let result = text;
+  result = result.replace(/&quot;/g, '"');
+  result = result.replace(/&#039;/g, "'");
+  result = result.replace(/&lt;/g, '<');
+  result = result.replace(/&gt;/g, '>');
+  result = result.replace(/&amp;/g, '&');
+  return result;
+}
+
+/**
+ * LLM 개선 의견 포맷팅 (JSON 구조화 데이터 → HTML)
  *
- * @param {string} text - LLM 응답 텍스트 (마크다운 형식, HTML은 엔터티로)
+ * LLM이 반환하는 JSON 구조:
+ * {
+ *   "improvements": [
+ *     {
+ *       "title": "제목",
+ *       "methods": ["방법 1", "방법 2", ...],
+ *       "codeExample": "&lt;meta ...&gt;",  // HTML 엔터티로 인코딩됨
+ *       "effects": ["효과 1", "효과 2", ...]
+ *     },
+ *     ...
+ *   ],
+ *   "summary": "종합 효과"
+ * }
+ *
+ * 장점:
+ * - 구조화된 데이터이므로 파싱 오류 없음
+ * - HTML 엔터티로 이미 인코딩되어 안전함
+ * - 마크다운 파싱 불필요 (정규식 오류 제거)
+ * - 타입 안전성 확보
+ *
+ * @param {Object} improvement - LLM이 반환한 JSON 객체
  * @returns {string} HTML 문자열 (렌더링 가능)
  *
  * @example
@@ -287,136 +324,56 @@ function escapeHtml(text) {
  * // <p>예상 효과:</p>
  * // <ul><li>CTR 증가</li><li>AI 응답 포함 가능성 증대</li></ul>
  */
-function formatImprovement(text) {
-  if (!text) return '';
+function formatImprovement(improvement) {
+  // JSON 객체가 아닌 경우 처리 (하위호환성)
+  if (!improvement || typeof improvement !== 'object') return '';
 
-  let html = text
-    // 마크다운 제목 변환 (### → h4, ## → h3, # → h2)
-    .replace(/^### (.+)$/gm, '<h4 class="geo-improvement-h4">$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3 class="geo-improvement-h3">$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2 class="geo-improvement-h2">$1</h2>');
+  const { improvements = [], summary = '' } = improvement;
 
-  // 코드블록 변환 (```code``` → <pre><code>)
-  // HTML 엔터티는 그대로 유지 (displayCode로 전달되어 텍스트로 표시됨)
-  html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
-    const trimmedCode = code.trim();
-    // HTML 엔터티를 다시 디코딩하지 않음 (이미 &lt; &gt; 형태)
-    return `<pre><code>${escapeHtml(trimmedCode)}</code></pre>`;
+  if (!Array.isArray(improvements) || improvements.length === 0) return '';
+
+  let html = '<div class="geo-improvements-list">';
+
+  // 각 개선 항목 렌더링
+  improvements.forEach((item, idx) => {
+    const { title = '', methods = [], codeExample = '', effects = [] } = item;
+
+    html += `<div class="geo-improvement-item">
+      <h4 class="geo-improvement-h4">${idx + 1}. ${escapeHtml(title)}</h4>
+
+      <div class="geo-improvement-section">
+        <strong class="geo-section-title">구체적인 실행 방법:</strong>
+        <ul class="geo-unordered-list">
+          ${methods.map(m => `<li>${escapeHtml(m)}</li>`).join('')}
+        </ul>
+      </div>`;
+
+    // 코드 예시 (이미 HTML 엔터티로 인코딩됨)
+    if (codeExample) {
+      html += `<div class="geo-improvement-section">
+        <strong class="geo-section-title">실제 코드 예시:</strong>
+        <pre><code>${decodeHtmlEntities(codeExample)}</code></pre>
+      </div>`;
+    }
+
+    html += `<div class="geo-improvement-section">
+        <strong class="geo-section-title">예상 효과:</strong>
+        <ul class="geo-unordered-list">
+          ${effects.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>`;
   });
 
-  // 인라인 코드 변환 (`code` → <code class="inline-code">)
-  // HTML 엔터티와 실제 HTML을 모두 안전하게 처리
-  html = html.replace(/`([^`]+)`/g, (match, code) => {
-    // 백틱 안의 내용을 다시 한 번 escapeHtml 처리 (이중 안전 장치)
-    return `<code class="geo-inline-code">${escapeHtml(code)}</code>`;
-  });
-
-  // 굵은 텍스트 (**text**)
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // 이탤릭 (*text*) - 주의: ** 이미 처리됨
-  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
-
-  // 소제목 패턴 강화: "제목:" 형식을 <strong> 태그로 변환
-  // 예: "구체적인 실행 방법:" → <strong class="geo-section-title">구체적인 실행 방법:</strong>
-  html = html.replace(/^(.+?):(\s*)$/gm, (match, title, space) => {
-    // h1-h4 제목이 아닌 경우만 변환
-    if (!title.startsWith('<')) {
-      return `<strong class="geo-section-title">${title}:</strong>${space}`;
-    }
-    return match;
-  });
-
-  // 줄 단위 처리 (번호 목록, 불릿 처리)
-  const lines = html.split('\n');
-  let inOrderedList = false;
-  let inUnorderedList = false;
-  let inOrderedSection = null; // 현재 섹션 제목 저장 (들여쓰기용)
-  let listBuffer = '';
-  const result = [];
-
-  lines.forEach((line, idx) => {
-    const trimmed = line.trim();
-
-    // 빈 줄 처리
-    if (trimmed === '') {
-      if (inOrderedList) {
-        result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
-        inOrderedList = false;
-        listBuffer = '';
-      }
-      if (inUnorderedList) {
-        result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
-        inUnorderedList = false;
-        listBuffer = '';
-      }
-      result.push('');
-      return;
-    }
-
-    // 번호 목록 (1. 2. 3. ...)
-    const orderedMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
-    if (orderedMatch) {
-      if (inUnorderedList) {
-        result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
-        inUnorderedList = false;
-        listBuffer = '';
-      }
-      inOrderedList = true;
-      listBuffer += `<li>${orderedMatch[2]}</li>`;
-      return;
-    }
-
-    // 불릿 목록 (- •)
-    const bulletMatch = trimmed.match(/^[-•]\s+(.+)$/);
-    if (bulletMatch) {
-      if (inOrderedList) {
-        result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
-        inOrderedList = false;
-        listBuffer = '';
-      }
-      inUnorderedList = true;
-      listBuffer += `<li>${bulletMatch[1]}</li>`;
-      return;
-    }
-
-    // 목록 종료, 일반 텍스트 또는 소제목
-    if (inOrderedList) {
-      result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
-      inOrderedList = false;
-      listBuffer = '';
-    }
-    if (inUnorderedList) {
-      result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
-      inUnorderedList = false;
-      listBuffer = '';
-    }
-
-    // 제목, 코드블록, 강조(strong) 처리된 소제목이면 그대로, 아니면 단락으로 감싸기
-    if (trimmed.startsWith('<')) {
-      result.push(line);
-    } else if (trimmed.length > 0) {
-      result.push(`<p>${line}</p>`);
-    } else {
-      result.push(line);
-    }
-  });
-
-  // 남은 목록 처리
-  if (inOrderedList) {
-    result.push(`<ol class="geo-ordered-list">${listBuffer}</ol>`);
-  }
-  if (inUnorderedList) {
-    result.push(`<ul class="geo-unordered-list">${listBuffer}</ul>`);
+  // 종합 기대 효과
+  if (summary) {
+    html += `<div class="geo-improvement-summary">
+      <h4 class="geo-improvement-h4">종합 기대 효과</h4>
+      <p>${escapeHtml(summary)}</p>
+    </div>`;
   }
 
-  // 빈 줄 기준으로 최종 정리
-  html = result
-    .join('\n')
-    .split('\n\n')
-    .filter(s => s.trim() !== '')
-    .join('\n');
-
+  html += '</div>';
   return html;
 }
 

@@ -245,71 +245,57 @@ export async function getImprovement(auditResult) {
 **개선 필요 항목**
 ${failedItems}
 
-위 결과를 분석하여, 다음과 같은 마크다운 형식으로 정확히 답변해주세요:
+위 결과를 분석하여, 반드시 다음과 같은 JSON 형식으로만 답변해주세요:
 
-## 가장 중요한 3가지 개선 사항
+\`\`\`json
+{
+  "improvements": [
+    {
+      "title": "첫 번째 항목 제목",
+      "methods": [
+        "구체적인 방법 1",
+        "구체적인 방법 2",
+        "구체적인 방법 3"
+      ],
+      "codeExample": "&lt;meta name=\\"description\\" content=\\"155-160자의 설명\\"&gt;",
+      "effects": [
+        "기대 효과 1",
+        "기대 효과 2"
+      ]
+    },
+    {
+      "title": "두 번째 항목 제목",
+      "methods": ["방법 1", "방법 2", "방법 3"],
+      "codeExample": "[HTML 또는 JSON-LD 코드]",
+      "effects": ["효과 1", "효과 2"]
+    },
+    {
+      "title": "세 번째 항목 제목",
+      "methods": ["방법 1", "방법 2", "방법 3"],
+      "codeExample": "[HTML 또는 JSON-LD 코드]",
+      "effects": ["효과 1", "효과 2"]
+    }
+  ],
+  "summary": "최종 기대 효과 설명 - 3-4문장으로 요약"
+}
+\`\`\`
 
-### 1. [첫 번째 항목 제목]
-**구체적인 실행 방법:**
-- [구체적인 방법 1]
-- [구체적인 방법 2]
-- [구체적인 방법 3]
-
-**실제 코드 예시:**
-\`&lt;meta name="description" content="여기에 155-160자의 설명을 넣으세요"&gt;\`
-
-또는 (JSON-LD의 경우):
-\`{"@context": "https://schema.org", "@type": "Article", "headline": "제목", "description": "설명"}\`
-
-**예상 효과:**
-- [기대 효과 1]
-- [기대 효과 2]
-
-### 2. [두 번째 항목 제목]
-**구체적인 실행 방법:**
-- [방법 1]
-- [방법 2]
-- [방법 3]
-
-**실제 코드 예시:**
-\`[여기에 실제 HTML 또는 JSON-LD 코드를 구체적으로 작성하세요]\`
-
-**예상 효과:**
-- [효과 1]
-- [효과 2]
-
-### 3. [세 번째 항목 제목]
-**구체적인 실행 방법:**
-- [방법 1]
-- [방법 2]
-- [방법 3]
-
-**실제 코드 예시:**
-\`[여기에 실제 HTML 또는 JSON-LD 코드를 구체적으로 작성하세요]\`
-
-**예상 효과:**
-- [효과 1]
-- [효과 2]
-
-## 종합 기대 효과
-
-[최종 기대 효과 설명 - 3-4문장으로 요약]
-
-**주의 사항:**
+**필수 규칙:**
 1. 한국어로만 답변하세요
-2. "구체적인 실행 방법:", "예상 효과:" 등 소제목 뒤에 **반드시 콜론(:)을 붙이세요**
-3. 각 항목마다 "### 번호. 제목" 형식을 사용하세요
-4. **"실제 코드 예시:" 섹션은 반드시 포함하세요** (이 섹션이 없으면 안 됨!)
-   - 각 개선 항목마다 구체적인 HTML 또는 JSON-LD 코드를 작성해야 함
-   - 단순 설명만으로는 부족, 개발자가 복사-붙여넣기 할 수 있는 수준의 코드여야 함
-5. **HTML 코드는 반드시 HTML 엔터티로 변환해서 백틱 안에 넣으세요:**
+2. 위 JSON 구조를 정확히 따르세요 (추가 필드나 수정 금지)
+3. "improvements" 배열은 정확히 3개 항목이어야 합니다
+4. 각 항목의 "methods" 배열은 최소 3개 이상의 문자열이어야 합니다
+5. 각 항목의 "effects" 배열은 최소 2개 이상의 문자열이어야 합니다
+6. **"codeExample" 필드는 반드시 채워야 합니다** (없으면 안 됨!)
+7. **HTML 코드는 반드시 HTML 엔터티로 변환하세요:**
    - &lt; 는 < 를 의미
    - &gt; 는 > 를 의미
-   - 예: \`&lt;meta name="description" content="..."&gt;\` (절대 \`<meta>\` 금지!)
-   - 불완전한 예시는 안 됨 (예: \`&lt;meta&gt;\` 같은 건 안 됨, 구체적인 속성까지 포함)
-6. JSON은 그대로 백틱으로 감싸세요: \`{"name": "value", "description": "..."}\`
-7. 각 소제목 아래 "-" 불릿 목록으로 작성하세요
-8. 실용적이고 구체적인 조언을 제공하세요`;
+   - &quot; 는 " 를 의미
+   - 예: "&lt;meta name=\\"description\\" content=\\"....\\"&gt;" (절대 "<meta>" 금지!)
+   - 불완전한 예시는 안 됨 (구체적인 속성까지 포함해야 함)
+8. JSON 코드는 그대로 사용: {"@type": "Article", "headline": "..."}
+9. JSON의 큰따옴표는 JSON 규칙을 따르세요 (string 안의 큰따옴표는 \\" 로 이스케이프)
+10. 구체적이고 실용적인 조언을 제공하세요`;
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -327,7 +313,11 @@ ${failedItems}
           }
         ],
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 2000,
+        // JSON 응답 강제 (LLM이 반드시 유효한 JSON으로만 응답)
+        response_format: {
+          type: 'json_object'
+        }
       })
     });
 
@@ -337,7 +327,28 @@ ${failedItems}
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    const content = data.choices[0].message.content;
+
+    try {
+      // response_format: {type: 'json_object'}로 강제되어 content는 반드시 유효한 JSON
+      const parsed = JSON.parse(content);
+
+      // 유효한 JSON 구조 확인
+      if (!parsed.improvements || !Array.isArray(parsed.improvements) || parsed.improvements.length !== 3) {
+        throw new Error('잘못된 JSON 구조: improvements 배열이 3개여야 합니다');
+      }
+
+      // 각 항목이 필수 필드를 가지고 있는지 확인
+      parsed.improvements.forEach((item, idx) => {
+        if (!item.title || !item.methods || !item.codeExample || !item.effects) {
+          throw new Error(`항목 ${idx + 1}: title, methods, codeExample, effects가 모두 필요합니다`);
+        }
+      });
+
+      return parsed; // 구조화된 JSON 객체 반환
+    } catch (parseError) {
+      throw new Error(`LLM JSON 파싱 실패: ${parseError.message}`);
+    }
   } catch (error) {
     throw new Error(`LLM 의견 수집 실패: ${error.message}`);
   }
