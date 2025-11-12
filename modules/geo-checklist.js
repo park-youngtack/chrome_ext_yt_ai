@@ -31,15 +31,23 @@ export const GEO_CHECKLIST = [
     weight: 8,
     selector: () => {
       // 다양한 형식의 메타 설명 태그 모두 찾기
-      return document.querySelector('meta[name="description"]') ||
-             document.querySelector('meta[property="description"]') ||
-             // og:description도 메타 설명으로 간주
-             document.querySelector('meta[property="og:description"]');
+      const elem1 = document.querySelector('meta[name="description"]');
+      const elem2 = document.querySelector('meta[property="description"]');
+      const elem3 = document.querySelector('meta[property="og:description"]');
+
+      console.log('[GEO] 메타 설명 selector 디버그:');
+      console.log('[GEO]   meta[name="description"]:', elem1, elem1?.getAttribute('content'));
+      console.log('[GEO]   meta[property="description"]:', elem2, elem2?.getAttribute('content'));
+      console.log('[GEO]   meta[property="og:description"]:', elem3, elem3?.getAttribute('content'));
+
+      return elem1 || elem2 || elem3;
     },
     validator: (elem) => {
       // 존재 여부만 확인 (글자수는 LLM 의견에서 제시)
+      console.log('[GEO] 메타 설명 validator:', elem, elem?.getAttribute('content'));
       if (!elem) return false;
       const content = elem.getAttribute('content')?.trim() || '';
+      console.log('[GEO] 메타 설명 content 길이:', content.length);
       return content.length > 0;
     },
     hint: () => {
