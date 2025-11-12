@@ -35,18 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 로거 초기화
     await initLogger();
 
-    // 패널 기본 너비 설정 (처음 열 때)
-    try {
-      await chrome.sidePanel.getOptions({});
-    } catch (error) {
-      // getOptions가 지원되지 않으면 setOptions 시도
-      try {
-        await chrome.sidePanel.setOptions({ width: 460 });
-      } catch (setError) {
-        // setOptions도 지원되지 않을 수 있음 (Chrome 버전에 따라)
-      }
-    }
-
     // 푸터 텍스트 설정
     const footerEl = document.getElementById('footerText');
     if (footerEl) {
