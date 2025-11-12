@@ -196,6 +196,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // 비동기 응답
   }
+
+  // GEO 검사: 봇 시뮬레이션용 HTML Fetch
+  if (request.action === 'FETCH_HTML_FOR_BOT_AUDIT') {
+    const url = request.url;
+    if (!url) {
+      sendResponse({ success: false, error: 'URL이 필요합니다' });
+      return false;
+    }
+
+    // http/https만 허용
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      sendResponse({ success: false, error: 'http/https URL만 지원합니다' });
+      return false;
+    }
+
+    logInfo('GEO_BOT_FETCH_START', 'HTML 가져오기 시작', { url });
+
+    fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.text();
+      })
+      .then(html => {
+        logInfo('GEO_BOT_FETCH_SUCCESS', 'HTML 가져오기 완료', { size: html.length });
+        sendResponse({ success: true, html });
+      })
+      .catch(error => {
+        logError('GEO_BOT_FETCH_ERROR', 'HTML 가져오기 실패', { url }, error);
+        sendResponse({ success: false, error: error.message });
+      });
+
+    return true; // 비동기 응답
+  }
 });
 
 /**
