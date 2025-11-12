@@ -523,7 +523,7 @@ async function renderCategorySelector() {
 
   if (recurringData.categories.length === 0) {
     const option = document.createElement('option');
-    option.textContent = '우측 + 버튼을 눌러 카테고리를 등록하세요';
+    option.textContent = '카테고리 선택';
     option.disabled = true;
     option.selected = true;
     selector.appendChild(option);
