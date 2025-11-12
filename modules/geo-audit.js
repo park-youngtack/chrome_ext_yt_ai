@@ -245,7 +245,10 @@ export async function getImprovement(auditResult) {
 **개선 필요 항목**
 ${failedItems}
 
-위 결과를 분석하여, 반드시 다음과 같은 JSON 형식으로만 답변해주세요:
+위 결과를 분석하여, **반드시 정확하게** 다음과 같은 JSON 형식으로만 답변해주세요:
+- JSON 형식만 답변 (다른 텍스트는 절대 금지!)
+- 각 항목마다 구체적인 코드 예시 필수 (빈 칸 절대 금지!)
+- 코드 예시를 건너뛰지 말 것
 
 \`\`\`json
 {
@@ -282,20 +285,28 @@ ${failedItems}
 
 **필수 규칙:**
 1. 한국어로만 답변하세요
-2. 위 JSON 구조를 정확히 따르세요 (추가 필드나 수정 금지)
-3. "improvements" 배열은 정확히 3개 항목이어야 합니다
-4. 각 항목의 "methods" 배열은 최소 3개 이상의 문자열이어야 합니다
-5. 각 항목의 "effects" 배열은 최소 2개 이상의 문자열이어야 합니다
-6. **"codeExample" 필드는 반드시 채워야 합니다** (없으면 안 됨!)
-7. **HTML 코드는 반드시 HTML 엔터티로 변환하세요:**
-   - &lt; 는 < 를 의미
-   - &gt; 는 > 를 의미
-   - &quot; 는 " 를 의미
-   - 예: "&lt;meta name=\\"description\\" content=\\"....\\"&gt;" (절대 "<meta>" 금지!)
-   - 불완전한 예시는 안 됨 (구체적인 속성까지 포함해야 함)
-8. JSON 코드는 그대로 사용: {"@type": "Article", "headline": "..."}
-9. JSON의 큰따옴표는 JSON 규칙을 따르세요 (string 안의 큰따옴표는 \\" 로 이스케이프)
-10. 구체적이고 실용적인 조언을 제공하세요`;
+2. JSON 형식만 전송 (설명 텍스트 절대 금지!)
+3. 위 JSON 구조를 정확히 따르세요 (추가 필드나 수정 금지)
+4. "improvements" 배열은 **정확히 3개** 항목이어야 합니다
+5. 각 항목의 "methods" 배열은 **최소 3개 이상** 필수
+6. 각 항목의 "effects" 배열은 **최소 2개 이상** 필수
+7. **"codeExample" 필드는 절대 비워두면 안 됨!** (중복 강조)
+   - 각 항목마다 반드시 하나씩 구체적인 코드를 작성해야 함
+   - 빈 문자열, 대괄호, 공백만 있으면 안 됨
+8. **HTML 코드는 반드시 HTML 엔터티로 완전히 변환하세요:**
+   - < 를 &lt; 로 변환 (절대 < 금지!)
+   - > 를 &gt; 로 변환 (절대 > 금지!)
+   - " 를 &quot; 로 변환
+   - & 를 &amp; 로 변환 (먼저 처리!)
+   - 예1: "&lt;meta name=&quot;description&quot; content=&quot;...&quot;&gt;"
+   - 예2: "&lt;script type=&quot;application/ld+json&quot;&gt;{...}&lt;/script&gt;"
+   - 불완전한 예시는 안 됨 (반드시 완전한 태그와 속성 포함)
+9. **JSON 코드도 엔터티로 변환:**
+   - {"@type": "Article"} → {"&quot;@type&quot;: &quot;Article&quot;"}
+   - 중괄호는 그대로 유지: { }
+10. JSON의 큰따옴표: string 안의 큰따옴표는 \\" 로 이스케이프
+11. 각 codeExample은 실제 복사-붙여넣기 가능한 완전한 코드여야 함
+12. 구체적이고 실용적인 조언을 제공하세요`;
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -342,6 +353,11 @@ ${failedItems}
       parsed.improvements.forEach((item, idx) => {
         if (!item.title || !item.methods || !item.codeExample || !item.effects) {
           throw new Error(`항목 ${idx + 1}: title, methods, codeExample, effects가 모두 필요합니다`);
+        }
+        // codeExample이 비어있거나 플레이스홀더만 있는 경우 체크
+        if (!item.codeExample || item.codeExample.trim() === '' ||
+            item.codeExample.includes('[여기에') || item.codeExample.includes('...') && item.codeExample.length < 10) {
+          throw new Error(`항목 ${idx + 1}: codeExample이 구체적인 코드로 채워져야 합니다 (빈 칸이나 플레이스홀더만으로는 안 됨)`);
         }
       });
 
