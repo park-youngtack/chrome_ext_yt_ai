@@ -8,14 +8,15 @@
  */
 
 import { runAudit, getImprovement, logAuditResult } from './geo-audit.js';
-import { groupChecklistByCategory } from './geo-checklist.js';
+import { groupChecklistByCategory, GEO_CHECKLIST } from './geo-checklist.js';
 
 /**
  * Content Script에 메시지 전송
  * @param {string} action - 메시지 액션
+ * @param {Object} data - 메시지 데이터
  * @returns {Promise} 응답 데이터
  */
-function sendMessageToContent(action) {
+function sendMessageToContent(action, data = {}) {
   return new Promise((resolve, reject) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs[0]) {
@@ -25,7 +26,7 @@ function sendMessageToContent(action) {
 
       chrome.tabs.sendMessage(
         tabs[0].id,
-        { action },
+        { action, ...data },
         (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
@@ -103,7 +104,72 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
 
     // 검사 실행 - Content Script에 메시지로 요청
     getLogger('🔍 GEO 검사 시작...');
-    const auditResult = await sendMessageToContent('GEO_AUDIT_REQUEST');
+
+    // Content Script에 selector 정의 목록 전송 (각 항목별로 어떤 selector를 사용할지)
+    const selectorMap = GEO_CHECKLIST.map((item, idx) => ({
+      idx,
+      id: item.id,
+      selectorCode: item.selector.toString() // 함수를 문자열로 변환
+    }));
+
+    // Content Script가 selector 결과를 반환
+    const selectorResults = await sendMessageToContent('GEO_GET_SELECTORS', { selectors: selectorMap });
+
+    // Sidepanel에서 validator 실행
+    const results = [];
+    let passedCount = 0;
+    let failedCount = 0;
+
+    for (const checkItem of GEO_CHECKLIST) {
+      try {
+        // Content Script에서 반환한 선택 결과 찾기
+        const selectorResult = selectorResults.find(r => r.id === checkItem.id);
+        const selected = selectorResult?.value;
+
+        // validator 실행
+        const passed = checkItem.validator(selected);
+
+        // hint 실행 (함수인 경우)
+        const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+
+        results.push({
+          id: checkItem.id,
+          title: checkItem.title,
+          category: checkItem.category,
+          weight: checkItem.weight,
+          passed,
+          hint
+        });
+
+        if (passed) passedCount++;
+        else failedCount++;
+      } catch (error) {
+        const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+        results.push({
+          id: checkItem.id,
+          title: checkItem.title,
+          category: checkItem.category,
+          weight: checkItem.weight,
+          passed: false,
+          hint,
+          error: error.message
+        });
+        failedCount++;
+      }
+    }
+
+    // 점수 계산 (geo-audit.js의 로직 복사)
+    const { calculateScores } = await import('./geo-audit.js');
+    const scores = calculateScores(results);
+
+    const auditResult = {
+      results,
+      scores,
+      passedCount,
+      failedCount,
+      failedItems: results.filter(r => !r.passed).map(r => r.id),
+      timestamp: new Date().toISOString()
+    };
 
     // 결과 기록
     logAuditResult(auditResult);

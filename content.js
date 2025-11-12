@@ -323,66 +323,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, count: 0, size: 0, error: error.message });
     });
     return true; // 비동기 응답
-  } else if (request.action === 'GEO_AUDIT_REQUEST') {
-    // GEO 검사 요청 - Content Script에서 현재 페이지 검사 수행
+  } else if (request.action === 'GEO_GET_SELECTORS') {
+    // GEO selector 결과 수집 - Content Script에서 현재 페이지의 DOM에 selector 실행
     (async () => {
       try {
-        // dynamically import GEO audit functions
-        // chrome.runtime.getURL()로 extension 리소스의 절대 경로 생성
-        const geoChecklistUrl = chrome.runtime.getURL('modules/geo-checklist.js');
-        const { GEO_CHECKLIST, calculateScores } = await import(geoChecklistUrl);
-
+        const selectors = request.selectors || [];
         const results = [];
-        let passedCount = 0;
-        let failedCount = 0;
 
-        // 체크리스트 순회
-        for (const checkItem of GEO_CHECKLIST) {
+        // 각 selector 실행
+        for (const selectorDef of selectors) {
           try {
-            const selected = checkItem.selector();
-            const passed = checkItem.validator(selected);
-
-            const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+            // selector 함수 문자열을 함수로 변환해서 실행
+            const selectorFunc = eval(`(${selectorDef.selectorCode})`);
+            const value = selectorFunc();
 
             results.push({
-              id: checkItem.id,
-              title: checkItem.title,
-              category: checkItem.category,
-              weight: checkItem.weight,
-              passed,
-              hint
+              id: selectorDef.id,
+              value: value // DOM 요소 또는 데이터 (직렬화 가능한 형태)
             });
-
-            if (passed) passedCount++;
-            else failedCount++;
           } catch (error) {
-            const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
             results.push({
-              id: checkItem.id,
-              title: checkItem.title,
-              category: checkItem.category,
-              weight: checkItem.weight,
-              passed: false,
-              hint,
+              id: selectorDef.id,
+              value: null,
               error: error.message
             });
-            failedCount++;
           }
         }
 
-        // 점수 계산
-        const scores = calculateScores(results);
-
-        sendResponse({
-          data: {
-            results,
-            scores,
-            passedCount,
-            failedCount,
-            failedItems: results.filter(r => !r.passed).map(r => r.id),
-            timestamp: new Date().toISOString()
-          }
-        });
+        sendResponse({ data: results });
       } catch (error) {
         sendResponse({ error: error.message });
       }
