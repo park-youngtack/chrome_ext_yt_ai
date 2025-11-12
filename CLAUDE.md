@@ -27,35 +27,26 @@ chrome_ext_yt_ai/
 ├── sidepanel/                 # 사이드패널 부트스트랩
 │  └── bootstrap.js
 ├── modules/                   # 사이드패널 ES6 모듈 (10개 모듈)
-│  ├── constants.js            # API 액션/포트/메시지 상수
-│  ├── state.js                # Side Panel 전역 상태 관리
-│  ├── ui-utils.js             # UI 업데이트/탭바/토스트
+│  ├── constants.js            # 메시지 액션/포트/저장소 상수
+│  ├── state.js                # 전역 상태 관리 (맵/변수)
+│  ├── ui-utils.js             # UI 업데이트, 탭바, 토스트
 │  ├── translation.js          # 번역 핵심 로직, 권한 관리
-│  ├── history.js              # 번역 히스토리 관리
-│  ├── settings.js             # 설정 탭 관리
-│  ├── search.js               # 검색 탭 기능
-│  ├── quick-translate.js      # 텍스트 번역 탭
-│  ├── flags.js                # 기능 플래그 (향후 확장용)
-│  └── types.js                # JSDoc typedef 모음
+│  ├── history.js              # 번역 히스토리 CRUD
+│  ├── settings.js             # 설정 탭 (API, 모델, 배치, 캐시)
+│  ├── search.js               # 스마트 검색 탭 (AI 추천)
+│  ├── quick-translate.js      # 직접 텍스트 번역 탭
+│  ├── flags.js                # 런타임 기능 플래그
+│  └── types.js                # JSDoc typedef
 ├── logger.js                  # 공용 로깅 시스템 (ES6 모듈)
-├── meta.js                    # 메타 정보 (푸터 텍스트, 마지막 수정 날짜)
+├── meta.js                    # 메타 정보 (푸터, 수정 날짜)
 ├── README.md                  # 사용자 가이드
 ├── CLAUDE.md                  # 개발 가이드 (현재 파일)
-├── docs/                      # 개발 문서
-│  ├── ARCHITECTURE.md         # 전체 구조, 메시지/캐시 흐름
-│  ├── CONTENT_MODULES.md      # Content Script 모듈 책임과 주입 순서
-│  ├── SIDEPANEL_MODULES.md    # Side Panel 모듈 구조와 규칙
-│  ├── STATE_MACHINE.md        # TranslationState 전이 규칙
-│  ├── MESSAGING.md            # Port/메시지 스펙
-│  ├── EXTENSIBILITY.md        # 기능 확장 가이드
-│  ├── CONTRIBUTING.md         # 기여 가이드 (브랜치/커밋/PR)
-│  └── RELEASE.md              # 릴리스 체크리스트
+├── AGENTS.md                  # Claude Code 에이전트 설정
 ├── icons/                     # 확장 아이콘
 │  ├── icon16.png
 │  ├── icon48.png
 │  └── icon128.png
 ├── create_icons.py            # 아이콘 생성 스크립트 (선택적)
-├── AGENTS.md                  # Claude Code 에이전트 설정
 └── .claude/                   # Claude Code 설정
    └── settings.local.json
 ```
@@ -104,30 +95,44 @@ if (translationState.state === 'translating') {
 
 ## 주요 기능
 
-### 번역 탭
-- 캐시 우선 번역 & 전면 재번역 모드
-- 실시간 진행률 표시 (완료/배치/시간/캐시)
-- 원본 보기 토글 (WeakMap 기반 복원)
-- 권한 가드 (http/https/file:// 스킴만 지원)
+### 번역 탭 (Page Translation)
+- **모드**: 캐시 우선 vs 전면 재번역
+- **진행 표시**: 실시간 % 진행, 배치 목록, 경과 시간
+- **원본 토글**: 번역문/원문 전환 (WeakMap 기반 자동 복원)
+- **권한**: http/https/file:// 만 지원 (Chrome 웹스토어 제외)
+- **탭별 독립**: 각 탭마다 별도 번역 상태 관리
 
-### 히스토리 탭
-- 번역 완료 시 자동 저장
-- URL별 중복 제거 (최신만 유지)
-- 목록에서 선택 → 동일 설정으로 재번역
-- 개별/전체 삭제
+### 텍스트 번역 탭 (Quick Translate)
+- **직접 입력**: 클립보드 텍스트 붙여넣고 즉시 번역
+- **단축키**: Ctrl+Enter로 빠른 번역
+- **번역 결과**: 원본 보기/숨기기 토글
+- **히스토리**: 최근 50개 번역 저장 (개별/전체 삭제)
+- **타임스탐프**: 각 항목별 날짜·시간 표시
 
-### 검색 탭
-- AI가 검색문 3개 자동 생성
-- Google, Naver, Bing, ChatGPT, Perplexity 동시 검색
-- 최대 10개 검색문 누적 (사용자 입력 1개 + AI 추천 9개)
+### 히스토리 탭 (Translation History)
+- **자동 저장**: 웹페이지 번역 완료 시 자동 기록
+- **URL 중복 제거**: 같은 URL은 최신 번역만 유지
+- **빠른 재번역**: 히스토리 선택 → 새 탭 열기 + 동일 설정으로 재번역
+- **저장 정보**: 번역된 제목, 원본 제목, 프리뷰, URL, 날짜, 모드
+- **관리**: 개별 삭제, 3초 확인 후 전체 삭제
 
-### 설정 탭
-- API Key 관리 (마스킹: 앞 8자 + "***")
-- 모델 선택 (기본: `openai/gpt-4o-mini`)
-- 배치 크기 (10-200, 기본 50)
-- 동시 처리 (1-10, 기본 3)
-- 캐시 설정 (ON/OFF, TTL 1분-365일)
-- 개발자 모드 (ON: 모든 로그 출력 | OFF: 모든 로그 차단)
+### 검색 탭 (Smart Search)
+- **AI 추천**: 검색문 입력 → AI가 3개 최적화 키워드 자동 생성
+- **누적 목록**: 최대 10개 검색문 (사용자 입력 1개 + AI 추천 9개)
+- **다중 엔진**: Google, Naver, Bing, ChatGPT, Perplexity 동시 검색
+- **배경 탭**: 모든 검색 결과는 백그라운드 탭으로 열기
+- **개별 검색**: 각 엔진별 버튼으로 따로 검색 가능
+
+### 설정 탭 (Settings)
+- **API Key**: 마스킹 (앞 8자 + "***") 및 검증
+- **모델**: 드롭다운 선택 (기본: `openai/gpt-4o-mini`)
+- **배치 크기**: 10-200 (기본 50), 범위 검증
+- **동시 처리**: 1-10 (기본 3), 범위 검증
+- **자동 번역**: 캐시된 페이지 자동 번역 토글
+- **캐시 관리**: 도메인별 캐시 항목 수/용량 표시 + 삭제
+- **캐시 TTL**: 1분-365일 (기본 30일)
+- **개발자 모드**: ON(모든 로그) / OFF(로그 차단)
+- **에러 로그**: 복사 버튼 (실시간 카운트)
 
 ## 캐시 시스템
 
@@ -193,41 +198,89 @@ const translationStateByTab = new Map(); // tabId → translationState
 6. 타이머 관리
 7. Port 연결 관리
 8. 메시지 리스너
-9. **번역 메인 로직**
-10. OpenRouter API 통신
-11. 원본 복원
-12. DOM 텍스트 노드 수집
-13. IndexedDB 캐시 시스템
-14. 초기화 함수
+9. **번역 메인 로직** - 텍스트 배치 처리, 재시도, 캐시 활용
+10. OpenRouter API 통신 - 스트리밍 응답, 에러 처리
+11. 원본 복원 - WeakMap 기반 원문 저장
+12. DOM 텍스트 노드 수집 - 번역 대상 선택, 필터링
+13. IndexedDB 캐시 시스템 - 저장, 조회, TTL 관리
+14. 초기화 함수 - 페이지 로드 시 권한 확인
 
 각 섹션 상단의 JSDoc 주석을 참고하세요.
 
-### 사이드패널 모듈 구조 (11개 모듈/기능)
+### content/ 모듈 (7개 보조 모듈)
+1. **bootstrap.js** - WPT 네임스페이스 초기화
+2. **api.js** - OpenRouter API 호출 및 재시도 로직
+3. **cache.js** - IndexedDB 캐시 CRUD
+4. **industry.js** - 산업군 추론 및 지시문 생성
+5. **dom.js** - 텍스트 수집 및 DOM 적용
+6. **title.js** - 페이지 제목 번역
+7. **progress.js** - 진행 상태 관리 및 Port 통신
 
-사이드패널의 기능은 현재 **모듈 분리**되어 각 책임별로 관리됩니다:
+### 사이드패널 모듈 구조 (10개 함수형 모듈)
+
+사이드패널은 **책임 분리 원칙(SRP)**으로 각 기능별 모듈로 구성:
 
 **메인 파일:**
 - `sidepanel.js` - DOMContentLoaded 초기화, Chrome 탭 리스너
-
-**함수형 모듈 (modules/):**
-1. `state.js` - 전역 상태 관리 (번역 상태, 탭별 상태)
-2. `constants.js` - API 액션, 포트, 메시지 상수 중앙화
-3. `ui-utils.js` - UI 업데이트, 탭바, 토스트 유틸리티
-4. `translation.js` - 번역 핵심 로직, 권한 체크, 가드
-5. `history.js` - 히스토리 저장/로드/삭제/재번역
-6. `settings.js` - 설정 탭 (API Key, 모델, 배치, 캐시 TTL)
-7. `search.js` - 검색 탭 (AI 추천, 다중 엔진 검색)
-8. `quick-translate.js` - 텍스트 번역 탭
-9. `flags.js` - 기능 플래그 (향후 런타임 토글용)
-10. `types.js` - JSDoc typedef (타입 문서화)
-
-**부트스트랩:**
 - `sidepanel/bootstrap.js` - 모듈 임포트 및 초기화
 
-**패턴:**
-- 각 모듈은 독립적 책임 담당 (SRP)
-- 상태는 `state.js`를 통해 중앙화
-- 통신은 `constants.js`의 상수 사용
+**상태 & 유틸리티:**
+1. **state.js** - 전역 상태 (탭별 맵, 포트, 권한, 설정)
+   - `currentTabId`, `portsByTab`, `permissionGranted`
+   - `translationStateByTab`, `translateModeByTab`
+   - Setter 함수로 상태 업데이트
+
+2. **constants.js** - 메시지 문자열 중앙화
+   - `PORT_NAMES`: 포트명 정의
+   - `ACTIONS`: 메시지 액션 타입
+   - `STORAGE_KEYS`: 저장소 키
+
+3. **ui-utils.js** - UI 렌더링 & 상호작용
+   - 탭 전환, 토스트 표시
+   - 번역 진행바, 상태 표시
+   - 에러 로그 출력, 개발자 도구
+   - Content Script PING + 주입
+
+**기능 모듈:**
+4. **translation.js** - 번역 핵심 로직
+   - 권한 체크 (http/https/file://)
+   - 캐시/전면 번역 모드 선택
+   - Port 연결 및 진행 상태 수신
+   - 자동 번역 (선택사항)
+
+5. **history.js** - 번역 히스토리 CRUD
+   - URL 기반 자동 중복 제거
+   - 히스토리 항목 재번역 (새 탭)
+   - 개별/전체 삭제 (3초 확인)
+
+6. **quick-translate.js** - 직접 텍스트 번역
+   - 입력창 즉시 번역
+   - 독립 히스토리 (최대 50개)
+   - 원문/번역문 토글
+
+7. **search.js** - 스마트 검색 (AI 추천)
+   - AI 검색어 3개 자동 생성
+   - 누적 추천 (최대 10개)
+   - 5개 엔진 동시 백그라운드 열기
+
+8. **settings.js** - 설정 탭 관리
+   - API Key, 모델, 배치, 동시성
+   - 자동 번역, 캐시 TTL, 디버그 모드
+   - 도메인별 캐시 통계
+
+**문서화 & 확장:**
+9. **types.js** - JSDoc typedef
+   - `BatchInfo`, `TranslationState`, `ProgressPayload`
+
+10. **flags.js** - 런타임 기능 플래그
+   - `searchEnhance`, `domBatchRaf` 등
+   - 향후 기능 토글용
+
+**아키텍처 원칙:**
+- 상태는 `state.js`에서만 관리
+- 모든 상수는 `constants.js` 사용
+- UI 변경은 `ui-utils.js`로 통일
+- 각 탭 기능은 독립 모듈 (history, search, settings, quick-translate)
 
 ### logger.js (ES6 모듈)
 - **레벨**: DEBUG, INFO, WARN, ERROR
