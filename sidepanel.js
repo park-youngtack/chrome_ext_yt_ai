@@ -22,6 +22,7 @@ import { initSettingsTab, loadSettings } from './modules/settings.js';
 import { initializeSearchTab } from './modules/search.js';
 import { initQuickTranslateTab } from './modules/quick-translate.js';
 import { initRecurringTab } from './modules/recurring.js';
+import { initGeoTab } from './modules/geo-tab.js';
 import { handleTabChange, getSupportType } from './modules/translation.js';
 
 // ===== 초기화 =====
@@ -62,6 +63,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 반복관리 탭 초기화
     await initRecurringTab();
+
+    // GEO 검사 탭 초기화
+    initGeoTab();
 
     // 현재 탭 정보 가져오기
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

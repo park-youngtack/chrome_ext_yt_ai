@@ -14,7 +14,8 @@ export const ACTIONS = {
   GET_TRANSLATION_STATE: 'getTranslationState',
   GET_TRANSLATED_TITLE: 'getTranslatedTitle',
   GET_CACHE_STATUS: 'getCacheStatus',
-  CLEAR_CACHE_FOR_DOMAIN: 'clearCacheForDomain'
+  CLEAR_CACHE_FOR_DOMAIN: 'clearCacheForDomain',
+  AUDIT_GEO: 'auditGeo'
 };
 
 export const PORT_MESSAGES = {
