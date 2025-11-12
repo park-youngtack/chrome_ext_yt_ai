@@ -157,14 +157,15 @@ function displayAuditResult(elements, auditResult, improvement = '') {
   elements.checklistContainer.innerHTML = checklistHtml;
 
   // 3. LLM 의견 렌더링
-  if (improvement) {
+  if (improvement && elements.improvementSection) {
+    const formattedHtml = formatImprovement(improvement);
     elements.improvementSection.innerHTML = `
       <div class="geo-improvement">
         <h3>💡 AI 개선 의견</h3>
-        <div class="geo-improvement-content">${formatImprovement(improvement)}</div>
+        <div class="geo-improvement-content">${formattedHtml}</div>
       </div>
     `;
-  } else {
+  } else if (elements.improvementSection) {
     elements.improvementSection.innerHTML = '';
   }
 
@@ -296,47 +297,64 @@ function decodeHtmlEntities(text) {
  *   "summary": "종합 효과"
  * }
  *
+ * 마크다운 형식도 지원 (하위호환성):
+ * ```
+ * ## 가장 중요한 3가지 개선사항
+ * 1. 제목 최적화 - 30-60자로 조정하세요
+ * 2. **메타 설명** 추가 - 155-160자 권장
+ * 3. 구조화된 데이터 추가
+ * ```
+ *
  * 장점:
  * - 구조화된 데이터이므로 파싱 오류 없음
  * - HTML 엔터티로 이미 인코딩되어 안전함
  * - 마크다운 파싱 불필요 (정규식 오류 제거)
  * - 타입 안전성 확보
  *
- * @param {Object} improvement - LLM이 반환한 JSON 객체
+ * @param {Object|string} improvement - LLM이 반환한 JSON 객체 또는 마크다운 문자열
  * @returns {string} HTML 문자열 (렌더링 가능)
- *
- * @example
- * // LLM이 실제로 보내는 형식:
- * const response = `### 1. 제목 최적화
- * 구체적인 실행 방법:
- * - 30-60자 사이로 조정
- * - 주요 키워드 포함
- *
- * 예상 효과:
- * - CTR 증가
- * - AI 응답 포함 가능성 증대`;
- *
- * // 결과:
- * const html = formatImprovement(response);
- * // <h4>1. 제목 최적화</h4>
- * // <p>구체적인 실행 방법:</p>
- * // <ul><li>30-60자 사이로 조정</li><li>주요 키워드 포함</li></ul>
- * // <p>예상 효과:</p>
- * // <ul><li>CTR 증가</li><li>AI 응답 포함 가능성 증대</li></ul>
  */
 function formatImprovement(improvement) {
-  // JSON 객체가 아닌 경우 처리 (하위호환성)
-  if (!improvement || typeof improvement !== 'object') return '';
+  // 빈 값 처리
+  if (!improvement) {
+    return '';
+  }
 
+  // JSON 객체 처리
+  if (typeof improvement === 'object' && improvement.improvements) {
+    return formatJsonImprovement(improvement);
+  }
+
+  // 마크다운 문자열 처리 (하위호환성)
+  if (typeof improvement === 'string') {
+    return formatMarkdownImprovement(improvement);
+  }
+
+  return '';
+}
+
+/**
+ * JSON 구조의 개선 의견 포맷팅
+ * @param {Object} improvement - LLM이 반환한 JSON 객체
+ * @returns {string} HTML 문자열
+ */
+function formatJsonImprovement(improvement) {
   const { improvements = [], summary = '' } = improvement;
 
-  if (!Array.isArray(improvements) || improvements.length === 0) return '';
+  if (!Array.isArray(improvements) || improvements.length === 0) {
+    return '';
+  }
 
   let html = '<div class="geo-improvements-list">';
 
   // 각 개선 항목 렌더링
   improvements.forEach((item, idx) => {
     const { title = '', methods = [], codeExample = '', effects = [] } = item;
+
+    // 디버깅: 코드 예시 확인
+    if (!codeExample || codeExample.trim() === '') {
+      console.log(`[WARN] 항목 ${idx + 1} (${title})의 codeExample이 비어있습니다`);
+    }
 
     html += `<div class="geo-improvement-item">
       <h4 class="geo-improvement-h4">${idx + 1}. ${escapeHtml(title)}</h4>
@@ -349,18 +367,24 @@ function formatImprovement(improvement) {
       </div>`;
 
     // 코드 예시 (이미 HTML 엔터티로 인코딩됨)
-    if (codeExample && codeExample.trim() !== '') {
+    // 단순히 길이와 공백 여부만 확인
+    const hasRealCode = codeExample && codeExample.trim().length > 10;
+
+    if (hasRealCode) {
       html += `<div class="geo-improvement-section">
         <strong class="geo-section-title">실제 코드 예시:</strong>
         <pre><code>${decodeHtmlEntities(codeExample)}</code></pre>
       </div>`;
     } else {
       // 코드 예시가 없는 경우 (LLM이 규격을 제대로 따르지 않은 경우)
-      html += `<div class="geo-improvement-section" style="opacity: 0.6;">
-        <strong class="geo-section-title" style="color: #f59e0b;">⚠️ 코드 예시:</strong>
-        <p style="font-size: 12px; margin: 8px 0; color: #a9afb8;">
-          LLM이 구체적인 코드를 제공하지 않았습니다. 위의 실행 방법을 참고하여 직접 구현하세요.
-        </p>
+      html += `<div class="geo-improvement-section">
+        <strong class="geo-section-title">실제 코드 예시:</strong>
+        <div style="padding: 12px; background: var(--bg-secondary); border-radius: 6px; margin-top: 8px;">
+          <p style="font-size: 13px; margin: 0; color: var(--text-secondary); line-height: 1.5;">
+            💡 구체적인 코드 예시는 준비 중입니다. 위의 <strong>구체적인 실행 방법</strong>을 참고하여 구현하시거나,
+            <a href="https://schema.org" target="_blank" style="color: #2A6CF0; text-decoration: none;">Schema.org</a> 문서를 참고하세요.
+          </p>
+        </div>
       </div>`;
     }
 
@@ -382,6 +406,132 @@ function formatImprovement(improvement) {
   }
 
   html += '</div>';
+  return html;
+}
+
+/**
+ * 마크다운 형식의 개선 의견 포맷팅 (하위호환성)
+ * @param {string} markdown - 마크다운 형식의 텍스트
+ * @returns {string} HTML 문자열
+ */
+function formatMarkdownImprovement(markdown) {
+  let html = '<div class="geo-improvements-list">';
+
+  // 줄 단위로 분석
+  const lines = markdown.split('\n').map(l => l.trim()).filter(l => l);
+
+  let inItemSection = false;
+  let currentItem = null;
+  let currentSection = null;
+  let bulletItems = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 번호 제목 (1. 2. 3.)
+    if (/^\d+\.\s+/.test(line)) {
+      // 이전 항목 저장
+      if (currentItem) {
+        html += closeBulletList(bulletItems);
+        bulletItems = [];
+        html += '</div>';
+      }
+
+      const match = line.match(/^\d+\.\s+(.+)$/);
+      const title = match ? match[1] : line;
+
+      html += `<div class="geo-improvement-item">
+        <h4 class="geo-improvement-h4">${escapeHtml(line)}</h4>`;
+
+      currentItem = title;
+      currentSection = null;
+      inItemSection = true;
+      continue;
+    }
+
+    // 섹션 제목 (구체적인 실행 방법:, 예상 효과:, 실제 코드 예시: 등)
+    if (line.endsWith(':') && currentItem) {
+      // 이전 불릿 목록 닫기
+      html += closeBulletList(bulletItems);
+      bulletItems = [];
+
+      const sectionTitle = line.replace(/:$/, '');
+      html += `<div class="geo-improvement-section">
+        <strong class="geo-section-title">${escapeHtml(sectionTitle)}:</strong>`;
+
+      currentSection = sectionTitle;
+
+      // 코드 섹션인 경우
+      if (sectionTitle.includes('코드')) {
+        // 다음 줄부터 코드 수집
+        let codeLines = [];
+        while (i + 1 < lines.length && !lines[i + 1].endsWith(':') && !/^\d+\.\s+/.test(lines[i + 1])) {
+          i++;
+          const codeLine = lines[i];
+          if (codeLine && !codeLine.startsWith('→') && !codeLine.startsWith('-')) {
+            codeLines.push(codeLine);
+          }
+        }
+
+        if (codeLines.length > 0) {
+          const code = codeLines.join('\n');
+          const hasRealCode = code.trim().length > 10;
+
+          if (hasRealCode) {
+            html += `\n<pre><code>${escapeHtml(decodeHtmlEntities(code))}</code></pre>`;
+          }
+        }
+      } else {
+        // 불릿 목록 준비
+        bulletItems = [];
+      }
+
+      continue;
+    }
+
+    // 불릿 항목 (-, →, *)
+    if ((line.startsWith('-') || line.startsWith('→') || line.startsWith('*')) && currentSection) {
+      const itemText = line.replace(/^[-→*]\s*/, '');
+      bulletItems.push(itemText);
+      continue;
+    }
+
+    // 일반 텍스트
+    if (currentItem && line && currentSection) {
+      // 이전 불릿 목록 닫기
+      html += closeBulletList(bulletItems);
+      bulletItems = [];
+
+      html += `<p style="color: var(--text-secondary); margin: 8px 0;">${escapeHtml(line)}</p>`;
+    }
+  }
+
+  // 마지막 항목 마무리
+  if (currentItem) {
+    html += closeBulletList(bulletItems);
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/**
+ * 불릿 목록을 HTML로 생성
+ * @param {string[]} items - 목록 항목들
+ * @returns {string} HTML 문자열
+ */
+function closeBulletList(items) {
+  if (items.length === 0) {
+    return '';
+  }
+
+  let html = '\n<ul class="geo-unordered-list">\n';
+  items.forEach(item => {
+    html += `<li>${escapeHtml(item)}</li>\n`;
+  });
+  html += '</ul>\n</div>';
+
   return html;
 }
 

@@ -2316,6 +2316,80 @@
               word-break: break-word;
             }
 
+            /* 개선 의견 목록 컨테이너 */
+            .geo-improvements-list {
+              display: flex;
+              flex-direction: column;
+              gap: var(--space-md);
+            }
+
+            /* 개별 개선 항목 */
+            .geo-improvement-item {
+              background: var(--bg-secondary);
+              border: 1px solid var(--border-color);
+              border-radius: var(--radius-md);
+              padding: var(--space-lg);
+              margin-bottom: var(--space-md);
+            }
+
+            /* 개선 항목 제목 (1. 2. 3.) */
+            .geo-improvement-item .geo-improvement-h4 {
+              font-size: 14px;
+              font-weight: 700;
+              color: var(--status-active);
+              margin-top: 0;
+              margin-bottom: var(--space-md);
+              padding-left: var(--space-md);
+              border-left: 3px solid var(--status-active);
+              background: none;
+              padding-top: 0;
+              padding-bottom: 0;
+              padding-right: 0;
+              border-radius: 0;
+            }
+
+            /* 개선 항목 섹션 (구체적인 실행 방법, 예상 효과 등) */
+            .geo-improvement-section {
+              margin-bottom: var(--space-lg);
+            }
+
+            .geo-improvement-section:last-child {
+              margin-bottom: 0;
+            }
+
+            /* 섹션 제목 강화 */
+            .geo-improvement-section .geo-section-title {
+              display: block;
+              font-size: 13px;
+              font-weight: 700;
+              color: var(--status-active);
+              margin-bottom: var(--space-sm);
+              padding-bottom: 6px;
+              border-bottom: 2px solid rgba(42, 108, 240, 0.3);
+              margin-top: 0;
+            }
+
+            /* 종합 기대 효과 섹션 */
+            .geo-improvement-summary {
+              background: rgba(42, 108, 240, 0.08);
+              border-left: 3px solid var(--status-active);
+              border-radius: var(--radius-md);
+              padding: var(--space-lg);
+              margin-top: var(--space-xl);
+            }
+
+            .geo-improvement-summary .geo-improvement-h4 {
+              margin-top: 0;
+              margin-bottom: var(--space-md);
+            }
+
+            .geo-improvement-summary p {
+              margin: 0;
+              color: var(--text-secondary);
+              line-height: 1.6;
+              font-size: 13px;
+            }
+
             @keyframes spin {
               to { transform: rotate(360deg); }
             }
