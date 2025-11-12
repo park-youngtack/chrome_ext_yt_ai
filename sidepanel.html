@@ -1181,6 +1181,278 @@
       line-height: 1.6;
       margin: 0;
     }
+
+    /* ===== 텍스트 번역 탭 스타일 ===== */
+    .quick-translate-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .quick-translate-header {
+      margin-bottom: 20px;
+    }
+
+    .quick-translate-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .quick-translate-subtitle {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .quick-input-group {
+      margin-bottom: 16px;
+    }
+
+    .quick-input-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .quick-input-group textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      resize: vertical;
+      transition: all 0.2s;
+      line-height: 1.6;
+    }
+
+    .quick-input-group textarea:focus {
+      outline: none;
+      border-color: var(--status-active);
+      box-shadow: 0 0 0 3px rgba(42, 108, 240, 0.1);
+    }
+
+    .quick-input-help {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+    }
+
+    .quick-loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 20px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      font-size: 13px;
+      justify-content: center;
+    }
+
+    .quick-error {
+      padding: 20px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: var(--radius-md);
+      color: var(--status-error);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .quick-result-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .quick-result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .quick-result-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .quick-toggle-original {
+      font-size: 12px;
+      padding: 6px 12px;
+      background: var(--btn-secondary-bg);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .quick-toggle-original:hover {
+      background: var(--btn-secondary-hover);
+    }
+
+    .quick-result-text {
+      font-size: 14px;
+      color: var(--text-primary);
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* 히스토리 섹션 */
+    .quick-history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .quick-history-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .quick-history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .quick-history-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+
+    .quick-history-item:hover {
+      background: rgba(42, 108, 240, 0.08);
+      border-color: rgba(42, 108, 240, 0.3);
+    }
+
+    .quick-history-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .quick-history-translation {
+      font-size: 14px;
+      color: var(--text-primary);
+      line-height: 1.6;
+      word-break: break-word;
+    }
+
+    .quick-history-original {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      word-break: break-word;
+      padding: 10px;
+      background: var(--bg-primary);
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      white-space: pre-wrap;
+    }
+
+    .quick-history-original.collapsed {
+      display: none;
+    }
+
+    .quick-history-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .quick-history-toggle {
+      font-size: 11px;
+      padding: 4px 8px;
+      background: transparent;
+      color: var(--status-active);
+      border: 1px solid var(--status-active);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .quick-history-toggle:hover {
+      background: rgba(42, 108, 240, 0.15);
+    }
+
+    .quick-history-delete {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    .quick-history-delete:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .quick-history-empty {
+      padding: 32px 20px;
+      border-radius: var(--radius-md);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(18, 20, 24, 0.8);
+      text-align: center;
+      color: var(--text-secondary);
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .quick-history-empty-icon {
+      font-size: 36px;
+    }
+
+    .quick-history-empty p {
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
@@ -1278,6 +1550,43 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 텍스트 번역 탭 -->
+        <div id="quickTranslateTab" class="tab-content">
+          <div class="quick-translate-card">
+            <div class="quick-translate-header">
+              <h2 class="quick-translate-title">✍️ 텍스트 번역</h2>
+              <p class="quick-translate-subtitle">텍스트를 붙여넣고 즉시 번역하세요</p>
+            </div>
+
+            <!-- 입력 영역 -->
+            <div class="quick-input-group">
+              <label for="quickTextInput">번역할 텍스트</label>
+              <textarea id="quickTextInput" placeholder="번역할 텍스트를 입력하거나 붙여넣으세요..." rows="6"></textarea>
+              <div class="quick-input-help">Ctrl+Enter로 빠르게 번역할 수 있습니다</div>
+            </div>
+
+            <button id="quickTranslateBtn" class="btn">번역</button>
+
+            <!-- 번역 결과 영역 -->
+            <div id="quickTranslationResult" style="display: none;"></div>
+
+            <!-- 히스토리 섹션 -->
+            <div class="quick-history-header">
+              <h3 class="quick-history-title">번역 기록</h3>
+              <button id="quickClearHistoryBtn" class="history-clear-btn" type="button">전체 삭제</button>
+            </div>
+
+            <!-- 빈 상태 -->
+            <div id="quickHistoryEmpty" class="quick-history-empty" style="display: flex;">
+              <div class="quick-history-empty-icon">📝</div>
+              <p>아직 번역한 기록이 없습니다.<br>텍스트를 입력하고 번역 버튼을 눌러보세요!</p>
+            </div>
+
+            <!-- 히스토리 리스트 -->
+            <div id="quickHistoryList" class="quick-history-list" style="display: none;"></div>
           </div>
         </div>
 
@@ -1448,6 +1757,13 @@
           <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
         </svg>
         <span>AI 번역</span>
+      </button>
+
+      <button role="tab" data-tab="quickTranslate" aria-selected="false" title="텍스트 번역">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M21,5c0-1.11-0.89-2-2-2H5C3.89,3,3,3.89,3,5v14c0,1.11,0.89,2,2,2h14c1.11,0,2-0.89,2-2V5z M19,19H5V5h14V19z M16.5,13.5 l-4.5-4.5L7.5,13.5L9,15l2-2v6h2v-6l2,2L16.5,13.5z"/>
+        </svg>
+        <span>텍스트</span>
       </button>
 
       <button role="tab" data-tab="history" aria-selected="false" title="히스토리">
