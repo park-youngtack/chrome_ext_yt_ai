@@ -158,6 +158,10 @@ function displayAuditResult(elements, auditResult, improvement = '') {
 
   // 3. LLM 의견 렌더링
   if (improvement && elements.improvementSection) {
+    // [DEBUG] improvement 값 확인
+    console.log('[displayAuditResult] improvement 타입:', typeof improvement);
+    console.log('[displayAuditResult] improvement 값:', JSON.stringify(improvement).substring(0, 150));
+
     const formattedHtml = formatImprovement(improvement);
     elements.improvementSection.innerHTML = `
       <div class="geo-improvement">
@@ -320,16 +324,23 @@ function formatImprovement(improvement) {
     return '';
   }
 
+  // [DEBUG] 입력값 타입 확인
+  console.log('[formatImprovement] 입력값 타입:', typeof improvement);
+  console.log('[formatImprovement] 입력값:', JSON.stringify(improvement).substring(0, 100));
+
   // JSON 객체 처리
   if (typeof improvement === 'object' && improvement.improvements) {
+    console.log('[formatImprovement] JSON 객체 처리 분기');
     return formatJsonImprovement(improvement);
   }
 
   // 마크다운 문자열 처리 (하위호환성)
   if (typeof improvement === 'string') {
+    console.log('[formatImprovement] 마크다운 문자열 처리 분기');
     return formatMarkdownImprovement(improvement);
   }
 
+  console.log('[formatImprovement] 매칭되는 분기 없음');
   return '';
 }
 

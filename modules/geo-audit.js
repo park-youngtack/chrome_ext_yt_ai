@@ -306,9 +306,9 @@ ${failedItems}
 7. **summary**: 3-4문장으로 3가지 개선 사항의 종합 효과 설명`;
 
   try {
-    // GEO 검사는 Claude를 사용 (JSON 규격 준수율 높음, 지시문 이해도 우수)
+    // GEO 검사는 OpenAI gpt-4o-mini로 사용 (JSON 응답 형식 안정적)
     // 번역 작업은 사용자가 선택한 모델 사용
-    const geoModel = 'anthropic/claude-3-5-sonnet';
+    const geoModel = 'openai/gpt-4o-mini';
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
