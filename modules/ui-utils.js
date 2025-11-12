@@ -142,6 +142,7 @@ export async function switchTab(tabName) {
     'history': '번역 히스토리',
     'quickTranslate': '텍스트 번역',
     'search': '스마트 검색',
+    'recurring': '반복 체크리스트',
     'settings': '설정'
   };
   panelTitle.textContent = titleMap[tabName] || 'AI 번역';
