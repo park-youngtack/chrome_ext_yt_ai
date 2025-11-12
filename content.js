@@ -365,6 +365,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, error: error.message });
     });
     return true; // 비동기 응답
+  } else if (request.action === 'GET_CURRENT_HTML') {
+    // GEO 검사: 현재 페이지의 HTML 전송 (JavaScript 실행된 후)
+    try {
+      const html = document.documentElement.outerHTML;
+      sendResponse({ html });
+    } catch (error) {
+      sendResponse({ error: error.message });
+    }
+    return true;
   }
   return true;
 });
