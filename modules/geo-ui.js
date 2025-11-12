@@ -350,9 +350,15 @@ function formatImprovement(improvement) {
  * @returns {string} HTML 문자열
  */
 function formatJsonImprovement(improvement) {
+  console.log('[formatJsonImprovement] 함수 진입');
+  console.log('[formatJsonImprovement] improvement:', JSON.stringify(improvement).substring(0, 200));
+
   const { improvements = [], summary = '' } = improvement;
 
+  console.log('[formatJsonImprovement] improvements 배열 길이:', Array.isArray(improvements) ? improvements.length : 'NOT_ARRAY');
+
   if (!Array.isArray(improvements) || improvements.length === 0) {
+    console.log('[formatJsonImprovement] improvements 배열이 없거나 비어있음 - 빈 문자열 반환');
     return '';
   }
 
