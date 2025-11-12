@@ -386,21 +386,47 @@ async function handleDeleteHistoryItem(event) {
   }
 }
 
+// 전체 삭제 확인 상태 관리
+let clearHistoryConfirmTimer = null;
+
 /**
  * 히스토리 전체 삭제
  */
-async function handleClearHistory() {
-  if (!confirm('모든 번역 기록을 삭제하시겠습니까?')) {
-    return;
-  }
+async function handleClearHistory(event) {
+  const btn = event.target;
 
-  try {
-    await chrome.storage.local.set({ [STORAGE_KEY]: [] });
-    await loadTranslationHistory();
-    showToast('모든 기록이 삭제되었습니다.');
-    logInfo('quickTranslate', 'HISTORY_CLEARED', '히스토리 전체 삭제');
-  } catch (error) {
-    logError('quickTranslate', 'HISTORY_CLEAR_ERROR', '히스토리 삭제 실패', {}, error);
-    showToast('삭제 중 오류가 발생했습니다.', 'error');
+  // 이미 확인 모드인 경우 → 실제 삭제 실행
+  if (btn.classList.contains('confirm-mode')) {
+    // 타이머 취소
+    if (clearHistoryConfirmTimer) {
+      clearTimeout(clearHistoryConfirmTimer);
+      clearHistoryConfirmTimer = null;
+    }
+
+    // 원래 상태로 복원
+    btn.classList.remove('confirm-mode');
+    btn.textContent = '전체 삭제';
+
+    // 실제 삭제 실행
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY]: [] });
+      await loadTranslationHistory();
+      showToast('모든 기록이 삭제되었습니다.');
+      logInfo('quickTranslate', 'HISTORY_CLEARED', '히스토리 전체 삭제');
+    } catch (error) {
+      logError('quickTranslate', 'HISTORY_CLEAR_ERROR', '히스토리 삭제 실패', {}, error);
+      showToast('삭제 중 오류가 발생했습니다.', 'error');
+    }
+  } else {
+    // 첫 클릭 → 확인 모드로 전환
+    btn.classList.add('confirm-mode');
+    btn.textContent = '정말 삭제하시겠습니까?';
+
+    // 3초 후 자동으로 원래 상태로 복원
+    clearHistoryConfirmTimer = setTimeout(() => {
+      btn.classList.remove('confirm-mode');
+      btn.textContent = '전체 삭제';
+      clearHistoryConfirmTimer = null;
+    }, 3000);
   }
 }

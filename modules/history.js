@@ -58,6 +58,9 @@ export function deduplicateHistoryByUrl(entries) {
 
 // ===== 히스토리 탭 관리 =====
 
+// 전체 삭제 확인 상태 관리
+let clearHistoryConfirmTimer = null;
+
 /**
  * 히스토리 탭 초기화
  * 버튼 이벤트를 연결하고 최초 렌더링을 수행한다.
@@ -65,8 +68,8 @@ export function deduplicateHistoryByUrl(entries) {
 export async function initHistoryTab() {
   const clearBtn = document.getElementById('historyClearBtn');
   if (clearBtn) {
-    clearBtn.addEventListener('click', async () => {
-      await clearHistory();
+    clearBtn.addEventListener('click', async (event) => {
+      await clearHistory(event);
     });
   }
 
@@ -291,15 +294,43 @@ async function deleteHistoryEntry(entryId) {
 
 /**
  * 전체 히스토리를 초기화한다.
+ * @param {Event} event - 클릭 이벤트
  */
-async function clearHistory() {
-  try {
-    await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: [] });
-    await renderHistoryList([]);
-    showToast('모든 번역 기록을 삭제했습니다.');
-  } catch (error) {
-    logError('sidepanel', 'HISTORY_CLEAR_ERROR', '히스토리 전체 삭제 실패', {}, error);
-    showToast('히스토리를 초기화하는 중 문제가 발생했습니다.', 'error');
+async function clearHistory(event) {
+  const btn = event.target;
+
+  // 이미 확인 모드인 경우 → 실제 삭제 실행
+  if (btn.classList.contains('confirm-mode')) {
+    // 타이머 취소
+    if (clearHistoryConfirmTimer) {
+      clearTimeout(clearHistoryConfirmTimer);
+      clearHistoryConfirmTimer = null;
+    }
+
+    // 원래 상태로 복원
+    btn.classList.remove('confirm-mode');
+    btn.textContent = '전체 삭제';
+
+    // 실제 삭제 실행
+    try {
+      await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: [] });
+      await renderHistoryList([]);
+      showToast('모든 번역 기록을 삭제했습니다.');
+    } catch (error) {
+      logError('sidepanel', 'HISTORY_CLEAR_ERROR', '히스토리 전체 삭제 실패', {}, error);
+      showToast('히스토리를 초기화하는 중 문제가 발생했습니다.', 'error');
+    }
+  } else {
+    // 첫 클릭 → 확인 모드로 전환
+    btn.classList.add('confirm-mode');
+    btn.textContent = '정말 삭제하시겠습니까?';
+
+    // 3초 후 자동으로 원래 상태로 복원
+    clearHistoryConfirmTimer = setTimeout(() => {
+      btn.classList.remove('confirm-mode');
+      btn.textContent = '전체 삭제';
+      clearHistoryConfirmTimer = null;
+    }, 3000);
   }
 }
 
