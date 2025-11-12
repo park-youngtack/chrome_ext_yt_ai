@@ -328,7 +328,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         // dynamically import GEO audit functions
-        const { GEO_CHECKLIST, calculateScores } = await import('/modules/geo-checklist.js');
+        // chrome.runtime.getURL()로 extension 리소스의 절대 경로 생성
+        const geoChecklistUrl = chrome.runtime.getURL('modules/geo-checklist.js');
+        const { GEO_CHECKLIST, calculateScores } = await import(geoChecklistUrl);
 
         const results = [];
         let passedCount = 0;
