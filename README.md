@@ -5,12 +5,17 @@ OpenRouter AI를 활용해 영어 웹페이지를 자연스러운 한글로 바�
 > 개발자를 위한 문서: [CLAUDE.md](./CLAUDE.md)
 >
 > 추가 문서 모음: [docs/](./docs/)
-> - 아키텍처: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-> - 메시징 스펙: [docs/MESSAGING.md](./docs/MESSAGING.md)
-> - 상태 머신: [docs/STATE_MACHINE.md](./docs/STATE_MACHINE.md)
-> - 확장 가이드: [docs/EXTENSIBILITY.md](./docs/EXTENSIBILITY.md)
-> - 기여 가이드: [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md)
-> - 릴리스 가이드: [docs/RELEASE.md](./docs/RELEASE.md)
+
+## 문서 안내
+- `CLAUDE.md`: 프로젝트 구조/원칙/디버깅 팁까지 담은 개발 가이드(작업 전 필독).
+- `docs/ARCHITECTURE.md`: Background, Content, Side Panel 흐름과 메시지/캐시, 모듈 주입 순서 요약.
+- `docs/CONTENT_MODULES.md`: content 스크립트 모듈 책임과 순서, WPT 네임스페이스 유지 전략 정리.
+- `docs/SIDEPANEL_MODULES.md`: sidepanel과 `modules/` 하위 ES 모듈 구조 및 추가 규칙 설명.
+- `docs/MESSAGING.md`: 포트/액션 메시지 스펙과 응답/취소 통지 기준.
+- `docs/STATE_MACHINE.md`: `TranslationState` 속성과 전이 규칙, 탭 복구 정책.
+- `docs/EXTENSIBILITY.md`: 기능 확장을 위한 메시지·상태·캐시 검증 체크리스트와 코드/상수 통합 원칙.
+- `docs/CONTRIBUTING.md`: 브랜치/커밋/PR 전략과 CLAUDE·문서 갱신 조건 등 기여 체크리스트.
+- `docs/RELEASE.md`: 릴리스 전 점검 목록과 태그/검증 흐름을 담은 실전 가이드.
 
 ## 어떤 기능이 있나요?
 - **AI 번역** 버튼 한 번으로 현재 페이지 전체를 자연스러운 한글로 바꿔줘요.
@@ -79,10 +84,13 @@ OpenRouter AI를 활용해 영어 웹페이지를 자연스러운 한글로 바�
    - 새로운 기능이 정상 작동하는지 테스트합니다.
 
 ## 최신 버전 정보
-- 마지막 업데이트: **2025-11-10**
+- 마지막 업데이트: **2025-11-12**
 - 현재 버전: **v2.2.0**
 
 ## 최근 업데이트 내역
+- **2025-11-12**: 🧾 **문서 정리 및 안내 업데이트**
+  - README에 docs/ 내 파일별 안내를 새 섹션으로 정리
+  - 릴리스/날짜 정보를 meta.js와 맞추어 최신화
 - **2025-11-10**: 🔄 **탭별 독립 상태 관리 & 번역 중 탭 전환 보호**
   - 탭별 UI 초기화 및 복구 로직 재설계
   - 번역 중 탭 이동 시 진행 상태 보호
