@@ -141,6 +141,7 @@ export async function switchTab(tabName) {
     'translate': 'AI 번역',
     'history': '번역 히스토리',
     'quickTranslate': '텍스트 번역',
+    'geo': 'GEO 검사',
     'search': '스마트 검색',
     'recurring': '반복 체크리스트',
     'settings': '설정'
