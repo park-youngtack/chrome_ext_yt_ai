@@ -139,10 +139,8 @@ export async function addCategory(name) {
   recurringData.categories.push(newCategory);
   recurringData.tasks[newCategory.id] = [];
 
-  // 첫 카테고리면 자동 선택
-  if (recurringData.categories.length === 1) {
-    recurringData.selectedCategoryId = newCategory.id;
-  }
+  // 새로 추가된 카테고리 자동 선택
+  recurringData.selectedCategoryId = newCategory.id;
 
   await saveData();
   return newCategory;
@@ -877,8 +875,7 @@ export async function initRecurringTab() {
     });
   }
 
-  // 카테고리 삭제 (확인 모드 방식)
-  let deleteConfirmTimer = null;
+  // 카테고리 삭제 (즉시 삭제)
   const deleteCategoryBtn = document.getElementById('recurringDeleteCategoryBtn');
   if (deleteCategoryBtn) {
     deleteCategoryBtn.addEventListener('click', async () => {
@@ -887,41 +884,12 @@ export async function initRecurringTab() {
         return;
       }
 
-      // 이미 확인 모드인 경우 → 실제 삭제 실행
-      if (deleteCategoryBtn.classList.contains('confirm-mode')) {
-        if (deleteConfirmTimer) {
-          clearTimeout(deleteConfirmTimer);
-          deleteConfirmTimer = null;
-        }
-
-        deleteCategoryBtn.classList.remove('confirm-mode');
-        deleteCategoryBtn.title = '카테고리 삭제';
-
-        try {
-          await deleteCategory(recurringData.selectedCategoryId);
-          await refreshUI();
-          showToast('카테고리가 삭제되었습니다');
-        } catch (error) {
-          showToast(error.message, 'error');
-        }
-      } else {
-        // 첫 클릭 → 확인 모드로 전환
-        const category = recurringData.categories.find((c) => c.id === recurringData.selectedCategoryId);
-        if (!category) return;
-
-        deleteCategoryBtn.classList.add('confirm-mode');
-        deleteCategoryBtn.title = `"${category.name}" 삭제하시겠습니까?`;
-        deleteCategoryBtn.style.background = 'rgba(239, 68, 68, 0.2)';
-        deleteCategoryBtn.style.borderColor = 'var(--status-error)';
-
-        // 3초 후 자동으로 원래 상태로 복원
-        deleteConfirmTimer = setTimeout(() => {
-          deleteCategoryBtn.classList.remove('confirm-mode');
-          deleteCategoryBtn.title = '카테고리 삭제';
-          deleteCategoryBtn.style.background = '';
-          deleteCategoryBtn.style.borderColor = '';
-          deleteConfirmTimer = null;
-        }, 3000);
+      try {
+        await deleteCategory(recurringData.selectedCategoryId);
+        await refreshUI();
+        showToast('카테고리가 삭제되었습니다');
+      } catch (error) {
+        showToast(error.message, 'error');
       }
     });
   }
