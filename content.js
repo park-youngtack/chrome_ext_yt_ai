@@ -323,6 +323,70 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, count: 0, size: 0, error: error.message });
     });
     return true; // 비동기 응답
+  } else if (request.action === 'GEO_AUDIT_REQUEST') {
+    // GEO 검사 요청 - Content Script에서 현재 페이지 검사 수행
+    (async () => {
+      try {
+        // dynamically import GEO audit functions
+        const { GEO_CHECKLIST, calculateScores } = await import('/modules/geo-checklist.js');
+
+        const results = [];
+        let passedCount = 0;
+        let failedCount = 0;
+
+        // 체크리스트 순회
+        for (const checkItem of GEO_CHECKLIST) {
+          try {
+            const selected = checkItem.selector();
+            const passed = checkItem.validator(selected);
+
+            const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+
+            results.push({
+              id: checkItem.id,
+              title: checkItem.title,
+              category: checkItem.category,
+              weight: checkItem.weight,
+              passed,
+              hint
+            });
+
+            if (passed) passedCount++;
+            else failedCount++;
+          } catch (error) {
+            const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+            results.push({
+              id: checkItem.id,
+              title: checkItem.title,
+              category: checkItem.category,
+              weight: checkItem.weight,
+              passed: false,
+              hint,
+              error: error.message
+            });
+            failedCount++;
+          }
+        }
+
+        // 점수 계산
+        const scores = calculateScores(results);
+
+        sendResponse({
+          data: {
+            results,
+            scores,
+            passedCount,
+            failedCount,
+            failedItems: results.filter(r => !r.passed).map(r => r.id),
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        sendResponse({ error: error.message });
+      }
+    })();
+    return true; // 비동기 응답
+
   } else if (request.action === CONST.ACTIONS.CLEAR_CACHE_FOR_DOMAIN) {
     // Sidepanel에서 현재 도메인의 캐시 삭제 요청
     (WPT.Cache && WPT.Cache.handleClearCacheForDomain ? WPT.Cache.handleClearCacheForDomain() : Promise.resolve({ success: false, error: 'not_supported' })).then(result => {

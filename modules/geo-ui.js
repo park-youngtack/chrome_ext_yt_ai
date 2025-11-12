@@ -11,6 +11,36 @@ import { runAudit, getImprovement, logAuditResult } from './geo-audit.js';
 import { groupChecklistByCategory } from './geo-checklist.js';
 
 /**
+ * Content Script에 메시지 전송
+ * @param {string} action - 메시지 액션
+ * @returns {Promise} 응답 데이터
+ */
+function sendMessageToContent(action) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) {
+        reject(new Error('활성 탭을 찾을 수 없습니다'));
+        return;
+      }
+
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        { action },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response?.error) {
+            reject(new Error(response.error));
+          } else {
+            resolve(response?.data);
+          }
+        }
+      );
+    });
+  });
+}
+
+/**
  * GEO 탭 초기화
  * - HTML 요소 캐시
  * - 이벤트 리스너 등록
@@ -71,9 +101,9 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     // 짧은 딜레이 후 검사 시작 (페이지 로딩 완료 대기)
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // 검사 실행
+    // 검사 실행 - Content Script에 메시지로 요청
     getLogger('🔍 GEO 검사 시작...');
-    const auditResult = await runAudit();
+    const auditResult = await sendMessageToContent('GEO_AUDIT_REQUEST');
 
     // 결과 기록
     logAuditResult(auditResult);
