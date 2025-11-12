@@ -5,7 +5,7 @@
 - **버전**: 2.2.0
 - **설명**: OpenRouter AI를 사용하여 웹페이지를 한글로 번역하는 크롬 확장 프로그램
 - **개발**: 인크로스 AI비즈솔루션팀 박영택
-- **최종 수정**: 2025-11-10 (meta.js 참고)
+- **최종 수정**: 2025-11-12 (meta.js 참고)
 
 ## 파일 구조
 
@@ -13,15 +13,51 @@
 chrome_ext_yt_ai/
 ├── manifest.json              # Chrome 확장 메타데이터
 ├── background.js              # Service Worker - Content Script 관리
-├── content.js                 # Content Script - DOM 번역 실행 (14섹션)
-├── sidepanel.html             # 사이드패널 UI (4개 탭)
-├── sidepanel.js               # 사이드패널 로직 (11섹션)
-├── sidepanel.css              # 패널 스타일
+├── content.js                 # Content Script - 메인 오케스트레이터 (14섹션)
+├── content/                   # Content Script 모듈 (7개 모듈)
+│  ├── bootstrap.js            # WPT 네임스페이스 초기화
+│  ├── api.js                  # OpenRouter API 호출/재시도
+│  ├── cache.js                # IndexedDB 캐시 관리
+│  ├── industry.js             # 산업군 추론/지시문
+│  ├── dom.js                  # 텍스트 수집/DOM 적용
+│  ├── title.js                # 제목 번역/적용
+│  └── progress.js             # 타이머/진행/푸시
+├── sidepanel.html             # 사이드패널 UI (4개 탭, 스타일 인라인)
+├── sidepanel.js               # 사이드패널 메인 로직
+├── sidepanel/                 # 사이드패널 부트스트랩
+│  └── bootstrap.js
+├── modules/                   # 사이드패널 ES6 모듈 (10개 모듈)
+│  ├── constants.js            # API 액션/포트/메시지 상수
+│  ├── state.js                # Side Panel 전역 상태 관리
+│  ├── ui-utils.js             # UI 업데이트/탭바/토스트
+│  ├── translation.js          # 번역 핵심 로직, 권한 관리
+│  ├── history.js              # 번역 히스토리 관리
+│  ├── settings.js             # 설정 탭 관리
+│  ├── search.js               # 검색 탭 기능
+│  ├── quick-translate.js      # 텍스트 번역 탭
+│  ├── flags.js                # 기능 플래그 (향후 확장용)
+│  └── types.js                # JSDoc typedef 모음
 ├── logger.js                  # 공용 로깅 시스템 (ES6 모듈)
-├── meta.js                    # 메타 정보 (푸터 텍스트)
+├── meta.js                    # 메타 정보 (푸터 텍스트, 마지막 수정 날짜)
 ├── README.md                  # 사용자 가이드
 ├── CLAUDE.md                  # 개발 가이드 (현재 파일)
-└── icons/                     # 확장 아이콘
+├── docs/                      # 개발 문서
+│  ├── ARCHITECTURE.md         # 전체 구조, 메시지/캐시 흐름
+│  ├── CONTENT_MODULES.md      # Content Script 모듈 책임과 주입 순서
+│  ├── SIDEPANEL_MODULES.md    # Side Panel 모듈 구조와 규칙
+│  ├── STATE_MACHINE.md        # TranslationState 전이 규칙
+│  ├── MESSAGING.md            # Port/메시지 스펙
+│  ├── EXTENSIBILITY.md        # 기능 확장 가이드
+│  ├── CONTRIBUTING.md         # 기여 가이드 (브랜치/커밋/PR)
+│  └── RELEASE.md              # 릴리스 체크리스트
+├── icons/                     # 확장 아이콘
+│  ├── icon16.png
+│  ├── icon48.png
+│  └── icon128.png
+├── create_icons.py            # 아이콘 생성 스크립트 (선택적)
+├── AGENTS.md                  # Claude Code 에이전트 설정
+└── .claude/                   # Claude Code 설정
+   └── settings.local.json
 ```
 
 ## 핵심 원칙 ⚠️ 중요!
@@ -166,20 +202,32 @@ const translationStateByTab = new Map(); // tabId → translationState
 
 각 섹션 상단의 JSDoc 주석을 참고하세요.
 
-### sidepanel.js (11개 섹션)
-1. 파일 헤더 & 설정 상수
-2. 전역 상태
-3. DOMContentLoaded 초기화
-4. 탭바 관리
-5. API Key UI 관리
-6. 히스토리 관리
-7. 설정 관리
-8. 번역 기능
-9. UI 업데이트
-10. 개발자 도구
-11. 검색 탭 기능
+### 사이드패널 모듈 구조 (11개 모듈/기능)
 
-각 섹션의 JSDoc 주석을 참고하세요.
+사이드패널의 기능은 현재 **모듈 분리**되어 각 책임별로 관리됩니다:
+
+**메인 파일:**
+- `sidepanel.js` - DOMContentLoaded 초기화, Chrome 탭 리스너
+
+**함수형 모듈 (modules/):**
+1. `state.js` - 전역 상태 관리 (번역 상태, 탭별 상태)
+2. `constants.js` - API 액션, 포트, 메시지 상수 중앙화
+3. `ui-utils.js` - UI 업데이트, 탭바, 토스트 유틸리티
+4. `translation.js` - 번역 핵심 로직, 권한 체크, 가드
+5. `history.js` - 히스토리 저장/로드/삭제/재번역
+6. `settings.js` - 설정 탭 (API Key, 모델, 배치, 캐시 TTL)
+7. `search.js` - 검색 탭 (AI 추천, 다중 엔진 검색)
+8. `quick-translate.js` - 텍스트 번역 탭
+9. `flags.js` - 기능 플래그 (향후 런타임 토글용)
+10. `types.js` - JSDoc typedef (타입 문서화)
+
+**부트스트랩:**
+- `sidepanel/bootstrap.js` - 모듈 임포트 및 초기화
+
+**패턴:**
+- 각 모듈은 독립적 책임 담당 (SRP)
+- 상태는 `state.js`를 통해 중앙화
+- 통신은 `constants.js`의 상수 사용
 
 ### logger.js (ES6 모듈)
 - **레벨**: DEBUG, INFO, WARN, ERROR
