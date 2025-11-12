@@ -136,9 +136,42 @@ if (translationState.state === 'translating') {
   - 삭제: 아이콘 버튼으로 즉시 삭제
   - 드래그앤드롭: 순서 재정렬
 - **초기화**: 현재 카테고리의 모든 체크 해제 (반복 시작)
-- **백업/복원**: 전체 데이터 MD 파일로 내보내기/가져오기
+- **백업/복현**: 전체 데이터 MD 파일로 내보내기/가져오기
 - **현황 복사**: 현재 카테고리의 체크 상태를 텍스트로 클립보드 복사 (보고용)
 - **저장소**: Chrome Local Storage (번역 기능과 독립)
+
+### GEO 검사 탭 (GEO Audit)
+- **목적**: Generative Engine Optimization 검사 - 검색엔진 및 생성형 AI 최적화 점수 측정
+- **검사 항목**: 18개 체크리스트 (SEO 6개, AEO 5개, GEO 7개)
+  - **SEO (Search Engine Optimization)**: 검색엔진 크롤러가 읽는 기본 메타 정보
+  - **AEO (Answer Engine Optimization)**: ChatGPT 등 생성형 AI가 참고하는 구조화 데이터
+  - **GEO (Generative Engine Optimization)**: SEO + AEO 통합 최적화
+- **점수 체계**:
+  - 각 항목의 **존재 여부**만 검증 (글자수 범위는 권장사항)
+  - 카테고리별 가중치 기반 점수 계산 (0-100)
+  - 총점 = 세 카테고리 평균
+- **검사 과정**:
+  1. `runAudit()` - 각 항목 selector/validator 실행
+  2. `calculateScores()` - 카테고리별 점수 계산
+  3. `getImprovement()` - LLM에 상위 3개 개선 사항 요청
+- **LLM 개선 의견**:
+  - 마크다운 형식으로 정렬된 개선사항 반환
+  - 각 항목마다 "구체적인 실행 방법" + "예상 효과" 제시
+  - 코드 예시 포함 (HTML/JSON)
+- **SSR/CSR 인식**:
+  - SSR(Server-Side Rendering): HTML에 직접 포함 → 검색봇 읽음 (✅)
+  - CSR(Client-Side Rendering): JavaScript 동적 추가 → 검색봇 못 읽음 (❌)
+  - 체크리스트에 SSR/CSR 주의 표시로 사용자 이해도 향상
+- **UI 렌더링**:
+  - 점수 카드: 4열 그리드, 모두 동일 높이 (80px)
+  - 개선 의견: 마크다운 완전 지원 (h2/h3/h4, 리스트, 코드블록, 인라인 코드)
+  - 섹션 제목: "제목:" 패턴 자동 감지 → 파란 스타일 적용
+- **저장소**: Chrome Local Storage (번역 기능과 독립)
+- **파일 구조**:
+  - `modules/geo-audit.js` - 검사 엔진 핵심 로직
+  - `modules/geo-checklist.js` - 18개 체크리스트 정의
+  - `modules/geo-ui.js` - UI 렌더링 및 마크다운 변환
+  - `modules/geo-tab.js` - 탭 이벤트 핸들러
 
 ### 설정 탭 (Settings)
 - **API Key**: 마스킹 (앞 8자 + "***") 및 검증
