@@ -349,10 +349,18 @@ function formatImprovement(improvement) {
       </div>`;
 
     // 코드 예시 (이미 HTML 엔터티로 인코딩됨)
-    if (codeExample) {
+    if (codeExample && codeExample.trim() !== '') {
       html += `<div class="geo-improvement-section">
         <strong class="geo-section-title">실제 코드 예시:</strong>
         <pre><code>${decodeHtmlEntities(codeExample)}</code></pre>
+      </div>`;
+    } else {
+      // 코드 예시가 없는 경우 (LLM이 규격을 제대로 따르지 않은 경우)
+      html += `<div class="geo-improvement-section" style="opacity: 0.6;">
+        <strong class="geo-section-title" style="color: #f59e0b;">⚠️ 코드 예시:</strong>
+        <p style="font-size: 12px; margin: 8px 0; color: #a9afb8;">
+          LLM이 구체적인 코드를 제공하지 않았습니다. 위의 실행 방법을 참고하여 직접 구현하세요.
+        </p>
       </div>`;
     }
 

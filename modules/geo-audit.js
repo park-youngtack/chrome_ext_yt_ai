@@ -350,16 +350,25 @@ ${failedItems}
       }
 
       // 각 항목이 필수 필드를 가지고 있는지 확인
+      let hasEmptyCodeExample = false;
       parsed.improvements.forEach((item, idx) => {
-        if (!item.title || !item.methods || !item.codeExample || !item.effects) {
-          throw new Error(`항목 ${idx + 1}: title, methods, codeExample, effects가 모두 필요합니다`);
+        if (!item.title || !item.methods || !item.effects) {
+          throw new Error(`항목 ${idx + 1}: title, methods, effects가 모두 필요합니다`);
         }
         // codeExample이 비어있거나 플레이스홀더만 있는 경우 체크
         if (!item.codeExample || item.codeExample.trim() === '' ||
-            item.codeExample.includes('[여기에') || item.codeExample.includes('...') && item.codeExample.length < 10) {
-          throw new Error(`항목 ${idx + 1}: codeExample이 구체적인 코드로 채워져야 합니다 (빈 칸이나 플레이스홀더만으로는 안 됨)`);
+            item.codeExample.includes('[여기에') || (item.codeExample.includes('...') && item.codeExample.length < 10)) {
+          hasEmptyCodeExample = true;
+          console.warn(`⚠️ 경고: 항목 ${idx + 1}의 codeExample이 구체적이지 않습니다`);
+          // codeExample이 비어있으면 빈 문자열로 설정 (UI에서 숨김)
+          item.codeExample = '';
         }
       });
+
+      // codeExample이 비어있는 항목이 있으면 경고하지만 계속 진행
+      if (hasEmptyCodeExample) {
+        console.warn('⚠️ 일부 항목에 코드 예시가 없습니다. LLM이 규격을 제대로 따르지 않았을 수 있습니다.');
+      }
 
       return parsed; // 구조화된 JSON 객체 반환
     } catch (parseError) {
