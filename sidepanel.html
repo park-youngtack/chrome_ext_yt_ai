@@ -274,6 +274,17 @@
       cursor: not-allowed;
     }
 
+    .history-clear-btn.confirm-mode {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--status-error);
+      border-color: var(--status-error);
+    }
+
+    .history-clear-btn.confirm-mode:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+    }
+
     .history-list {
       display: flex;
       flex-direction: column;
