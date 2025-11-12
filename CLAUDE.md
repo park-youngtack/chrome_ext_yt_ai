@@ -22,11 +22,11 @@ chrome_ext_yt_ai/
 │  ├── dom.js                  # 텍스트 수집/DOM 적용
 │  ├── title.js                # 제목 번역/적용
 │  └── progress.js             # 타이머/진행/푸시
-├── sidepanel.html             # 사이드패널 UI (4개 탭, 스타일 인라인)
+├── sidepanel.html             # 사이드패널 UI (5개 탭, 스타일 인라인)
 ├── sidepanel.js               # 사이드패널 메인 로직
 ├── sidepanel/                 # 사이드패널 부트스트랩
 │  └── bootstrap.js
-├── modules/                   # 사이드패널 ES6 모듈 (10개 모듈)
+├── modules/                   # 사이드패널 ES6 모듈 (11개 모듈)
 │  ├── constants.js            # 메시지 액션/포트/저장소 상수
 │  ├── state.js                # 전역 상태 관리 (맵/변수)
 │  ├── ui-utils.js             # UI 업데이트, 탭바, 토스트
@@ -35,6 +35,7 @@ chrome_ext_yt_ai/
 │  ├── settings.js             # 설정 탭 (API, 모델, 배치, 캐시)
 │  ├── search.js               # 스마트 검색 탭 (AI 추천)
 │  ├── quick-translate.js      # 직접 텍스트 번역 탭
+│  ├── recurring.js            # 반복 체크리스트 탭 (카테고리/할일 관리)
 │  ├── flags.js                # 런타임 기능 플래그
 │  └── types.js                # JSDoc typedef
 ├── logger.js                  # 공용 로깅 시스템 (ES6 모듈)
@@ -122,6 +123,22 @@ if (translationState.state === 'translating') {
 - **다중 엔진**: Google, Naver, Bing, ChatGPT, Perplexity 동시 검색
 - **배경 탭**: 모든 검색 결과는 백그라운드 탭으로 열기
 - **개별 검색**: 각 엔진별 버튼으로 따로 검색 가능
+
+### 반복관리 탭 (Recurring Checklist)
+- **카테고리 관리**: 카테고리별로 반복 할일 그룹 관리
+  - 추가: 인라인 입력으로 새 카테고리 생성
+  - 수정: 카테고리명 클릭 → 인라인 편집
+  - 삭제: 확인 모드 방식 (3초 타이머)
+- **할일 관리**: 카테고리별 체크리스트 관리
+  - 체크/언체크: 완료 여부 토글
+  - 추가: 하단 입력창 (Enter 단축키 지원)
+  - 수정: 할일 텍스트 클릭 → 인라인 편집
+  - 삭제: 아이콘 버튼으로 즉시 삭제
+  - 드래그앤드롭: 순서 재정렬
+- **초기화**: 현재 카테고리의 모든 체크 해제 (반복 시작)
+- **백업/복원**: 전체 데이터 MD 파일로 내보내기/가져오기
+- **현황 복사**: 현재 카테고리의 체크 상태를 텍스트로 클립보드 복사 (보고용)
+- **저장소**: Chrome Local Storage (번역 기능과 독립)
 
 ### 설정 탭 (Settings)
 - **API Key**: 마스킹 (앞 8자 + "***") 및 검증
