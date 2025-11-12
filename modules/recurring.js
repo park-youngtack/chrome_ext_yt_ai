@@ -46,6 +46,7 @@ let recurringData = {
 };
 
 let draggedTaskId = null; // 드래그 중인 할일 ID
+let isInitialized = false; // 초기화 플래그 (중복 방지)
 
 // ===== 유틸리티 =====
 
@@ -479,6 +480,40 @@ export async function copyStatusToClipboard(categoryId) {
 // ===== UI 렌더링 =====
 
 /**
+ * 버튼 활성화/비활성화 상태 업데이트
+ * @returns {void}
+ */
+function updateButtonStates() {
+  const hasCategories = recurringData.categories.length > 0;
+  const hasSelectedCategory = !!recurringData.selectedCategoryId;
+  const hasTasks = hasSelectedCategory && (recurringData.tasks[recurringData.selectedCategoryId] || []).length > 0;
+
+  // 카테고리 편집/삭제 버튼
+  const editBtn = document.getElementById('recurringEditCategoryBtn');
+  const deleteBtn = document.getElementById('recurringDeleteCategoryBtn');
+  if (editBtn) editBtn.disabled = !hasSelectedCategory;
+  if (deleteBtn) deleteBtn.disabled = !hasSelectedCategory;
+
+  // 액션 버튼들
+  const resetBtn = document.getElementById('recurringResetBtn');
+  const backupBtn = document.getElementById('recurringBackupBtn');
+  const copyBtn = document.getElementById('recurringCopyStatusBtn');
+  if (resetBtn) resetBtn.disabled = !hasTasks;
+  if (backupBtn) backupBtn.disabled = !hasCategories;
+  if (copyBtn) copyBtn.disabled = !hasTasks;
+
+  // 할일 입력
+  const taskInput = document.getElementById('recurringTaskInput');
+  const addTaskBtn = document.getElementById('recurringAddTaskBtn');
+  if (taskInput) taskInput.disabled = !hasSelectedCategory;
+  if (addTaskBtn) addTaskBtn.disabled = !hasSelectedCategory;
+
+  // 카테고리 셀렉트
+  const selector = document.getElementById('recurringCategorySelector');
+  if (selector) selector.disabled = !hasCategories;
+}
+
+/**
  * 카테고리 선택 UI 렌더링
  * @returns {Promise<void>}
  */
@@ -490,8 +525,9 @@ async function renderCategorySelector() {
 
   if (recurringData.categories.length === 0) {
     const option = document.createElement('option');
-    option.textContent = '카테고리 없음';
+    option.textContent = '우측 + 버튼을 눌러 카테고리를 등록하세요';
     option.disabled = true;
+    option.selected = true;
     selector.appendChild(option);
     return;
   }
@@ -593,6 +629,10 @@ function createTaskElement(categoryId, task) {
     }
   });
 
+  // 순서 번호 (CSS counter 사용)
+  const orderEl = document.createElement('span');
+  orderEl.className = 'task-order';
+
   // 체크박스
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
@@ -631,6 +671,7 @@ function createTaskElement(categoryId, task) {
     }
   });
 
+  item.appendChild(orderEl);
   item.appendChild(checkbox);
   item.appendChild(textEl);
   item.appendChild(deleteBtn);
@@ -701,6 +742,7 @@ function startEditTask(element, categoryId, taskId) {
 async function refreshUI() {
   await renderCategorySelector();
   await renderTaskList();
+  updateButtonStates();
 }
 
 // ===== 탭 초기화 =====
@@ -710,6 +752,12 @@ async function refreshUI() {
  * @returns {Promise<void>}
  */
 export async function initRecurringTab() {
+  // 중복 초기화 방지
+  if (isInitialized) {
+    await refreshUI();
+    return;
+  }
+
   await loadData();
 
   // 카테고리 선택 변경
@@ -718,55 +766,30 @@ export async function initRecurringTab() {
     selector.addEventListener('change', async (e) => {
       await selectCategory(e.target.value);
       await renderTaskList();
+      updateButtonStates();
     });
   }
 
-  // 카테고리 추가
+  // 카테고리 추가 (prompt 방식)
   const addCategoryBtn = document.getElementById('recurringAddCategoryBtn');
-  const categorySelector = document.getElementById('recurringCategorySelector');
-  if (addCategoryBtn && categorySelector) {
+  if (addCategoryBtn) {
     addCategoryBtn.addEventListener('click', async () => {
-      // 인라인 입력 UI로 변경
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = '카테고리명 입력...';
-      input.className = 'recurring-category-select';
-      input.style.fontWeight = '600';
-
-      const handleSave = async () => {
-        const name = input.value.trim();
-        if (name) {
-          try {
-            await addCategory(name);
-            await refreshUI();
-            showToast('카테고리가 추가되었습니다');
-          } catch (error) {
-            showToast(error.message, 'error');
-            await refreshUI();
-          }
-        } else {
+      const name = prompt('새 카테고리명을 입력하세요:');
+      if (name && name.trim()) {
+        try {
+          await addCategory(name.trim());
           await refreshUI();
+          showToast('카테고리가 추가되었습니다');
+        } catch (error) {
+          showToast(error.message, 'error');
         }
-      };
-
-      input.addEventListener('blur', handleSave);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          input.blur();
-        } else if (e.key === 'Escape') {
-          refreshUI();
-        }
-      });
-
-      categorySelector.replaceWith(input);
-      input.focus();
+      }
     });
   }
 
-  // 카테고리 수정
+  // 카테고리 수정 (prompt 방식)
   const editCategoryBtn = document.getElementById('recurringEditCategoryBtn');
-  if (editCategoryBtn && categorySelector) {
+  if (editCategoryBtn) {
     editCategoryBtn.addEventListener('click', async () => {
       if (!recurringData.selectedCategoryId) {
         showToast('선택된 카테고리가 없습니다', 'error');
@@ -776,44 +799,15 @@ export async function initRecurringTab() {
       const category = recurringData.categories.find((c) => c.id === recurringData.selectedCategoryId);
       if (!category) return;
 
-      // 인라인 입력 UI로 변경
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.value = category.name;
-      input.className = 'recurring-category-select';
-      input.style.fontWeight = '600';
-
-      const handleSave = async () => {
-        const newName = input.value.trim();
-        if (newName && newName !== category.name) {
-          try {
-            await updateCategory(recurringData.selectedCategoryId, newName);
-            await refreshUI();
-            showToast('카테고리명이 변경되었습니다');
-          } catch (error) {
-            showToast(error.message, 'error');
-            await refreshUI();
-          }
-        } else {
+      const newName = prompt('카테고리명을 수정하세요:', category.name);
+      if (newName && newName.trim() && newName.trim() !== category.name) {
+        try {
+          await updateCategory(recurringData.selectedCategoryId, newName.trim());
           await refreshUI();
+          showToast('카테고리명이 변경되었습니다');
+        } catch (error) {
+          showToast(error.message, 'error');
         }
-      };
-
-      input.addEventListener('blur', handleSave);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          input.blur();
-        } else if (e.key === 'Escape') {
-          refreshUI();
-        }
-      });
-
-      const currentSelector = document.getElementById('recurringCategorySelector');
-      if (currentSelector) {
-        currentSelector.replaceWith(input);
-        input.focus();
-        input.select();
       }
     });
   }
@@ -961,4 +955,10 @@ export async function initRecurringTab() {
 
   // 초기 렌더링
   await refreshUI();
+
+  // 초기화 완료 플래그 설정
+  isInitialized = true;
+  logInfo('recurring', 'INIT_COMPLETE', '반복 체크리스트 탭 초기화 완료', {
+    categoryCount: recurringData.categories.length
+  });
 }

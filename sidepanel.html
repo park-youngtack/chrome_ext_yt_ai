@@ -1586,24 +1586,28 @@
     .recurring-task-list {
       display: flex;
       flex-direction: column;
-      gap: var(--space-xs);
+      gap: 0;
     }
 
     .recurring-task-item {
-      display: flex;
+      display: grid;
+      grid-template-columns: auto 20px 1fr auto;
       align-items: center;
       gap: var(--space-sm);
-      padding: var(--space-sm);
+      padding: var(--space-sm) var(--space-md);
       background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-md);
+      border-bottom: 1px solid var(--border-color);
       transition: all 0.2s;
       cursor: move;
+      counter-increment: task-counter;
+    }
+
+    .recurring-task-item:first-child {
+      border-top: 1px solid var(--border-color);
     }
 
     .recurring-task-item:hover {
       background: rgba(42, 108, 240, 0.08);
-      border-color: rgba(42, 108, 240, 0.3);
     }
 
     .recurring-task-item.dragging {
@@ -1613,6 +1617,23 @@
     .recurring-task-item.drag-over {
       border-color: var(--status-active);
       background: rgba(42, 108, 240, 0.15);
+    }
+
+    .recurring-task-list-container {
+      counter-reset: task-counter;
+    }
+
+    .task-order {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      width: 24px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .task-order::after {
+      content: counter(task-counter) ".";
     }
 
     .task-checkbox {
@@ -1885,19 +1906,19 @@
               <label for="recurringCategorySelector">카테고리</label>
               <div class="recurring-category-controls">
                 <select id="recurringCategorySelector" class="recurring-category-select">
-                  <option disabled>카테고리 없음</option>
+                  <option disabled selected>우측 + 버튼을 눌러 카테고리를 등록하세요</option>
                 </select>
                 <button id="recurringAddCategoryBtn" class="icon-btn" title="카테고리 추가" aria-label="카테고리 추가">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                   </svg>
                 </button>
-                <button id="recurringEditCategoryBtn" class="icon-btn" title="카테고리 수정" aria-label="카테고리 수정">
+                <button id="recurringEditCategoryBtn" class="icon-btn" title="카테고리 수정" aria-label="카테고리 수정" disabled>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
                   </svg>
                 </button>
-                <button id="recurringDeleteCategoryBtn" class="icon-btn" title="카테고리 삭제" aria-label="카테고리 삭제">
+                <button id="recurringDeleteCategoryBtn" class="icon-btn" title="카테고리 삭제" aria-label="카테고리 삭제" disabled>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                   </svg>
@@ -1907,21 +1928,31 @@
 
             <!-- 액션 버튼 -->
             <div class="recurring-actions">
-              <button id="recurringResetBtn" class="btn secondary" title="현재 카테고리의 모든 체크 해제">
+              <button id="recurringResetBtn" class="btn secondary" title="현재 카테고리의 모든 체크 해제" disabled>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="margin-right: 6px;">
                   <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
                 </svg>
                 초기화
               </button>
-              <button id="recurringBackupBtn" class="btn secondary" title="MD 파일로 백업">
+              <button id="recurringBackupBtn" class="btn secondary" title="MD 파일로 백업" disabled>
                 📥 백업
               </button>
               <button id="recurringRestoreBtn" class="btn secondary" title="MD 파일에서 복원">
                 📤 복원
               </button>
               <input type="file" id="recurringRestoreInput" accept=".md,.markdown" style="display: none;">
-              <button id="recurringCopyStatusBtn" class="btn secondary" title="현재 카테고리 현황 복사">
+              <button id="recurringCopyStatusBtn" class="btn secondary" title="현재 카테고리 현황 복사" disabled>
                 📋 복사
+              </button>
+            </div>
+
+            <!-- 할일 추가 -->
+            <div class="recurring-add-task">
+              <input type="text" id="recurringTaskInput" placeholder="새 할일 입력..." disabled />
+              <button id="recurringAddTaskBtn" class="icon-btn" title="할일 추가" aria-label="할일 추가" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
               </button>
             </div>
 
@@ -1932,18 +1963,8 @@
               <!-- 빈 상태 -->
               <div id="recurringEmpty" class="recurring-empty" style="display: flex;">
                 <div class="recurring-empty-icon">✅</div>
-                <p>아직 할일이 없습니다.<br>아래에서 새 할일을 추가해보세요!</p>
+                <p>카테고리를 추가하고 할일을 등록해보세요!</p>
               </div>
-            </div>
-
-            <!-- 할일 추가 -->
-            <div class="recurring-add-task">
-              <input type="text" id="recurringTaskInput" placeholder="새 할일 입력..." />
-              <button id="recurringAddTaskBtn" class="icon-btn" title="할일 추가" aria-label="할일 추가">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                </svg>
-              </button>
             </div>
           </div>
         </div>
