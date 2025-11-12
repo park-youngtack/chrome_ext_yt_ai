@@ -101,6 +101,9 @@ async function handleTranslateText() {
     // 히스토리 다시 로드
     await loadTranslationHistory();
 
+    // 입력 영역 비우기 (다음 번역을 위해)
+    textInput.value = '';
+
     showToast('번역이 완료되었습니다!');
     logInfo('quickTranslate', 'TRANSLATE_SUCCESS', '번역 성공', {
       originalLength: text.length,
@@ -302,18 +305,10 @@ function renderTranslationHistory(history) {
     const date = new Date(item.timestamp);
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
-    // 원문과 번역문을 50자로 제한
-    const originalPreview = item.original.length > 50
-      ? item.original.substring(0, 50) + '...'
-      : item.original;
-    const translationPreview = item.translation.length > 50
-      ? item.translation.substring(0, 50) + '...'
-      : item.translation;
-
     return `
       <div class="quick-history-item" data-id="${item.id}">
         <div class="quick-history-body">
-          <div class="quick-history-translation">${escapeHtml(translationPreview)}</div>
+          <div class="quick-history-translation">${escapeHtml(item.translation)}</div>
           <div class="quick-history-original collapsed">${escapeHtml(item.original)}</div>
           <div class="quick-history-meta">
             <span>${dateStr}</span>

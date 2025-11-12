@@ -140,6 +140,7 @@ export async function switchTab(tabName) {
   const titleMap = {
     'translate': 'AI 번역',
     'history': '번역 히스토리',
+    'quickTranslate': '텍스트 번역',
     'search': '스마트 검색',
     'settings': '설정'
   };
@@ -187,7 +188,7 @@ export async function restoreSession() {
     const result = await chrome.storage.session.get(SESSION_KEY);
     const lastTab = result[SESSION_KEY];
 
-    if (lastTab && (lastTab === 'translate' || lastTab === 'settings' || lastTab === 'history' || lastTab === 'search')) {
+    if (lastTab && (lastTab === 'translate' || lastTab === 'history' || lastTab === 'quickTranslate' || lastTab === 'search' || lastTab === 'settings')) {
       switchTab(lastTab);
     }
   } catch (error) {
@@ -202,7 +203,7 @@ export async function restoreSession() {
  */
 export function handleDeepLink() {
   const hash = window.location.hash.slice(1); // # 제거
-  if (hash === 'translate' || hash === 'settings' || hash === 'history' || hash === 'search') {
+  if (hash === 'translate' || hash === 'history' || hash === 'quickTranslate' || hash === 'search' || hash === 'settings') {
     switchTab(hash);
   }
 }

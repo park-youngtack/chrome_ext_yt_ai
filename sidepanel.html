@@ -1336,7 +1336,7 @@
     .quick-history-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
     }
 
     .quick-history-item {
@@ -1553,6 +1553,27 @@
           </div>
         </div>
 
+        <!-- 히스토리 탭 -->
+        <div id="historyTab" class="tab-content">
+          <div class="history-card">
+            <div class="history-header">
+              <div>
+                <div class="history-title">번역 히스토리</div>
+                <div class="history-subtitle">최근 번역한 페이지 목록입니다. 항목을 선택하면 동일한 조건으로 번역을 다시 실행합니다.</div>
+              </div>
+              <button id="historyClearBtn" class="history-clear-btn" type="button">전체 삭제</button>
+            </div>
+
+            <div id="historyEmpty" class="history-empty" role="status">
+              <div class="history-empty-icon">🗒️</div>
+              <p>아직 저장된 번역 기록이 없습니다. 페이지를 번역하면 목록이 자동으로 채워집니다.</p>
+              <button id="historyEmptyAction" class="btn secondary" type="button">지금 번역 시작</button>
+            </div>
+
+            <div id="historyList" class="history-list" aria-live="polite"></div>
+          </div>
+        </div>
+
         <!-- 텍스트 번역 탭 -->
         <div id="quickTranslateTab" class="tab-content">
           <div class="quick-translate-card">
@@ -1587,27 +1608,6 @@
 
             <!-- 히스토리 리스트 -->
             <div id="quickHistoryList" class="quick-history-list" style="display: none;"></div>
-          </div>
-        </div>
-
-        <!-- 히스토리 탭 -->
-        <div id="historyTab" class="tab-content">
-          <div class="history-card">
-            <div class="history-header">
-              <div>
-                <div class="history-title">번역 히스토리</div>
-                <div class="history-subtitle">최근 번역한 페이지 목록입니다. 항목을 선택하면 동일한 조건으로 번역을 다시 실행합니다.</div>
-              </div>
-              <button id="historyClearBtn" class="history-clear-btn" type="button">전체 삭제</button>
-            </div>
-
-            <div id="historyEmpty" class="history-empty" role="status">
-              <div class="history-empty-icon">🗒️</div>
-              <p>아직 저장된 번역 기록이 없습니다. 페이지를 번역하면 목록이 자동으로 채워집니다.</p>
-              <button id="historyEmptyAction" class="btn secondary" type="button">지금 번역 시작</button>
-            </div>
-
-            <div id="historyList" class="history-list" aria-live="polite"></div>
           </div>
         </div>
 
@@ -1759,18 +1759,18 @@
         <span>AI 번역</span>
       </button>
 
-      <button role="tab" data-tab="quickTranslate" aria-selected="false" title="텍스트 번역">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path d="M21,5c0-1.11-0.89-2-2-2H5C3.89,3,3,3.89,3,5v14c0,1.11,0.89,2,2,2h14c1.11,0,2-0.89,2-2V5z M19,19H5V5h14V19z M16.5,13.5 l-4.5-4.5L7.5,13.5L9,15l2-2v6h2v-6l2,2L16.5,13.5z"/>
-        </svg>
-        <span>텍스트</span>
-      </button>
-
       <button role="tab" data-tab="history" aria-selected="false" title="히스토리">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
           <path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7 6.93 6.93 0 01-4.9-2H7.62A9 9 0 1013 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/>
         </svg>
         <span>히스토리</span>
+      </button>
+
+      <button role="tab" data-tab="quickTranslate" aria-selected="false" title="텍스트 번역">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M21,5c0-1.11-0.89-2-2-2H5C3.89,3,3,3.89,3,5v14c0,1.11,0.89,2,2,2h14c1.11,0,2-0.89,2-2V5z M19,19H5V5h14V19z M16.5,13.5 l-4.5-4.5L7.5,13.5L9,15l2-2v6h2v-6l2,2L16.5,13.5z"/>
+        </svg>
+        <span>텍스트</span>
       </button>
 
       <div class="tabbar-divider" role="presentation" aria-hidden="true"></div>
