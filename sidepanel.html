@@ -2376,6 +2376,154 @@
               margin-bottom: 0;
             }
 
+            /* === Dual Audit 스타일 (봇 vs 브라우저) === */
+
+            /* 차이점 경고 */
+            .geo-diff-warning {
+              background: rgba(239, 68, 68, 0.1);
+              border: 1px solid rgba(239, 68, 68, 0.3);
+              border-left: 4px solid var(--status-error);
+              padding: 12px 16px;
+              border-radius: var(--radius-md);
+              color: var(--text-primary);
+              font-size: 13px;
+              margin-bottom: 16px;
+            }
+
+            .geo-diff-success {
+              background: rgba(16, 185, 129, 0.1);
+              border: 1px solid rgba(16, 185, 129, 0.3);
+              border-left: 4px solid var(--status-success);
+              padding: 12px 16px;
+              border-radius: var(--radius-md);
+              color: var(--text-primary);
+              font-size: 13px;
+              margin-bottom: 16px;
+            }
+
+            /* 점수 비교 섹션 */
+            .geo-score-comparison {
+              background: var(--bg-secondary);
+              border: 1px solid var(--border-color);
+              border-radius: var(--radius-lg);
+              padding: 16px;
+              margin-bottom: 24px;
+            }
+
+            .geo-score-comparison h3 {
+              font-size: 14px;
+              font-weight: 600;
+              color: var(--text-primary);
+              margin-bottom: 16px;
+            }
+
+            .geo-score-row {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 16px;
+              margin-bottom: 12px;
+            }
+
+            .geo-score-col {
+              background: var(--bg-primary);
+              border: 1px solid var(--border-color);
+              border-radius: var(--radius-md);
+              padding: 16px;
+              text-align: center;
+            }
+
+            .geo-score-label {
+              font-size: 13px;
+              color: var(--text-secondary);
+              margin-bottom: 8px;
+            }
+
+            .geo-score-value {
+              font-size: 28px;
+              font-weight: 700;
+              color: var(--status-active);
+              margin-bottom: 8px;
+            }
+
+            .geo-score-value.low {
+              color: var(--status-error);
+            }
+
+            .geo-score-detail {
+              font-size: 12px;
+              color: var(--text-secondary);
+            }
+
+            .geo-score-gap {
+              background: rgba(239, 68, 68, 0.05);
+              border: 1px solid rgba(239, 68, 68, 0.2);
+              border-radius: var(--radius-md);
+              padding: 12px;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              font-size: 13px;
+            }
+
+            .geo-gap-icon {
+              font-size: 16px;
+            }
+
+            .geo-gap-text {
+              color: var(--status-error);
+              font-weight: 600;
+            }
+
+            .geo-gap-hint {
+              color: var(--text-secondary);
+              flex: 1;
+            }
+
+            /* 봇/브라우저 섹션 */
+            .geo-audit-section {
+              margin-bottom: 32px;
+            }
+
+            .geo-audit-section h3 {
+              font-size: 15px;
+              font-weight: 700;
+              color: var(--text-primary);
+              margin-bottom: 16px;
+              padding-bottom: 12px;
+              border-bottom: 2px solid var(--border-color);
+            }
+
+            .geo-audit-section.bot-section h3 {
+              border-bottom-color: rgba(245, 158, 11, 0.4);
+            }
+
+            .geo-audit-section.client-section h3 {
+              border-bottom-color: rgba(16, 185, 129, 0.4);
+            }
+
+            .geo-audit-section h4.geo-category-title {
+              font-size: 13px;
+              padding-bottom: 8px;
+              margin-top: 16px;
+            }
+
+            /* 차이점 강조 */
+            .geo-item-diff {
+              border: 2px solid var(--status-error) !important;
+              box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+            }
+
+            .geo-diff-badge {
+              background: var(--status-error);
+              color: white;
+              font-size: 11px;
+              font-weight: 600;
+              padding: 2px 8px;
+              border-radius: 12px;
+              margin-left: auto;
+              margin-right: 4px;
+            }
+
             @keyframes spin {
               to { transform: rotate(360deg); }
             }

@@ -73,6 +73,7 @@ import { getApiKey, getModel } from './settings.js';
  * 3. validator() 실행 → 추출한 데이터 검증
  * 4. 점수 계산 → 카테고리별 평점 산출
  *
+ * @param {Document} doc - 검사할 DOM 문서 (기본: 현재 document)
  * @returns {Promise<AuditResult>} 검사 완료 결과
  *
  * @example
@@ -86,7 +87,7 @@ import { getApiKey, getModel } from './settings.js';
  * console.log(`AEO: ${auditResult.scores.aeo}`);
  * console.log(`GEO: ${auditResult.scores.geo}`);
  */
-export async function runAudit() {
+export async function runAudit(doc = document) {
   const results = [];
   let passedCount = 0;
   let failedCount = 0;
@@ -95,14 +96,14 @@ export async function runAudit() {
   for (const checkItem of GEO_CHECKLIST) {
     try {
       // 1. selector 실행 → DOM 요소 또는 데이터 추출
-      const selected = checkItem.selector();
+      const selected = checkItem.selector(doc);
 
       // 2. validator 실행 → pass/fail 결정
       const passed = checkItem.validator(selected);
 
       // 3. 결과 기록
       // hint가 함수이면 실행, 문자열이면 그대로 사용
-      const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+      const hint = typeof checkItem.hint === 'function' ? checkItem.hint(doc) : checkItem.hint;
 
       results.push({
         id: checkItem.id,
@@ -119,7 +120,7 @@ export async function runAudit() {
     } catch (error) {
       // selector/validator 에러는 fail 처리
       // hint가 함수이면 실행, 문자열이면 그대로 사용
-      const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
+      const hint = typeof checkItem.hint === 'function' ? checkItem.hint(doc) : checkItem.hint;
 
       results.push({
         id: checkItem.id,
@@ -320,6 +321,74 @@ ${failedItems}
   } catch (error) {
     throw new Error(`LLM 의견 수집 실패: ${error.message}`);
   }
+}
+
+/**
+ * 봇 vs 브라우저 Dual Audit 실행
+ *
+ * 동작:
+ * 1. background.js를 통해 초기 HTML fetch (봇 시뮬레이션)
+ * 2. DOMParser로 파싱하여 botDoc 생성
+ * 3. runAudit(botDoc) - 봇이 보는 검사
+ * 4. runAudit(document) - 브라우저가 보는 검사
+ * 5. 두 결과 비교 및 반환
+ *
+ * @param {string} url - 검사할 페이지 URL (http/https만)
+ * @returns {Promise<{botResult: AuditResult, clientResult: AuditResult, differences: Array}>}
+ *
+ * @example
+ * // geo-tab.js에서 호출:
+ * const dualResult = await runDualAudit('https://example.com');
+ * console.log('봇 점수:', dualResult.botResult.scores.total);
+ * console.log('브라우저 점수:', dualResult.clientResult.scores.total);
+ * console.log('차이점:', dualResult.differences.length);
+ */
+export async function runDualAudit(url) {
+  // 1. URL 검증
+  if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    throw new Error('http/https URL만 지원합니다');
+  }
+
+  // 2. background.js를 통해 HTML fetch
+  const response = await chrome.runtime.sendMessage({
+    action: 'FETCH_HTML_FOR_BOT_AUDIT',
+    url
+  });
+
+  if (!response.success) {
+    throw new Error(response.error || 'HTML 가져오기 실패');
+  }
+
+  // 3. DOMParser로 파싱
+  const parser = new DOMParser();
+  const botDoc = parser.parseFromString(response.html, 'text/html');
+
+  // 4. 두 번 검사
+  const botResult = await runAudit(botDoc);
+  const clientResult = await runAudit(document);
+
+  // 5. 차이점 계산
+  const differences = [];
+  botResult.results.forEach((botItem, idx) => {
+    const clientItem = clientResult.results[idx];
+    if (botItem.passed !== clientItem.passed) {
+      differences.push({
+        id: botItem.id,
+        title: botItem.title,
+        category: botItem.category,
+        botPassed: botItem.passed,
+        clientPassed: clientItem.passed
+      });
+    }
+  });
+
+  return {
+    botResult,
+    clientResult,
+    differences,
+    url,
+    timestamp: new Date().toISOString()
+  };
 }
 
 /**

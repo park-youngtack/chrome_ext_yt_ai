@@ -79,13 +79,14 @@ export function initGeoTab(config = {}) {
     show: () => showGeoTab(elements),
     hide: () => hideGeoTab(elements),
     displayResult: (result) => displayAuditResult(elements, result),
+    displayDualResult: (dualResult, improvement) => displayDualAuditResult(elements, dualResult, improvement),
     displayError: (error) => displayError(elements, error),
     displayLoading: (isLoading) => displayLoading(elements, isLoading)
   };
 }
 
 /**
- * 검사 시작 핸들러
+ * 검사 시작 핸들러 (Dual Audit 실행)
  *
  * @param {Object} elements - UI 요소 맵
  * @param {Function} getLogger - 로거 함수
@@ -96,98 +97,53 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
   displayError(elements, '');
 
   try {
+    // 현재 탭 URL 가져오기
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const currentTab = tabs[0];
+    const currentUrl = currentTab?.url;
+
+    if (!currentUrl) {
+      throw new Error('현재 탭 URL을 찾을 수 없습니다');
+    }
+
+    // http/https만 지원
+    if (!currentUrl.startsWith('http://') && !currentUrl.startsWith('https://')) {
+      throw new Error('http/https URL만 지원합니다 (현재: ' + currentUrl.split(':')[0] + ')');
+    }
+
     // 콜백 실행 (페이지 새로고침 등)
     await onStartAudit();
 
     // 짧은 딜레이 후 검사 시작 (페이지 로딩 완료 대기)
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // 검사 실행 - Content Script에 메시지로 요청
-    getLogger('🔍 GEO 검사 시작...');
+    // Dual Audit 실행
+    getLogger('🔍 GEO Dual Audit 시작...');
+    const { runDualAudit, getImprovement, logAuditResult } = await import('./geo-audit.js');
 
-    // Content Script에 selector 정의 목록 전송 (각 항목별로 어떤 selector를 사용할지)
-    const selectorMap = GEO_CHECKLIST.map((item, idx) => ({
-      idx,
-      id: item.id,
-      selectorCode: item.selector.toString() // 함수를 문자열로 변환
-    }));
+    const dualResult = await runDualAudit(currentUrl);
 
-    // Content Script가 selector 결과를 반환
-    const selectorResults = await sendMessageToContent('GEO_GET_SELECTORS', { selectors: selectorMap });
+    // 결과 기록 (봇 기준)
+    getLogger('🤖 봇 검사 결과:');
+    logAuditResult(dualResult.botResult);
+    getLogger('👤 브라우저 검사 결과:');
+    logAuditResult(dualResult.clientResult);
+    getLogger(`⚠️ 차이점: ${dualResult.differences.length}개`);
 
-    // Sidepanel에서 validator 실행
-    const results = [];
-    let passedCount = 0;
-    let failedCount = 0;
-
-    for (const checkItem of GEO_CHECKLIST) {
-      try {
-        // Content Script에서 반환한 선택 결과 찾기
-        const selectorResult = selectorResults.find(r => r.id === checkItem.id);
-        const selected = selectorResult?.value;
-
-        // validator 실행
-        const passed = checkItem.validator(selected);
-
-        // hint 실행 (함수인 경우)
-        const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
-
-        results.push({
-          id: checkItem.id,
-          title: checkItem.title,
-          category: checkItem.category,
-          weight: checkItem.weight,
-          passed,
-          hint
-        });
-
-        if (passed) passedCount++;
-        else failedCount++;
-      } catch (error) {
-        const hint = typeof checkItem.hint === 'function' ? checkItem.hint() : checkItem.hint;
-        results.push({
-          id: checkItem.id,
-          title: checkItem.title,
-          category: checkItem.category,
-          weight: checkItem.weight,
-          passed: false,
-          hint,
-          error: error.message
-        });
-        failedCount++;
-      }
-    }
-
-    // 점수 계산 (geo-audit.js의 로직 복사)
-    const { calculateScores } = await import('./geo-audit.js');
-    const scores = calculateScores(results);
-
-    const auditResult = {
-      results,
-      scores,
-      passedCount,
-      failedCount,
-      failedItems: results.filter(r => !r.passed).map(r => r.id),
-      timestamp: new Date().toISOString()
-    };
-
-    // 결과 기록
-    logAuditResult(auditResult);
-
-    // LLM 의견 수집
-    getLogger('💡 LLM 의견 수집 중...');
+    // LLM 의견 수집 (봇 검사 기준)
+    getLogger('💡 LLM 의견 수집 중 (봇 관점)...');
     let improvement = '';
     try {
-      improvement = await getImprovement(auditResult);
+      improvement = await getImprovement(dualResult.botResult);
     } catch (error) {
       getLogger('⚠️ LLM 의견 수집 실패: ' + error.message);
       // LLM 실패는 검사 결과는 보여주되, 의견은 생략
     }
 
-    // UI 업데이트
-    displayAuditResult(elements, auditResult, improvement);
+    // UI 업데이트 (Dual Audit 결과)
+    displayDualAuditResult(elements, dualResult, improvement);
 
-    getLogger('✅ GEO 검사 완료');
+    getLogger('✅ GEO Dual Audit 완료');
   } catch (error) {
     getLogger('❌ 검사 실패: ' + error.message);
     displayError(elements, error.message);
@@ -270,6 +226,107 @@ function displayAuditResult(elements, auditResult, improvement = '') {
 }
 
 /**
+ * Dual Audit 결과 렌더링 (봇 vs 브라우저)
+ *
+ * @param {Object} elements - UI 요소 맵
+ * @param {Object} dualResult - runDualAudit()의 결과
+ * @param {string} improvement - LLM 개선 의견 (선택)
+ */
+function displayDualAuditResult(elements, dualResult, improvement = '') {
+  if (!elements.resultSection) return;
+
+  const { botResult, clientResult, differences } = dualResult;
+
+  // 차이점 경고
+  const diffWarning = differences.length > 0
+    ? `<div class="geo-diff-warning">⚠️ <strong>차이점 ${differences.length}개 발견</strong>: 봇은 못 보지만 브라우저는 보는 요소가 있습니다</div>`
+    : `<div class="geo-diff-success">✅ 봇과 브라우저 결과가 일치합니다</div>`;
+
+  // 점수 비교
+  const scoreComparison = `
+    <div class="geo-score-comparison">
+      <h3>📊 점수 비교</h3>
+      <div class="geo-score-row">
+        <div class="geo-score-col">
+          <div class="geo-score-label">🤖 봇 (초기 HTML)</div>
+          <div class="geo-score-value ${botResult.scores.total < 50 ? 'low' : ''}">
+            ${botResult.scores.total}/100
+          </div>
+          <div class="geo-score-detail">
+            SEO: ${botResult.scores.seo} | AEO: ${botResult.scores.aeo} | GEO: ${botResult.scores.geo}
+          </div>
+        </div>
+        <div class="geo-score-col">
+          <div class="geo-score-label">👤 브라우저 (JS 실행 후)</div>
+          <div class="geo-score-value ${clientResult.scores.total < 50 ? 'low' : ''}">
+            ${clientResult.scores.total}/100
+          </div>
+          <div class="geo-score-detail">
+            SEO: ${clientResult.scores.seo} | AEO: ${clientResult.scores.aeo} | GEO: ${clientResult.scores.geo}
+          </div>
+        </div>
+      </div>
+      ${differences.length > 0 ? `<div class="geo-score-gap">
+        <span class="geo-gap-icon">📉</span>
+        <span class="geo-gap-text">${Math.abs(clientResult.scores.total - botResult.scores.total)}점 차이</span>
+        <span class="geo-gap-hint">→ CSR 의존도가 높습니다. 검색봇이 제대로 읽지 못할 수 있습니다.</span>
+      </div>` : ''}
+    </div>
+  `;
+
+  // 봇 결과
+  const grouped = groupChecklistByCategory();
+  let botHtml = '<div class="geo-audit-section bot-section"><h3>🤖 봇이 보는 것 (초기 HTML)</h3>';
+  Object.entries(grouped).forEach(([category, items]) => {
+    const categoryResults = botResult.results.filter(r => r.category === category);
+    const categoryLabel = { seo: 'SEO', aeo: 'AEO', geo: 'GEO' }[category];
+    botHtml += `<div class="geo-category">
+      <h4 class="geo-category-title">${categoryLabel}</h4>
+      <div class="geo-items">
+        ${categoryResults.map(result => renderCheckItem(result, differences)).join('')}
+      </div>
+    </div>`;
+  });
+  botHtml += '</div>';
+
+  // 브라우저 결과
+  let clientHtml = '<div class="geo-audit-section client-section"><h3>👤 브라우저가 보는 것 (JavaScript 실행 후)</h3>';
+  Object.entries(grouped).forEach(([category, items]) => {
+    const categoryResults = clientResult.results.filter(r => r.category === category);
+    const categoryLabel = { seo: 'SEO', aeo: 'AEO', geo: 'GEO' }[category];
+    clientHtml += `<div class="geo-category">
+      <h4 class="geo-category-title">${categoryLabel}</h4>
+      <div class="geo-items">
+        ${categoryResults.map(result => renderCheckItem(result, differences)).join('')}
+      </div>
+    </div>`;
+  });
+  clientHtml += '</div>';
+
+  // LLM 의견 (botResult 기준으로 생성)
+  let improvementHtml = '';
+  if (improvement && elements.improvementSection) {
+    const formattedHtml = formatImprovement(improvement);
+    improvementHtml = `
+      <div class="geo-improvement">
+        <h3>💡 AI 개선 의견 (봇이 보는 관점)</h3>
+        ${formattedHtml}
+      </div>
+    `;
+  }
+
+  // 전체 조합
+  elements.scoreCard.innerHTML = diffWarning + scoreComparison;
+  elements.checklistContainer.innerHTML = botHtml + clientHtml;
+  if (elements.improvementSection) {
+    elements.improvementSection.innerHTML = improvementHtml;
+  }
+
+  // 결과 섹션 표시
+  elements.resultSection.style.display = 'block';
+}
+
+/**
  * 개별 체크 항목 렌더링
  *
  * 표시 내용:
@@ -280,11 +337,17 @@ function displayAuditResult(elements, auditResult, improvement = '') {
  * - 실패 항목: 개선 방법 (hint)
  *
  * @param {CheckResult} result - 체크 결과
+ * @param {Array} differences - 차이점 목록 (선택, Dual Audit 시)
  * @returns {string} HTML 문자열
  */
-function renderCheckItem(result) {
+function renderCheckItem(result, differences = []) {
   const icon = result.passed ? '✅' : '❌';
   const status = result.passed ? 'passed' : 'failed';
+
+  // 차이점 강조 (빨간색)
+  const isDifferent = differences.some(d => d.id === result.id);
+  const diffClass = isDifferent ? 'geo-item-diff' : '';
+  const diffBadge = isDifferent ? '<span class="geo-diff-badge">⚠️ 차이</span>' : '';
 
   // description의 \n을 <br>로 변환하여 줄바꿈 표시
   const formattedDescription = result.description
@@ -307,10 +370,11 @@ function renderCheckItem(result) {
     : '';
 
   return `
-    <div class="geo-item ${status}">
+    <div class="geo-item ${status} ${diffClass}">
       <div class="geo-item-header">
         <span class="geo-item-icon">${icon}</span>
         <span class="geo-item-title">${result.title}</span>
+        ${diffBadge}
         <span class="geo-item-weight">${result.weight}pt</span>
       </div>
 
