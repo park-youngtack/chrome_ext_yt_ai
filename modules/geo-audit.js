@@ -240,70 +240,42 @@ export async function getImprovement(auditResult) {
     .map(r => `- ${r.title}: ${r.hint}`)
     .join('\n');
 
-  const prompt = `당신은 웹사이트 SEO 및 GEO(Generative Engine Optimization) 전문가입니다.
-현재 사이트의 검사 결과를 바탕으로, 가장 중요한 3가지 개선 사항을 JSON 형식으로 제안해주세요.
+  const prompt = `당신은 웹사이트 SEO/GEO 전문가입니다. 다음 검사 결과를 바탕으로 개선 의견을 제시해주세요.
 
 ## 검사 결과
-- **총점**: ${auditResult.scores.total}/100
-- **SEO**: ${auditResult.scores.seo}/100
-- **AEO**: ${auditResult.scores.aeo}/100
-- **GEO**: ${auditResult.scores.geo}/100
+총점: ${auditResult.scores.total}/100 (SEO: ${auditResult.scores.seo}, AEO: ${auditResult.scores.aeo}, GEO: ${auditResult.scores.geo})
 
-## 개선 필요 항목 (우선순위 순)
+## 개선 필요 항목
 ${failedItems}
 
-## 요청사항
-위 개선 필요 항목 중에서 **가장 영향력 있는 상위 3가지**를 선택하여 다음 JSON 형식으로 답변해주세요.
-각 항목마다 구체적인 구현 방법과 실제 코드 예시, 기대 효과를 포함해주세요.
+## 요청
+위 항목 중 **상위 3가지**를 선택하여 **마크다운 형식**으로 개선 의견을 작성해주세요.
 
-## JSON 응답 형식 (반드시 정확히 따르세요)
-\`\`\`json
-{
-  "improvements": [
-    {
-      "title": "개선 항목 제목 (명확하고 구체적으로)",
-      "methods": [
-        "첫 번째 구현 방법 (실행 가능한 구체적 단계)",
-        "두 번째 구현 방법",
-        "세 번째 구현 방법",
-        "네 번째 구현 방법 (선택 사항)"
-      ],
-      "codeExample": "&lt;meta name=&quot;description&quot; content=&quot;155-160자 범위의 구체적인 설명을 여기에 작성하세요. SEO 키워드를 포함하고 사용자 클릭을 유도하는 문구를 넣으세요.&quot;&gt;",
-      "effects": [
-        "기대 효과 1 (구체적인 수치 또는 결과 포함 권장)",
-        "기대 효과 2",
-        "기대 효과 3"
-      ]
-    },
-    {
-      "title": "두 번째 개선 항목",
-      "methods": ["방법 1", "방법 2", "방법 3"],
-      "codeExample": "&lt;meta property=&quot;og:title&quot; content=&quot;소셜 미디어용 제목&quot;&gt;",
-      "effects": ["효과 1", "효과 2"]
-    },
-    {
-      "title": "세 번째 개선 항목",
-      "methods": ["방법 1", "방법 2", "방법 3"],
-      "codeExample": "&lt;script type=&quot;application/ld+json&quot;&gt;{\n  &quot;@context&quot;: &quot;https://schema.org&quot;,\n  &quot;@type&quot;: &quot;Article&quot;,\n  &quot;headline&quot;: &quot;제목&quot;,\n  &quot;description&quot;: &quot;설명&quot;,\n  &quot;author&quot;: {\n    &quot;@type&quot;: &quot;Person&quot;,\n    &quot;name&quot;: &quot;저자명&quot;\n  }\n}&lt;/script&gt;",
-      "effects": ["효과 1", "효과 2"]
-    }
-  ],
-  "summary": "3가지 개선 사항을 함께 적용하면, 검색 엔진과 AI 생성형 검색 엔진(생성형 AI) 모두에서 사이트의 가시성이 크게 향상됩니다. 메타 정보와 구조화된 데이터는 검색봇과 AI가 콘텐츠를 정확하게 이해하도록 돕습니다."
-}
-\`\`\`
+### 응답 형식
+각 개선 항목마다:
+1. 항목명 (명확한 제목)
+2. "왜 필요한가?" (배경 설명)
+3. "어떻게 개선할까?" (실행 방법, 3-4개 단계)
+4. "기대 효과" (개선 시 얻을 수 있는 결과, 2-3개)
 
-## 필수 지침
-1. **JSON만 출력**: 마크다운, 설명, 추가 텍스트 절대 금지
-2. **항목 정확히 3개**: improvements 배열은 반드시 3개 항목
-3. **코드 예시 필수**: 각 항목의 codeExample은 비워두면 안 됨
-4. **HTML 엔터티 변환 필수**:
-   - \`<\` → \`&lt;\`
-   - \`>\` → \`&gt;\`
-   - \`"\` → \`&quot;\`
-   - \`&\` → \`&amp;\`
-5. **methods 배열**: 최소 3개 항목 (구체적이고 실행 가능한 단계)
-6. **effects 배열**: 최소 2개 항목 (구체적인 결과)
-7. **summary**: 3-4문장으로 3가지 개선 사항의 종합 효과 설명`;
+예시:
+## 1. 메타 설명 추가
+**왜 필요한가?** 메타 설명은 검색 결과에 표시되는 미리보기 텍스트로, 사용자 클릭률을 크게 높입니다.
+**어떻게 개선할까?**
+- 150-160자 범위로 작성
+- 주요 키워드 포함
+- 행동 유도 문구 추가 (예: "지금 확인해보세요")
+**기대 효과**
+- CTR(클릭률) 15-20% 증가
+- 검색 결과에서 완전한 설명 표시
+
+## 2. ...
+
+## 필수 규칙
+- 마크다운 형식만 사용 (코드 예시 불필요)
+- 정확히 3개 항목
+- 한국어로 작성
+- 실행 가능한 구체적인 방법 설명`;
 
   try {
     // GEO 검사는 OpenAI gpt-4o-mini로 사용 (JSON 응답 형식 안정적)
@@ -317,7 +289,7 @@ ${failedItems}
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: geoModel,  // GEO 검사는 무조건 Haiku 사용
+        model: geoModel,
         messages: [
           {
             role: 'user',
@@ -325,11 +297,7 @@ ${failedItems}
           }
         ],
         temperature: 0.7,
-        max_tokens: 2000,
-        // JSON 응답 강제 (LLM이 반드시 유효한 JSON으로만 응답)
-        response_format: {
-          type: 'json_object'
-        }
+        max_tokens: 2000
       })
     });
 
@@ -341,53 +309,8 @@ ${failedItems}
     const data = await response.json();
     const content = data.choices[0].message.content;
 
-    try {
-      // 마크다운 코드블록 제거 (Anthropic 모델이 ```json으로 감싸서 보낼 수 있음)
-      let jsonStr = content.trim();
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-      }
-
-      const parsed = JSON.parse(jsonStr);
-
-      // 유효한 JSON 구조 확인
-      if (!parsed.improvements || !Array.isArray(parsed.improvements) || parsed.improvements.length !== 3) {
-        throw new Error('잘못된 JSON 구조: improvements 배열이 3개여야 합니다');
-      }
-
-      // 각 항목이 필수 필드를 가지고 있는지 확인
-      let hasEmptyCodeExample = false;
-      parsed.improvements.forEach((item, idx) => {
-        if (!item.title || !item.methods || !item.effects) {
-          throw new Error(`항목 ${idx + 1}: title, methods, effects가 모두 필요합니다`);
-        }
-
-        // [DEBUG] 실제 codeExample 값 확인
-        console.log(`[DETAIL] 항목 ${idx + 1}: "${item.title}"`);
-        console.log(`[DETAIL]   codeExample 길이: ${item.codeExample ? item.codeExample.length : 0}`);
-        console.log(`[DETAIL]   codeExample 값: "${item.codeExample}"`);
-        console.log(`[DETAIL]   codeExample trim 길이: ${item.codeExample ? item.codeExample.trim().length : 0}`);
-
-        // codeExample이 비어있거나 플레이스홀더만 있는 경우 체크 (경고만 함)
-        if (!item.codeExample || item.codeExample.trim() === '' ||
-            item.codeExample.includes('[여기에') || (item.codeExample.includes('...') && item.codeExample.length < 10)) {
-          hasEmptyCodeExample = true;
-          console.warn(`⚠️ 경고: 항목 ${idx + 1}의 codeExample이 구체적이지 않습니다`);
-          // codeExample은 그대로 둠 (UI에서 판단)
-        }
-      });
-
-      // codeExample이 비어있는 항목이 있으면 경고하지만 계속 진행
-      if (hasEmptyCodeExample) {
-        console.warn('⚠️ 일부 항목에 코드 예시가 없습니다. LLM이 규격을 제대로 따르지 않았을 수 있습니다.');
-      }
-
-      return parsed; // 구조화된 JSON 객체 반환
-    } catch (parseError) {
-      throw new Error(`LLM JSON 파싱 실패: ${parseError.message}`);
-    }
+    // 마크다운 응답을 그대로 반환
+    return content.trim();
   } catch (error) {
     throw new Error(`LLM 의견 수집 실패: ${error.message}`);
   }
