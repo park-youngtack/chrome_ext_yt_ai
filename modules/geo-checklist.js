@@ -29,6 +29,7 @@ export const GEO_CHECKLIST = [
     title: '메타 설명',
     description: '페이지 <head>의 메타 설명 태그가 있는지 확인\n\n💡 권장사항:\n- 최적: 150-160자 (검색결과에서 완전히 표시)\n- 일반적: 120-150자\n- 최소: 100자 이상\n\n⚠️ SSR/CSR 주의:\n- SSR: <meta name="description"> 태그가 HTML에 직접 있으면 검색봇이 읽음 (✅ 통과)\n- CSR: JavaScript에서 동적으로 추가된 메타 설명은 검색봇이 못 읽음 (❌ 실패)\n→ 페이지 소스(Ctrl+U)를 보고 <meta> 태그가 있는지 확인하세요',
     weight: 12,
+    educationText: '**왜:** 검색결과에 요약으로 노출되어 클릭률(CTR)을 좌우합니다.\n\n**어떻게:** 150-160자 내, 핵심 키워드 포함, 페이지 고유 가치 제시. **SSR(서버 렌더링)**로 `<head>`에 포함.\n\n**예시:**\n```html\n<meta name="description" content="초보도 이해하는 전기차 충전 가이드. 급속·완속 차이, 요금 절약 팁, 지역별 충전소 찾는 법을 한 번에 정리했습니다.">\n```',
     selector: (doc = document) => {
       // 다양한 형식의 메타 설명 태그 모두 찾기
       const elem1 = doc.querySelector('meta[name="description"]');
@@ -58,6 +59,7 @@ export const GEO_CHECKLIST = [
     title: 'H1 태그',
     description: '페이지에 정확히 하나의 H1 태그가 있는지 확인',
     weight: 10,
+    educationText: '**왜:** 문서 주제를 명확히 알려 크롤러와 보조기기 접근성을 개선합니다.\n\n**어떻게:** 페이지당 정확히 1개, 주요 키워드 포함. 이후 H2/H3로 계층화.\n\n**예시:**\n```html\n<h1>전기차 충전 완벽 가이드 2025</h1>\n```',
     selector: (doc = document) => doc.querySelectorAll('h1'),
     validator: (elements) => elements.length === 1 && elements[0].textContent.trim().length > 0,
     hint: '페이지당 정확히 1개의 H1 태그를 사용하세요'
@@ -69,6 +71,7 @@ export const GEO_CHECKLIST = [
     title: '페이지 제목',
     description: '페이지 <title> 태그가 있는지 확인 (기본값이 아닌지 확인)\n\n💡 권장사항:\n- 최적: 50-60자 (검색결과에서 줄바꿈 없이 표시)\n- 일반적: 50-70자 (BBC, NYT 등 대형 매체도 이 범위)\n- 최소: 30자 이상\n\n⚠️ SSR/CSR의 가장 흔한 실패 사례:\n- 화면에 보이는 제목: "내 서비스 소개" (CSR로 렌더링된 제목)\n- 검색봇이 읽는 제목: "Untitled" (HTML 서버 소스의 기본 제목)\n→ 페이지 소스(Ctrl+U)의 <title> 태그를 확인하세요!\n→ 검색봇은 JavaScript 실행 불가 시 서버의 원본 HTML 제목만 봅니다',
     weight: 20,
+    educationText: '**왜:** SERP(검색결과 페이지)의 가장 굵은 텍스트, CTR 핵심입니다.\n\n**어떻게:** 50-60자 권장, 브랜드는 뒤에. 페이지마다 고유하게.\n\n**예시:**\n```html\n<title>전기차 충전 방법과 요금 절약 팁 | 인크로스</title>\n```',
     selector: (doc = document) => doc.title,
     validator: (title) => {
       // 제목이 있고 기본값이 아닌지 확인 (기본값: Untitled, Home, 등)
@@ -183,6 +186,7 @@ export const GEO_CHECKLIST = [
     title: 'FAQ 스키마',
     description: 'FAQ Schema 마크업이 있는지 확인',
     weight: 18,
+    educationText: '**왜:** FAQ 리치결과 및 AI 답변 보강에 매우 효과적입니다.\n\n**어떻게:** FAQ 섹션의 실제 문답을 JSON-LD로 추가(과장/낚시 문구 금지).\n\n**예시:**\n```html\n<script type="application/ld+json">\n{\n "@context":"https://schema.org",\n "@type":"FAQPage",\n "mainEntity":[\n  {"@type":"Question","name":"급속과 완속 차이는?","acceptedAnswer":{"@type":"Answer","text":"급속은 DC로..."}}\n ]\n}\n</script>\n```',
     selector: (doc = document) => {
       const ld = doc.querySelector('script[type="application/ld+json"]');
       if (!ld) return null;

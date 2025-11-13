@@ -47,13 +47,6 @@ async function handleStartAudit() {
       return;
     }
 
-    // 페이지 새로고침
-    logInfo('GEO_REFRESH', '페이지 새로고침 중...');
-    await chrome.tabs.reload(tabId);
-
-    // 새로고침 완료 대기 (1.5초)
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
     logInfo('GEO_AUDIT_START', '검사 시작');
   } catch (error) {
     logError('GEO_AUDIT_ERROR', '검사 시작 실패', {}, error);
