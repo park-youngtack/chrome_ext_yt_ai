@@ -7,7 +7,6 @@
  * - 로딩/에러 상태 관리
  */
 
-import { runAudit, getImprovement, logAuditResult } from './geo-audit.js';
 import { groupChecklistByCategory, GEO_CHECKLIST } from './geo-checklist.js';
 
 /**
