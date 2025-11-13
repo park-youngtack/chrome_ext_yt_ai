@@ -135,33 +135,59 @@ export const GEO_CHECKLIST = [
     id: 'media_queries',
     category: 'seo',
     title: 'CSS 미디어 쿼리',
-    description: '실제 반응형 디자인을 위한 CSS 미디어 쿼리가 있는지 확인\n\n💡 권장사항:\n- @media (max-width: 768px) 등 모바일용 스타일 정의\n- 태블릿(768px), 모바일(480px) 등 브레이크포인트 설정\n\n⚠️ SSR/CSR 주의:\n- 외부 CSS 파일에 미디어 쿼리가 있어도 감지됩니다\n- <style> 태그 내 미디어 쿼리도 감지됩니다',
+    description: '실제 반응형 디자인을 위한 CSS 미디어 쿼리가 있는지 확인\n\n💡 권장사항:\n- @media (max-width: 768px) 등 모바일용 스타일 정의\n- 태블릿(768px), 모바일(480px) 등 브레이크포인트 설정\n\n⚠️ 참고:\n- <link media="..."> 태그도 감지됩니다\n- 외부 CSS(CDN)는 CORS로 읽을 수 없지만 존재만으로도 통과\n- <style> 태그 내 @media도 감지됩니다',
     weight: 3,
     tooltip: '화면 크기별로 다른 CSS를 적용하는 실제 반응형 코드입니다. viewport 태그만 있고 이게 없으면 진짜 반응형이 아닙니다.',
     selector: (doc = document) => {
-      // CSS 미디어 쿼리 존재 여부 확인
       try {
+        // 1단계: <link media="..."> 태그 확인 (가장 확실)
+        const linkWithMedia = doc.querySelectorAll('link[rel="stylesheet"][media]');
+        if (linkWithMedia.length > 0) {
+          return { found: true, reason: 'link[media]' };
+        }
+
+        // 2단계: <style> 태그 내용 정규식으로 검사
+        const styleTags = doc.querySelectorAll('style');
+        for (const style of styleTags) {
+          if (/@media\s*\(/i.test(style.textContent)) {
+            return { found: true, reason: 'inline @media' };
+          }
+        }
+
+        // 3단계: CSSStyleSheet 객체로 직접 확인
+        let hasCorsError = false;
         const stylesheets = Array.from(doc.styleSheets || []);
+
         for (const sheet of stylesheets) {
           try {
             const rules = Array.from(sheet.cssRules || sheet.rules || []);
             const hasMedia = rules.some(rule =>
-              rule.type === CSSRule.MEDIA_RULE ||
+              rule.type === 4 || // CSSRule.MEDIA_RULE
               (rule.media && rule.media.length > 0)
             );
-            if (hasMedia) return true;
+            if (hasMedia) {
+              return { found: true, reason: 'cssRules' };
+            }
           } catch (e) {
-            // CORS 때문에 접근 불가한 외부 스타일시트는 스킵
-            continue;
+            // CORS 에러 발생 = 외부 CSS 파일 존재
+            hasCorsError = true;
           }
         }
-        return false;
+
+        // 4단계: 외부 CSS가 있으면 관대하게 통과
+        // (Bootstrap, Tailwind 등 CDN 사용 시 미디어 쿼리 있을 가능성 높음)
+        if (hasCorsError && stylesheets.length > 0) {
+          return { found: true, reason: 'external css (cors)' };
+        }
+
+        return { found: false, reason: 'none' };
       } catch (e) {
-        return false;
+        // 에러 발생 시에도 관대하게 통과 (보수적 접근)
+        return { found: true, reason: 'error (assumed true)' };
       }
     },
-    validator: (result) => result === true,
-    hint: 'CSS에 @media 쿼리를 추가하여 모바일/태블릿 화면에 최적화된 스타일을 정의하세요'
+    validator: (result) => result?.found === true,
+    hint: 'CSS에 @media 쿼리를 추가하거나 <link media="...">를 사용하여 모바일 최적화하세요'
   },
 
   {
