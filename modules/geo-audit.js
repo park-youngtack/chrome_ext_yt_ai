@@ -195,13 +195,12 @@ export function calculateScores(results) {
 }
 
 /**
- * 강점 분석 (통과한 항목 칭찬) - 스트리밍
+ * 강점 분석 (통과한 항목 칭찬)
  *
  * @param {AuditResult} auditResult - 검사 결과
- * @param {Function} onChunk - 청크 수신 콜백
  * @returns {Promise<string>} 전체 텍스트
  */
-export async function getStrengthsStreaming(auditResult, onChunk) {
+export async function getStrengths(auditResult) {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API Key가 설정되지 않았습니다');
 
@@ -229,17 +228,16 @@ ${passedItems}
 
   const geoModel = 'openai/gpt-4o-mini';
 
-  return await fetchLLMStreaming(prompt, apiKey, geoModel, onChunk);
+  return await fetchLLM(prompt, apiKey, geoModel);
 }
 
 /**
- * 개선사항 분석 (실패 항목 TOP 3) - 스트리밍
+ * 개선사항 분석 (실패 항목 TOP 3)
  *
  * @param {AuditResult} auditResult - 검사 결과
- * @param {Function} onChunk - 청크 수신 콜백
  * @returns {Promise<string>} 전체 텍스트
  */
-export async function getImprovementsStreaming(auditResult, onChunk) {
+export async function getImprovements(auditResult) {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API Key가 설정되지 않았습니다');
 
@@ -303,19 +301,16 @@ ${failedItems}
 
   const geoModel = 'openai/gpt-4o-mini';
 
-  return await fetchLLMStreaming(prompt, apiKey, geoModel, onChunk, {
-    maxTokens: 3000
-  });
+  return await fetchLLM(prompt, apiKey, geoModel, 3000);
 }
 
 /**
- * 실행 로드맵 생성 - 스트리밍
+ * 실행 로드맵 생성
  *
  * @param {AuditResult} auditResult - 검사 결과
- * @param {Function} onChunk - 청크 수신 콜백
  * @returns {Promise<string>} 전체 텍스트
  */
-export async function getRoadmapStreaming(auditResult, onChunk) {
+export async function getRoadmap(auditResult) {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API Key가 설정되지 않았습니다');
 
@@ -354,90 +349,19 @@ export async function getRoadmapStreaming(auditResult, onChunk) {
 
   const geoModel = 'openai/gpt-4o-mini';
 
-  return await fetchLLMStreaming(prompt, apiKey, geoModel, onChunk);
+  return await fetchLLM(prompt, apiKey, geoModel);
 }
 
 /**
- * 스트리밍 LLM 요청 (Sidepanel 컨텍스트에서 작동)
+ * 일반 LLM 요청
  *
  * @param {string} prompt - 프롬프트
  * @param {string} apiKey - API 키
  * @param {string} model - 모델명
- * @param {Function} onChunk - 청크 수신 콜백 (text) => void
- * @param {Object} options - 추가 옵션
+ * @param {number} maxTokens - 최대 토큰 수 (기본 2000)
  * @returns {Promise<string>} 전체 응답 텍스트
  */
-async function fetchLLMStreaming(prompt, apiKey, model, onChunk, options = {}) {
-  const { temperature = 0.7, maxTokens = 2000 } = options;
-
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.href,
-        'X-Title': 'Web Page Translator - GEO Audit'
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        stream: true,
-        temperature,
-        max_tokens: maxTokens
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API 오류 (${response.status}): ${errorText}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // 마지막 불완전한 줄은 버퍼에 보관
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (!trimmed.startsWith('data: ')) continue;
-
-        try {
-          const jsonStr = trimmed.slice(6); // 'data: ' 제거
-          const data = JSON.parse(jsonStr);
-          const content = data.choices?.[0]?.delta?.content;
-
-          if (content) {
-            fullText += content;
-            if (onChunk) {
-              onChunk(content);
-            }
-          }
-        } catch (parseError) {
-          // JSON 파싱 에러 무시 (불완전한 청크)
-        }
-      }
-    }
-
-    return fullText;
-  } catch (error) {
-    throw new Error(`스트리밍 실패: ${error.message}`);
-  }
-}
-
-/**
- * 폴백: 일반 LLM 요청 (스트리밍 없음)
- */
-async function fetchLLM(prompt, apiKey, model) {
+async function fetchLLM(prompt, apiKey, model, maxTokens = 2000) {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -448,7 +372,7 @@ async function fetchLLM(prompt, apiKey, model) {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
-      max_tokens: 2000
+      max_tokens: maxTokens
     })
   });
 
@@ -459,14 +383,6 @@ async function fetchLLM(prompt, apiKey, model) {
 
   const data = await response.json();
   return data.choices[0].message.content.trim();
-}
-
-/**
- * @deprecated 기존 getImprovement는 하위 호환성을 위해 유지 (사용 안 함)
- */
-export async function getImprovement(auditResult) {
-  // 기존 함수는 하위 호환을 위해 유지하되, 내부적으로 새 함수 사용
-  return await getImprovementsStreaming(auditResult, null);
 }
 
 /**

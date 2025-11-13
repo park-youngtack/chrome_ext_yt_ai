@@ -141,9 +141,9 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     const {
       runDualAudit,
       logAuditResult,
-      getStrengthsStreaming,
-      getImprovementsStreaming,
-      getRoadmapStreaming
+      getStrengths,
+      getImprovements,
+      getRoadmap
     } = await import('./geo-audit.js');
 
     const dualResult = await runDualAudit(currentUrl);
@@ -155,49 +155,63 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     logAuditResult(dualResult.clientResult);
     getLogger(`⚠️ 차이점: ${dualResult.differences.length}개`);
 
-    // ✅ 1단계: 체크리스트 즉시 표시
-    displayDualAuditResultWithoutAI(elements, dualResult);
     displayLoading(elements, false); // 로딩 스피너 제거
 
-    // ✅ 2단계: AI 분석 섹션 준비 (3개 섹션)
+    // ✅ 1단계: AI 분석 섹션 준비 (3개 섹션)
     const aiSectionContainer = createAISectionContainer(elements);
-
     const strengthsSection = aiSectionContainer.querySelector('#geoAiStrengths');
     const improvementsSection = aiSectionContainer.querySelector('#geoAiImprovements');
     const roadmapSection = aiSectionContainer.querySelector('#geoAiRoadmap');
 
-    // ✅ 3단계: 순차적으로 스트리밍 (강점 → 개선사항 → 로드맵)
+    // AI 분석 로딩 표시
+    strengthsSection.innerHTML = '<p class="geo-ai-loading">🎉 강점 분석 중...</p>';
+    improvementsSection.innerHTML = '<p class="geo-ai-loading">🔍 개선사항 분석 중...</p>';
+    roadmapSection.innerHTML = '<p class="geo-ai-loading">📅 로드맵 생성 중...</p>';
+
+    // ✅ 2단계: AI 요청 3개 병렬로 시작 (백그라운드)
+    getLogger('💡 AI 분석 3개 병렬 실행 중...');
+    const aiPromises = [
+      getStrengths(dualResult.botResult).catch(err => ({ error: err.message })),
+      getImprovements(dualResult.botResult).catch(err => ({ error: err.message })),
+      getRoadmap(dualResult.botResult).catch(err => ({ error: err.message }))
+    ];
+
+    // ✅ 3단계: 체크리스트 순차 애니메이션 (0.5초 간격)
+    await displayDualAuditResultAnimated(elements, dualResult);
+
+    // ✅ 4단계: AI 응답 도착 시 표시
     try {
-      // 3-1. 강점 분석 (빠르게 완료)
-      getLogger('💡 강점 분석 중...');
-      initStreamingSection(strengthsSection, '🎉 강점 분석 중...');
-      await getStrengthsStreaming(dualResult.botResult, (chunk) => {
-        appendStreamingText(strengthsSection, chunk);
-      });
-      completeStreamingSection(strengthsSection);
-      getLogger('✅ 강점 분석 완료');
+      const [strengths, improvements, roadmap] = await Promise.all(aiPromises);
 
-      // 3-2. 개선사항 분석 (가장 중요!)
-      getLogger('💡 개선사항 분석 중...');
-      initStreamingSection(improvementsSection, '🔍 개선사항 분석 중...');
-      await getImprovementsStreaming(dualResult.botResult, (chunk) => {
-        appendStreamingText(improvementsSection, chunk);
-      });
-      completeStreamingSection(improvementsSection);
-      getLogger('✅ 개선사항 분석 완료');
+      // 강점
+      if (strengths && !strengths.error) {
+        displayAISection(strengthsSection, strengths);
+        getLogger('✅ 강점 분석 완료');
+      } else {
+        strengthsSection.innerHTML = `<p class="geo-ai-error">⚠️ ${strengths?.error || '분석 실패'}</p>`;
+      }
 
-      // 3-3. 로드맵 생성
-      getLogger('💡 로드맵 생성 중...');
-      initStreamingSection(roadmapSection, '📅 로드맵 생성 중...');
-      await getRoadmapStreaming(dualResult.botResult, (chunk) => {
-        appendStreamingText(roadmapSection, chunk);
-      });
-      completeStreamingSection(roadmapSection);
-      getLogger('✅ 로드맵 생성 완료');
+      // 개선사항
+      if (improvements && !improvements.error) {
+        displayAISection(improvementsSection, improvements);
+        getLogger('✅ 개선사항 분석 완료');
+      } else {
+        improvementsSection.innerHTML = `<p class="geo-ai-error">⚠️ ${improvements?.error || '분석 실패'}</p>`;
+      }
+
+      // 로드맵
+      if (roadmap && !roadmap.error) {
+        displayAISection(roadmapSection, roadmap);
+        getLogger('✅ 로드맵 생성 완료');
+      } else {
+        roadmapSection.innerHTML = `<p class="geo-ai-error">⚠️ ${roadmap?.error || '분석 실패'}</p>`;
+      }
+
+      // ✅ 5단계: 완료 후 최상단 스크롤
+      scrollToTop(elements);
 
     } catch (error) {
       getLogger('⚠️ AI 분석 실패: ' + error.message);
-      // AI 분석 실패해도 체크리스트는 이미 표시됨
       displayError(elements, 'AI 분석 실패: ' + error.message);
     }
 
@@ -211,20 +225,19 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
 }
 
 /**
- * Dual Audit 결과 표시 (AI 의견 제외)
- * 체크리스트만 즉시 표시하고, AI 섹션은 별도로 준비
+ * Dual Audit 결과 표시 (순차 애니메이션)
+ * 체크리스트 항목을 0.5초 간격으로 하나씩 fade-in
  */
-function displayDualAuditResultWithoutAI(elements, dualResult) {
+async function displayDualAuditResultAnimated(elements, dualResult) {
   if (!elements.resultSection) return;
 
   const { botResult, clientResult, differences } = dualResult;
 
-  // 차이점 경고
+  // 1. 점수 카드 먼저 표시 (즉시)
   const diffWarning = differences.length > 0
     ? `<div class="geo-diff-warning">⚠️ <strong>차이점 ${differences.length}개 발견</strong>: 봇은 못 보지만 브라우저는 보는 요소가 있습니다</div>`
     : `<div class="geo-diff-success">✅ 봇과 브라우저 결과가 일치합니다</div>`;
 
-  // 점수 비교
   const scoreComparison = `
     <div class="geo-score-comparison">
       <h3>📊 점수 비교</h3>
@@ -256,37 +269,56 @@ function displayDualAuditResultWithoutAI(elements, dualResult) {
     </div>
   `;
 
-  // 항목별 나란히 비교
-  const grouped = groupChecklistByCategory();
-  let comparisonHtml = '<div class="geo-dual-comparison">';
+  // 점수 카드는 나중에 표시 (숨김)
+  elements.scoreCard.innerHTML = diffWarning + scoreComparison;
+  elements.scoreCard.style.opacity = '0';
+  elements.scoreCard.style.display = 'none';
+  elements.resultSection.style.display = 'block';
 
-  Object.entries(grouped).forEach(([category, items]) => {
+  // 2. 체크리스트 컨테이너 준비
+  const grouped = groupChecklistByCategory();
+  let comparisonContainer = document.createElement('div');
+  comparisonContainer.className = 'geo-dual-comparison';
+  elements.checklistContainer.innerHTML = '';
+  elements.checklistContainer.appendChild(comparisonContainer);
+
+  // 3. 각 카테고리별로 순차적으로 항목 추가 (0.5초 간격)
+  for (const [category, items] of Object.entries(grouped)) {
     const categoryLabel = { seo: 'SEO', aeo: 'AEO', geo: 'GEO' }[category];
-    comparisonHtml += `<div class="geo-category">
+
+    // 카테고리 컨테이너 생성
+    const categoryDiv = document.createElement('div');
+    categoryDiv.className = 'geo-category';
+    categoryDiv.innerHTML = `
       <h3 class="geo-category-title">${categoryLabel}</h3>
-      <div class="geo-items">`;
+      <div class="geo-items"></div>
+    `;
+    comparisonContainer.appendChild(categoryDiv);
+
+    const itemsContainer = categoryDiv.querySelector('.geo-items');
 
     // 각 항목을 weight 높은 순으로 정렬
     const sortedItems = [...items].sort((a, b) => b.weight - a.weight);
 
-    // 각 항목별로 봇/브라우저 나란히 표시
-    sortedItems.forEach(item => {
+    // 항목 하나씩 추가 (0.5초 간격)
+    for (const item of sortedItems) {
       const botItem = botResult.results.find(r => r.id === item.id);
       const clientItem = clientResult.results.find(r => r.id === item.id);
       const isDifferent = differences.some(d => d.id === item.id);
 
-      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent, item.tooltip);
-    });
+      const itemHtml = renderDualCheckItem(botItem, clientItem, isDifferent, item.tooltip);
 
-    comparisonHtml += `</div></div>`;
-  });
+      // DOM 요소 생성
+      const itemDiv = document.createElement('div');
+      itemDiv.innerHTML = itemHtml;
+      itemDiv.firstChild.style.opacity = '0';
+      itemDiv.firstChild.style.animation = 'fadeIn 0.5s forwards';
+      itemsContainer.appendChild(itemDiv.firstChild);
 
-  comparisonHtml += '</div>';
-
-  // 체크리스트만 표시
-  elements.scoreCard.innerHTML = diffWarning + scoreComparison;
-  elements.checklistContainer.innerHTML = comparisonHtml;
-  elements.resultSection.style.display = 'block';
+      // 0.5초 대기
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
 }
 
 /**
@@ -768,49 +800,50 @@ function formatImprovement(markdown) {
 }
 
 /**
- * 실시간 스트리밍 텍스트를 섹션에 append
+ * AI 분석 섹션 표시 (fade-in 애니메이션)
  *
  * @param {HTMLElement} sectionElement - 섹션 DOM 요소
- * @param {string} chunk - 추가할 텍스트 청크
+ * @param {string} content - 마크다운 콘텐츠
  */
-function appendStreamingText(sectionElement, chunk) {
+function displayAISection(sectionElement, content) {
   if (!sectionElement) return;
 
-  // 현재 텍스트에 청크 추가
-  const currentText = sectionElement.getAttribute('data-raw-text') || '';
-  const newText = currentText + chunk;
-  sectionElement.setAttribute('data-raw-text', newText);
+  // 마크다운 → HTML 변환
+  const html = formatMarkdownToHtml(content);
 
-  // 마크다운 실시간 렌더링 (부분 렌더링)
-  sectionElement.innerHTML = formatMarkdownToHtml(newText);
+  // fade-in 애니메이션 추가
+  sectionElement.style.opacity = '0';
+  sectionElement.innerHTML = html;
+
+  // 애니메이션 시작
+  requestAnimationFrame(() => {
+    sectionElement.style.transition = 'opacity 0.5s';
+    sectionElement.style.opacity = '1';
+  });
 }
 
 /**
- * 섹션 초기화 (로딩 상태 표시)
+ * 최상단으로 부드럽게 스크롤 + 점수 카드 fade-in
  *
- * @param {HTMLElement} sectionElement - 섹션 DOM 요소
- * @param {string} loadingMessage - 로딩 메시지
+ * @param {Object} elements - UI 요소 맵
  */
-function initStreamingSection(sectionElement, loadingMessage = '분석 중...') {
-  if (!sectionElement) return;
+function scrollToTop(elements) {
+  if (!elements.scoreCard) return;
 
-  sectionElement.setAttribute('data-raw-text', '');
-  sectionElement.innerHTML = `<p class="geo-streaming-loading">${loadingMessage}</p>`;
-}
+  // 1. 점수 카드 표시 (fade-in)
+  elements.scoreCard.style.display = 'block';
+  requestAnimationFrame(() => {
+    elements.scoreCard.style.transition = 'opacity 0.8s';
+    elements.scoreCard.style.opacity = '1';
+  });
 
-/**
- * 섹션 완료 표시
- *
- * @param {HTMLElement} sectionElement - 섹션 DOM 요소
- */
-function completeStreamingSection(sectionElement) {
-  if (!sectionElement) return;
-
-  // 로딩 표시 제거
-  const loading = sectionElement.querySelector('.geo-streaming-loading');
-  if (loading) {
-    loading.remove();
-  }
+  // 2. 점수 카드 위치로 부드럽게 스크롤
+  setTimeout(() => {
+    elements.scoreCard.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  }, 300);
 }
 
 
