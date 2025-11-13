@@ -128,13 +128,18 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       throw new Error('http/https URL만 지원합니다 (현재: ' + currentUrl.split(':')[0] + ')');
     }
 
-    // Content Script 주입 확인 (PING 테스트)
+    // Content Script 주입 확인 (PING 테스트, 타임아웃 3초)
     getLogger('Content Script 확인 중...');
+    const pingTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('PING timeout')), 3000)
+    );
+    const pingMessage = chrome.tabs.sendMessage(tabId, { action: 'PING' });
+
     try {
-      await chrome.tabs.sendMessage(tabId, { action: 'PING' });
+      await Promise.race([pingMessage, pingTimeout]);
       getLogger('✅ Content Script 이미 주입됨');
     } catch (error) {
-      // Content Script 미주입 → 자동 주입
+      // Content Script 미주입 또는 타임아웃 → 자동 주입
       getLogger('Content Script 미주입, 자동 주입 시작...');
       try {
         await chrome.scripting.executeScript({
