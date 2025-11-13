@@ -128,13 +128,19 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       throw new Error('http/https URL만 지원합니다 (현재: ' + currentUrl.split(':')[0] + ')');
     }
 
-    // Content Script 주입 확인 (PING 테스트)
+    // Content Script 주입 확인 (PING 테스트, 3초 타임아웃)
     getLogger('Content Script 확인 중...');
     let needsInjection = false;
 
     try {
       await new Promise((resolve, reject) => {
+        // 타임아웃 3초
+        const timeout = setTimeout(() => {
+          reject(new Error('PING timeout (3초 초과)'));
+        }, 3000);
+
         chrome.tabs.sendMessage(tabId, { action: 'PING' }, (response) => {
+          clearTimeout(timeout);
           if (chrome.runtime.lastError) {
             // "Receiving end does not exist" 등의 에러 → 주입 필요
             reject(new Error(chrome.runtime.lastError.message));
@@ -145,7 +151,7 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       });
       getLogger('✅ Content Script 이미 주입됨');
     } catch (error) {
-      // Content Script 미주입 → 자동 주입
+      // Content Script 미주입 또는 타임아웃 → 자동 주입
       getLogger(`Content Script 미주입 (${error.message}), 자동 주입 시작...`);
       needsInjection = true;
     }
