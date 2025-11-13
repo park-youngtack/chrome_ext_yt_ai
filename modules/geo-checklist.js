@@ -187,7 +187,28 @@ export const GEO_CHECKLIST = [
       }
     },
     validator: (result) => result?.found === true,
-    hint: 'CSS에 @media 쿼리를 추가하거나 <link media="...">를 사용하여 모바일 최적화하세요'
+    hint: (doc, elem) => {
+      // elem은 selector의 반환값
+      const reason = elem?.reason;
+
+      if (reason === 'link[media]') {
+        return '✅ <link media="..."> 태그로 미디어 쿼리 적용됨';
+      }
+      if (reason === 'inline @media') {
+        return '✅ <style> 태그 내 @media 쿼리 확인됨';
+      }
+      if (reason === 'cssRules') {
+        return '✅ CSS 파일에서 미디어 쿼리 확인됨';
+      }
+      if (reason === 'external css (cors)') {
+        return '⚠️ 통과 (외부 CSS는 CORS로 검증 불가, 미디어 쿼리 있다고 가정)';
+      }
+      if (reason === 'error (assumed true)') {
+        return '⚠️ 통과 (검사 중 오류 발생, 미디어 쿼리 있다고 가정)';
+      }
+
+      return 'CSS에 @media 쿼리를 추가하거나 <link media="...">를 사용하여 모바일 최적화하세요';
+    }
   },
 
   {
