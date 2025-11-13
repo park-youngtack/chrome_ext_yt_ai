@@ -10,6 +10,13 @@
 import { groupChecklistByCategory, GEO_CHECKLIST } from './geo-checklist.js';
 
 /**
+ * 전역 검사 상태 플래그
+ * - 동시에 여러 탭에서 검사 시작하는 것을 방지
+ * - Window-Level 패널이므로 전역으로 관리 필요
+ */
+let isAuditRunning = false;
+
+/**
  * 토스트 메시지 표시 함수
  * @param {string} message - 메시지 내용
  * @param {string} type - 메시지 타입 ('success', 'error', 'info')
@@ -109,6 +116,14 @@ export function initGeoTab(config = {}) {
  * @param {Function} onStartAudit - 검사 시작 콜백
  */
 async function handleRunAudit(elements, getLogger, onStartAudit) {
+  // 이미 검사가 진행 중이면 중단 (race condition 방지)
+  if (isAuditRunning) {
+    showToast('⚠️ 이미 다른 탭에서 검사가 진행 중입니다', 'error');
+    getLogger('⚠️ 검사 중복 실행 방지: 이미 검사 진행 중');
+    return;
+  }
+
+  isAuditRunning = true;
   displayLoading(elements, true);
   displayError(elements, '');
 
@@ -266,6 +281,7 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     getLogger('❌ 검사 실패: ' + error.message);
     displayError(elements, error.message);
   } finally {
+    isAuditRunning = false;  // 검사 종료, 다른 탭에서 검사 가능
     displayLoading(elements, false);
   }
 }
