@@ -17,18 +17,10 @@ import * as State from './state.js';
  * - "검사 시작" 버튼 이벤트 연결
  */
 export function initGeoTab() {
-  const runBtn = document.getElementById('geoRunAuditBtn');
-  if (!runBtn) return;
-
-  // UI 초기화
+  // UI 초기화 (geo-ui.js에서 이벤트 리스너 등록 처리)
   const geoUI = initGeoUI({
     onStartAudit: handleStartAudit,
     getLogger: logInfo
-  });
-
-  // "검사 시작" 버튼 이벤트
-  runBtn.addEventListener('click', async () => {
-    await handleStartAudit();
   });
 
   logInfo('GEO_TAB_INIT', 'GEO 검사 탭 초기화 완료');
@@ -36,8 +28,7 @@ export function initGeoTab() {
 
 /**
  * 검사 시작 핸들러
- * - 현재 탭의 페이지 새로고침
- * - Content Script에 검사 요청 전송
+ * - 검사 시작 로그만 기록 (실제 로직은 geo-ui.js의 handleRunAudit에서 처리)
  */
 async function handleStartAudit() {
   try {

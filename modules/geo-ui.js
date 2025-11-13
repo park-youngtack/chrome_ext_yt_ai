@@ -158,9 +158,17 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
 
     // ✅ 1단계: AI 분석 섹션 준비 (3개 섹션)
     const aiSectionContainer = createAISectionContainer(elements);
+    if (!aiSectionContainer) {
+      throw new Error('AI 분석 섹션 생성 실패');
+    }
+
     const strengthsSection = aiSectionContainer.querySelector('#geoAiStrengths');
     const improvementsSection = aiSectionContainer.querySelector('#geoAiImprovements');
     const roadmapSection = aiSectionContainer.querySelector('#geoAiRoadmap');
+
+    if (!strengthsSection || !improvementsSection || !roadmapSection) {
+      throw new Error('AI 분석 하위 섹션을 찾을 수 없습니다');
+    }
 
     // AI 분석 로딩 표시
     strengthsSection.innerHTML = '<p class="geo-ai-loading">🎉 강점 분석 중...</p>';
@@ -228,7 +236,11 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
  * 체크리스트 항목을 0.5초 간격으로 하나씩 fade-in
  */
 async function displayDualAuditResultAnimated(elements, dualResult) {
-  if (!elements.resultSection) return;
+  // elements 안전성 체크
+  if (!elements || !elements.resultSection || !elements.scoreCard || !elements.checklistContainer) {
+    console.error('GEO UI elements not found', elements);
+    return;
+  }
 
   const { botResult, clientResult, differences } = dualResult;
 
@@ -325,7 +337,10 @@ async function displayDualAuditResultAnimated(elements, dualResult) {
  * 3개 섹션을 가진 컨테이너를 improvementSection에 삽입
  */
 function createAISectionContainer(elements) {
-  if (!elements.improvementSection) return null;
+  if (!elements || !elements.improvementSection) {
+    console.error('improvementSection element not found');
+    return null;
+  }
 
   const html = `
     <div class="geo-ai-analysis">
@@ -805,7 +820,10 @@ function formatImprovement(markdown) {
  * @param {string} content - 마크다운 콘텐츠
  */
 function displayAISection(sectionElement, content) {
-  if (!sectionElement) return;
+  if (!sectionElement || !sectionElement.style) {
+    console.error('Invalid sectionElement', sectionElement);
+    return;
+  }
 
   // 마크다운 → HTML 변환
   const html = formatMarkdownToHtml(content);
