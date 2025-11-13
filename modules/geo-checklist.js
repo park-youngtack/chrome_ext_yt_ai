@@ -113,16 +113,75 @@ export const GEO_CHECKLIST = [
     hint: '주요 이미지에 설명적인 alt 텍스트를 추가하세요'
   },
 
+  // === 모바일 반응형 (3단계 검사) ===
   {
-    id: 'mobile_responsive',
+    id: 'viewport_meta',
     category: 'seo',
-    title: '모바일 반응형',
-    description: 'viewport 메타 태그가 있는지 확인',
-    weight: 8,
-    tooltip: '모바일·태블릿·PC 등 다양한 화면 크기에 맞게 자동으로 조정되는 디자인을 말합니다. 모바일 사용성과 코어 웹 바이탈(Core Web Vitals) 점수에 직접적인 영향을 줍니다.',
+    title: 'Viewport 메타 태그',
+    description: 'viewport 메타 태그가 올바르게 설정되어 있는지 확인\n\n💡 권장사항:\n- content="width=device-width, initial-scale=1.0"\n- 모바일 반응형의 필수 시작점\n\n⚠️ 주의:\n- viewport 태그만으로는 불충분합니다\n- 실제 반응형 CSS와 함께 사용해야 효과적',
+    weight: 3,
+    tooltip: '모바일 기기에서 화면 배율을 조정하는 기본 설정입니다. 이것만으로는 반응형이 아니며, CSS 미디어 쿼리와 함께 사용해야 합니다.',
     selector: (doc = document) => doc.querySelector('meta[name="viewport"]'),
-    validator: (elem) => elem !== null,
-    hint: '모바일 반응형 디자인을 적용하세요'
+    validator: (elem) => {
+      if (!elem) return false;
+      const content = elem.getAttribute('content') || '';
+      // width=device-width가 포함되어 있는지 확인
+      return content.includes('width=device-width');
+    },
+    hint: '<head>에 <meta name="viewport" content="width=device-width, initial-scale=1.0">을 추가하세요'
+  },
+
+  {
+    id: 'media_queries',
+    category: 'seo',
+    title: 'CSS 미디어 쿼리',
+    description: '실제 반응형 디자인을 위한 CSS 미디어 쿼리가 있는지 확인\n\n💡 권장사항:\n- @media (max-width: 768px) 등 모바일용 스타일 정의\n- 태블릿(768px), 모바일(480px) 등 브레이크포인트 설정\n\n⚠️ SSR/CSR 주의:\n- 외부 CSS 파일에 미디어 쿼리가 있어도 감지됩니다\n- <style> 태그 내 미디어 쿼리도 감지됩니다',
+    weight: 3,
+    tooltip: '화면 크기별로 다른 CSS를 적용하는 실제 반응형 코드입니다. viewport 태그만 있고 이게 없으면 진짜 반응형이 아닙니다.',
+    selector: (doc = document) => {
+      // CSS 미디어 쿼리 존재 여부 확인
+      try {
+        const stylesheets = Array.from(doc.styleSheets || []);
+        for (const sheet of stylesheets) {
+          try {
+            const rules = Array.from(sheet.cssRules || sheet.rules || []);
+            const hasMedia = rules.some(rule =>
+              rule.type === CSSRule.MEDIA_RULE ||
+              (rule.media && rule.media.length > 0)
+            );
+            if (hasMedia) return true;
+          } catch (e) {
+            // CORS 때문에 접근 불가한 외부 스타일시트는 스킵
+            continue;
+          }
+        }
+        return false;
+      } catch (e) {
+        return false;
+      }
+    },
+    validator: (result) => result === true,
+    hint: 'CSS에 @media 쿼리를 추가하여 모바일/태블릿 화면에 최적화된 스타일을 정의하세요'
+  },
+
+  {
+    id: 'no_horizontal_scroll',
+    category: 'seo',
+    title: '가로 스크롤 없음',
+    description: '모바일에서 가로 스크롤이 발생하지 않는지 확인\n\n💡 권장사항:\n- 모든 콘텐츠가 화면 너비 안에 들어가야 함\n- 고정 너비(px) 대신 상대 너비(%, vw) 사용\n- 이미지/테이블은 max-width: 100% 설정\n\n⚠️ 주의:\n- 가로 스크롤이 있으면 모바일 UX 저하\n- Google의 모바일 친화성 테스트에서도 감점',
+    weight: 2,
+    tooltip: '화면보다 콘텐츠가 넓어서 좌우로 스크롤해야 하는 상황을 방지합니다. 모바일 사용성의 핵심 지표입니다.',
+    selector: (doc = document) => {
+      // 문서의 전체 너비가 viewport 너비보다 큰지 확인
+      const scrollWidth = doc.documentElement.scrollWidth;
+      const clientWidth = doc.documentElement.clientWidth;
+      return { scrollWidth, clientWidth };
+    },
+    validator: (data) => {
+      // 약간의 여유(5px)를 두고 판단 (브라우저 스크롤바 등 고려)
+      return data.scrollWidth <= data.clientWidth + 5;
+    },
+    hint: '고정 너비 요소를 상대 너비(%, max-width: 100%)로 변경하여 가로 스크롤을 제거하세요'
   },
 
   // ===== AEO 체크리스트 =====
