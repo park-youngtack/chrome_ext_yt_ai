@@ -621,11 +621,14 @@ function renderDualCheckItem(botItem, clientItem, isDifferent, tooltipText = '')
   const botIcon = botItem.passed ? '✅' : '❌';
   const clientIcon = clientItem.passed ? '✅' : '❌';
 
-  // 힌트 표시 로직: 둘 다 실패 시 공통 힌트, 한쪽만 실패 시 해당 영역에만
+  // 힌트 표시 로직:
+  // - 둘 다 실패 시 공통 힌트
+  // - 한쪽만 실패 시 해당 영역에만
+  // - 통과했지만 특별한 이유(⚠️로 시작)가 있으면 표시
   const bothFailed = !botItem.passed && !clientItem.passed;
   const showCommonHint = bothFailed;
-  const showBotHint = !botItem.passed && !showCommonHint;
-  const showClientHint = !clientItem.passed && !showCommonHint;
+  const showBotHint = (!botItem.passed && !showCommonHint) || (botItem.passed && botItem.hint?.startsWith('⚠️'));
+  const showClientHint = (!clientItem.passed && !showCommonHint) || (clientItem.passed && clientItem.hint?.startsWith('⚠️'));
 
   // 툴팁 (물음표 아이콘)
   const tooltipIcon = tooltipText ? `
