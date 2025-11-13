@@ -156,10 +156,14 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
 
     displayLoading(elements, false); // 로딩 스피너 제거
 
-    // ✅ 1단계: AI 분석 섹션 준비 (3개 섹션)
+    // ✅ 1단계: 검사 결과 즉시 표시 (애니메이션 없이)
+    displayDualAuditResult(elements, dualResult);
+
+    // ✅ 2단계: AI 분석 섹션 준비
     const aiSectionContainer = createAISectionContainer(elements);
     if (!aiSectionContainer) {
-      throw new Error('AI 분석 섹션 생성 실패');
+      getLogger('⚠️ AI 분석 섹션 생성 실패');
+      return;
     }
 
     const strengthsSection = aiSectionContainer.querySelector('#geoAiStrengths');
@@ -167,15 +171,16 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     const roadmapSection = aiSectionContainer.querySelector('#geoAiRoadmap');
 
     if (!strengthsSection || !improvementsSection || !roadmapSection) {
-      throw new Error('AI 분석 하위 섹션을 찾을 수 없습니다');
+      getLogger('⚠️ AI 분석 하위 섹션을 찾을 수 없습니다');
+      return;
     }
 
     // AI 분석 로딩 표시
-    strengthsSection.innerHTML = '<p class="geo-ai-loading">🎉 강점 분석 중...</p>';
-    improvementsSection.innerHTML = '<p class="geo-ai-loading">🔍 개선사항 분석 중...</p>';
-    roadmapSection.innerHTML = '<p class="geo-ai-loading">📅 로드맵 생성 중...</p>';
+    strengthsSection.innerHTML = '<p style="color: var(--text-secondary);">🎉 강점 분석 중...</p>';
+    improvementsSection.innerHTML = '<p style="color: var(--text-secondary);">🔍 개선사항 분석 중...</p>';
+    roadmapSection.innerHTML = '<p style="color: var(--text-secondary);">📅 로드맵 생성 중...</p>';
 
-    // ✅ 2단계: AI 요청 3개 병렬로 시작 (백그라운드)
+    // ✅ 3단계: AI 요청 3개 병렬 실행
     getLogger('💡 AI 분석 3개 병렬 실행 중...');
     const aiPromises = [
       getStrengths(dualResult.botResult).catch(err => ({ error: err.message })),
@@ -183,43 +188,36 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       getRoadmap(dualResult.botResult).catch(err => ({ error: err.message }))
     ];
 
-    // ✅ 3단계: 체크리스트 순차 애니메이션 (0.5초 간격)
-    await displayDualAuditResultAnimated(elements, dualResult);
-
     // ✅ 4단계: AI 응답 도착 시 표시
     try {
       const [strengths, improvements, roadmap] = await Promise.all(aiPromises);
 
       // 강점
       if (strengths && !strengths.error) {
-        displayAISection(strengthsSection, strengths);
+        strengthsSection.innerHTML = formatMarkdownToHtml(strengths);
         getLogger('✅ 강점 분석 완료');
       } else {
-        strengthsSection.innerHTML = `<p class="geo-ai-error">⚠️ ${strengths?.error || '분석 실패'}</p>`;
+        strengthsSection.innerHTML = `<p style="color: #fca5a5;">⚠️ ${strengths?.error || '분석 실패'}</p>`;
       }
 
       // 개선사항
       if (improvements && !improvements.error) {
-        displayAISection(improvementsSection, improvements);
+        improvementsSection.innerHTML = formatMarkdownToHtml(improvements);
         getLogger('✅ 개선사항 분석 완료');
       } else {
-        improvementsSection.innerHTML = `<p class="geo-ai-error">⚠️ ${improvements?.error || '분석 실패'}</p>`;
+        improvementsSection.innerHTML = `<p style="color: #fca5a5;">⚠️ ${improvements?.error || '분석 실패'}</p>`;
       }
 
       // 로드맵
       if (roadmap && !roadmap.error) {
-        displayAISection(roadmapSection, roadmap);
+        roadmapSection.innerHTML = formatMarkdownToHtml(roadmap);
         getLogger('✅ 로드맵 생성 완료');
       } else {
-        roadmapSection.innerHTML = `<p class="geo-ai-error">⚠️ ${roadmap?.error || '분석 실패'}</p>`;
+        roadmapSection.innerHTML = `<p style="color: #fca5a5;">⚠️ ${roadmap?.error || '분석 실패'}</p>`;
       }
-
-      // ✅ 5단계: 완료 후 최상단 스크롤
-      scrollToTop(elements);
 
     } catch (error) {
       getLogger('⚠️ AI 분석 실패: ' + error.message);
-      displayError(elements, 'AI 분석 실패: ' + error.message);
     }
 
     getLogger('✅ GEO Dual Audit 완료');
