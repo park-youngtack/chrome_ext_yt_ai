@@ -281,13 +281,16 @@ function displayDualAuditResult(elements, dualResult, improvement = '') {
       <h3 class="geo-category-title">${categoryLabel}</h3>
       <div class="geo-items">`;
 
+    // 각 항목을 weight 높은 순으로 정렬
+    const sortedItems = [...items].sort((a, b) => b.weight - a.weight);
+
     // 각 항목별로 봇/브라우저 나란히 표시
-    items.forEach(item => {
+    sortedItems.forEach(item => {
       const botItem = botResult.results.find(r => r.id === item.id);
       const clientItem = clientResult.results.find(r => r.id === item.id);
       const isDifferent = differences.some(d => d.id === item.id);
 
-      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent, item.educationText);
+      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent, item.tooltip);
     });
 
     comparisonHtml += `</div></div>`;
@@ -385,10 +388,10 @@ function renderCheckItem(result, differences = []) {
  * @param {CheckResult} botItem - 봇 검사 결과
  * @param {CheckResult} clientItem - 브라우저 검사 결과
  * @param {boolean} isDifferent - 차이점 여부
- * @param {string} educationText - 교육 메시지 (선택)
+ * @param {string} tooltipText - 툴팁 설명 (선택)
  * @returns {string} HTML 문자열
  */
-function renderDualCheckItem(botItem, clientItem, isDifferent, educationText = '') {
+function renderDualCheckItem(botItem, clientItem, isDifferent, tooltipText = '') {
   const diffClass = isDifferent ? 'geo-item-diff' : '';
   const diffBadge = isDifferent ? '<span class="geo-diff-badge">⚠️ 차이</span>' : '';
 
@@ -401,9 +404,9 @@ function renderDualCheckItem(botItem, clientItem, isDifferent, educationText = '
   const showBotHint = !botItem.passed && !showCommonHint;
   const showClientHint = !clientItem.passed && !showCommonHint;
 
-  // 교육 메시지 툴팁 (물음표 아이콘)
-  const educationIcon = educationText ? `
-    <span class="geo-education-icon" data-tooltip="${escapeHtml(educationText)}">
+  // 툴팁 (물음표 아이콘)
+  const tooltipIcon = tooltipText ? `
+    <span class="geo-tooltip-icon" data-tooltip="${escapeHtml(tooltipText)}">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <circle cx="7" cy="7" r="6.5" stroke="currentColor" stroke-width="1"/>
         <text x="7" y="10" text-anchor="middle" font-size="10" font-weight="600" fill="currentColor">?</text>
@@ -414,7 +417,7 @@ function renderDualCheckItem(botItem, clientItem, isDifferent, educationText = '
   return `
     <div class="geo-dual-item ${diffClass}">
       <div class="geo-dual-header">
-        <span class="geo-item-title">${botItem.title}${educationIcon}</span>
+        <span class="geo-item-title">${botItem.title}${tooltipIcon}</span>
         ${diffBadge}
         <span class="geo-item-weight">${botItem.weight}pt</span>
       </div>
@@ -618,4 +621,111 @@ function showGeoTab(elements) {
  */
 function hideGeoTab(elements) {
   if (elements.tab) elements.tab.style.display = 'none';
+}
+
+/**
+ * 툴팁 이벤트 핸들러 초기화
+ *
+ * 마우스 오버 시 툴팁을 마우스 위치 근처에 표시하며,
+ * 화면 경계를 벗어나지 않도록 자동 조정합니다.
+ */
+export function initTooltipHandlers() {
+  let tooltipElement = null;
+
+  // 툴팁 생성 (한 번만)
+  const createTooltip = () => {
+    if (tooltipElement) return tooltipElement;
+
+    tooltipElement = document.createElement('div');
+    tooltipElement.className = 'geo-tooltip-popup';
+    tooltipElement.style.cssText = `
+      position: fixed;
+      z-index: 10000;
+      background: #1a1a1a;
+      color: #edeef0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+      max-width: 300px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+      display: none;
+      word-wrap: break-word;
+    `;
+    document.body.appendChild(tooltipElement);
+    return tooltipElement;
+  };
+
+  // 툴팁 표시
+  const showTooltip = (text, x, y) => {
+    const tooltip = createTooltip();
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+
+    // 툴팁 크기 측정
+    const rect = tooltip.getBoundingClientRect();
+    const padding = 10; // 마우스 커서와의 거리
+
+    // 기본 위치: 마우스 오른쪽 아래
+    let left = x + padding;
+    let top = y + padding;
+
+    // 오른쪽 경계를 벗어나면 왼쪽으로 이동
+    if (left + rect.width > window.innerWidth) {
+      left = x - rect.width - padding;
+    }
+
+    // 아래쪽 경계를 벗어나면 위쪽으로 이동
+    if (top + rect.height > window.innerHeight) {
+      top = y - rect.height - padding;
+    }
+
+    // 왼쪽 경계 체크
+    if (left < 0) {
+      left = padding;
+    }
+
+    // 위쪽 경계 체크
+    if (top < 0) {
+      top = padding;
+    }
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  // 툴팁 숨김
+  const hideTooltip = () => {
+    if (tooltipElement) {
+      tooltipElement.style.display = 'none';
+    }
+  };
+
+  // 이벤트 위임 (동적으로 생성되는 요소에도 작동)
+  document.addEventListener('mouseover', (e) => {
+    const icon = e.target.closest('.geo-tooltip-icon');
+    if (icon) {
+      const text = icon.getAttribute('data-tooltip');
+      if (text) {
+        showTooltip(text, e.clientX, e.clientY);
+      }
+    }
+  });
+
+  document.addEventListener('mouseout', (e) => {
+    const icon = e.target.closest('.geo-tooltip-icon');
+    if (icon) {
+      hideTooltip();
+    }
+  });
+
+  // 마우스 이동 시 툴팁 위치 업데이트
+  document.addEventListener('mousemove', (e) => {
+    const icon = e.target.closest('.geo-tooltip-icon');
+    if (icon && tooltipElement && tooltipElement.style.display === 'block') {
+      const text = icon.getAttribute('data-tooltip');
+      showTooltip(text, e.clientX, e.clientY);
+    }
+  });
 }
