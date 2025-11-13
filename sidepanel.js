@@ -23,6 +23,7 @@ import { initializeSearchTab } from './modules/search.js';
 import { initQuickTranslateTab } from './modules/quick-translate.js';
 import { initRecurringTab } from './modules/recurring.js';
 import { initGeoTab } from './modules/geo-tab.js';
+import { initTooltipHandlers } from './modules/geo-ui.js';
 import { handleTabChange, getSupportType } from './modules/translation.js';
 
 // ===== 초기화 =====
@@ -66,6 +67,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // GEO 검사 탭 초기화
     initGeoTab();
+
+    // 툴팁 핸들러 초기화
+    initTooltipHandlers();
 
     // 현재 탭 정보 가져오기
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
