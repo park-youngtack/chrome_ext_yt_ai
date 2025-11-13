@@ -195,132 +195,278 @@ export function calculateScores(results) {
 }
 
 /**
- * LLM에 개선 의견 요청 (Claude Haiku 고정 사용)
+ * 강점 분석 (통과한 항목 칭찬) - 스트리밍
  *
- * 동작:
- * 1. 검사 결과에서 실패 항목만 추출
- * 2. JSON 스키마 프롬프트 구성 (점수, 실패 항목 정보 포함)
- * 3. OpenRouter API 호출 (anthropic/claude-haiku-4.5 강제)
- * 4. JSON 형식의 응답 반환
- *
- * 응답 형식:
- * {
- *   "improvements": [
- *     {"title": "...", "methods": [...], "codeExample": "...", "effects": [...]},
- *     ...
- *   ],
- *   "summary": "..."
- * }
- *
- * 모델 선택:
- * - GEO 검사: Claude Haiku (지시문 준수율 높음, 저렴)
- * - 번역: 사용자가 설정한 모델
- *
- * @param {AuditResult} auditResult - runAudit()의 검사 결과
- * @returns {Promise<Object>} LLM 응답 (JSON 객체, geo-ui.js의 formatImprovement로 HTML 변환됨)
- *
- * @example
- * // geo-ui.js에서 호출:
- * const auditResult = await runAudit();
- * const improvement = await getImprovement(auditResult);
- * console.log(improvement);
- * // "## 가장 중요한 3가지 개선사항
- * //  1. 제목 최적화 - 30-60자로 조정하세요
- * //  2. **메타 설명** 추가 - 155-160자 권장
- * //  ..."
- *
- * // HTML로 변환되어 UI에 표시됨:
- * const html = formatImprovement(improvement);
- * elements.improvementSection.innerHTML = html;
+ * @param {AuditResult} auditResult - 검사 결과
+ * @param {Function} onChunk - 청크 수신 콜백
+ * @returns {Promise<string>} 전체 텍스트
  */
-export async function getImprovement(auditResult) {
+export async function getStrengthsStreaming(auditResult, onChunk) {
   const apiKey = await getApiKey();
-  const model = await getModel();
+  if (!apiKey) throw new Error('API Key가 설정되지 않았습니다');
 
-  if (!apiKey) {
-    throw new Error('API Key가 설정되지 않았습니다');
-  }
+  const passedItems = auditResult.results
+    .filter(r => r.passed)
+    .map(r => `- ${r.title}`)
+    .join('\n');
 
-  // 실패한 항목만 정리
+  const prompt = `당신은 친절한 웹사이트 컨설턴트입니다. 다음은 GEO 검사에서 통과한 항목들입니다.
+
+## 통과한 항목
+${passedItems}
+
+## 요청
+위 항목들을 보고 **2-3문장으로 긍정적으로 칭찬**해주세요.
+
+예시:
+"현재 페이지 제목과 메타 설명이 이미 잘 최적화되어 있네요! 👍 특히 Open Graph 태그가 완벽하게 설정되어 있어 소셜 미디어 공유 시 멋지게 보일 거예요."
+
+## 규칙
+- 마크다운 형식
+- 2-3문장
+- 긍정적이고 격려하는 톤
+- 한국어`;
+
+  const geoModel = 'openai/gpt-4o-mini';
+
+  return await fetchLLMStreaming(prompt, apiKey, geoModel, onChunk);
+}
+
+/**
+ * 개선사항 분석 (실패 항목 TOP 3) - 스트리밍
+ *
+ * @param {AuditResult} auditResult - 검사 결과
+ * @param {Function} onChunk - 청크 수신 콜백
+ * @returns {Promise<string>} 전체 텍스트
+ */
+export async function getImprovementsStreaming(auditResult, onChunk) {
+  const apiKey = await getApiKey();
+  if (!apiKey) throw new Error('API Key가 설정되지 않았습니다');
+
   const failedItems = auditResult.results
     .filter(r => !r.passed)
     .map(r => `- ${r.title}: ${r.hint}`)
     .join('\n');
 
-  const prompt = `당신은 웹사이트 SEO/GEO 전문가입니다. 다음 검사 결과를 바탕으로 개선 의견을 제시해주세요.
+  const prompt = `당신은 실용적인 웹사이트 컨설턴트입니다. 다음은 GEO 검사에서 실패한 항목들입니다.
 
-## 검사 결과
+## 점수
 총점: ${auditResult.scores.total}/100 (SEO: ${auditResult.scores.seo}, AEO: ${auditResult.scores.aeo}, GEO: ${auditResult.scores.geo})
 
 ## 개선 필요 항목
 ${failedItems}
 
 ## 요청
-위 항목 중 **상위 3가지**를 선택하여 **마크다운 형식**으로 개선 의견을 작성해주세요.
+위 항목 중 **가장 중요한 3가지**를 선택하여 **마크다운 형식**으로 구체적인 개선 방법을 알려주세요.
 
-### 응답 형식
-각 개선 항목마다:
-1. 항목명 (명확한 제목)
-2. "왜 필요한가?" (배경 설명)
-3. "어떻게 개선할까?" (실행 방법, 3-4개 단계)
-4. "기대 효과" (개선 시 얻을 수 있는 결과, 2-3개)
+### 각 항목마다 포함할 내용
+1. **제목** (명확하고 간결하게)
+2. **왜 중요한가?** (비즈니스 임팩트, 1-2문장)
+3. **어떻게 개선할까?** (구체적인 실행 방법, 3-4개 단계)
+4. **코드 예시** (가능하면 HTML/JSON-LD 예시)
+5. **기대 효과** (정량적 수치 포함, 2-3개)
+6. **난이도와 시간** (쉬움/보통/어려움, 예상 소요 시간)
 
-예시:
-## 1. 메타 설명 추가
-**왜 필요한가?** 메타 설명은 검색 결과에 표시되는 미리보기 텍스트로, 사용자 클릭률을 크게 높입니다.
+### 예시 형식
+## 1. 메타 설명 최적화
+
+**왜 중요한가?**
+메타 설명은 검색 결과에 표시되는 미리보기 텍스트로, CTR(클릭률)에 직접적인 영향을 미칩니다.
+
 **어떻게 개선할까?**
 - 150-160자 범위로 작성
-- 주요 키워드 포함
+- 주요 키워드를 자연스럽게 포함
 - 행동 유도 문구 추가 (예: "지금 확인해보세요")
+- 페이지 내용을 정확히 요약
+
+**코드 예시**
+\`\`\`html
+<meta name="description" content="BBC News는 전 세계 뉴스, 정치, 비즈니스, 과학 정보를 제공합니다. 최신 뉴스 기사와 분석을 지금 읽어보세요.">
+\`\`\`
+
 **기대 효과**
-- CTR(클릭률) 15-20% 증가
-- 검색 결과에서 완전한 설명 표시
+- CTR 15-20% 증가
+- 검색 결과에서 설명이 온전히 표시됨
+- 사용자가 페이지 내용을 미리 파악
 
-## 2. ...
+**난이도와 시간**
+⚡ 쉬움 | 30분
 
-## 필수 규칙
-- 마크다운 형식만 사용 (코드 예시 불필요)
+---
+
+## 규칙
+- 마크다운 형식 엄수
 - 정확히 3개 항목
 - 한국어로 작성
-- 실행 가능한 구체적인 방법 설명`;
+- 실행 가능한 구체적인 방법
+- 코드 예시는 HTML 엔터티 없이 일반 코드블록 사용`;
+
+  const geoModel = 'openai/gpt-4o-mini';
+
+  return await fetchLLMStreaming(prompt, apiKey, geoModel, onChunk, {
+    maxTokens: 3000
+  });
+}
+
+/**
+ * 실행 로드맵 생성 - 스트리밍
+ *
+ * @param {AuditResult} auditResult - 검사 결과
+ * @param {Function} onChunk - 청크 수신 콜백
+ * @returns {Promise<string>} 전체 텍스트
+ */
+export async function getRoadmapStreaming(auditResult, onChunk) {
+  const apiKey = await getApiKey();
+  if (!apiKey) throw new Error('API Key가 설정되지 않았습니다');
+
+  const failedCount = auditResult.failedCount;
+
+  const prompt = `당신은 격려하는 코치입니다. GEO 검사에서 ${failedCount}개 항목이 실패했습니다.
+
+## 요청
+개선 작업을 위한 **실행 로드맵**과 **격려 메시지**를 작성해주세요.
+
+### 형식
+## 📅 실행 로드맵
+
+**오늘 (30분-1시간)**
+- 메타 설명 최적화
+- Alt 텍스트 추가
+
+**이번 주 (2-3시간)**
+- JSON-LD 구조화 데이터 추가
+- FAQ 스키마 구축
+
+**장기 (지속적)**
+- 콘텐츠 신뢰도 향상 (저자 정보, 출처 명시)
+- 정기적인 검사 및 업데이트
+
+---
+
+## 💬 마무리
+이미 ${auditResult.passedCount}개 항목을 잘 준수하고 계십니다! 위 개선사항만 적용하면 검색 가시성이 크게 향상될 거예요. 🚀
+
+## 규칙
+- 마크다운 형식
+- 3-4문장
+- 격려하는 톤
+- 한국어`;
+
+  const geoModel = 'openai/gpt-4o-mini';
+
+  return await fetchLLMStreaming(prompt, apiKey, geoModel, onChunk);
+}
+
+/**
+ * 스트리밍 LLM 요청 (Sidepanel 컨텍스트에서 작동)
+ *
+ * @param {string} prompt - 프롬프트
+ * @param {string} apiKey - API 키
+ * @param {string} model - 모델명
+ * @param {Function} onChunk - 청크 수신 콜백 (text) => void
+ * @param {Object} options - 추가 옵션
+ * @returns {Promise<string>} 전체 응답 텍스트
+ */
+async function fetchLLMStreaming(prompt, apiKey, model, onChunk, options = {}) {
+  const { temperature = 0.7, maxTokens = 2000 } = options;
 
   try {
-    // GEO 검사는 OpenAI gpt-4o-mini로 사용 (JSON 응답 형식 안정적)
-    // 번역 작업은 사용자가 선택한 모델 사용
-    const geoModel = 'openai/gpt-4o-mini';
-
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.href,
+        'X-Title': 'Web Page Translator - GEO Audit'
       },
       body: JSON.stringify({
-        model: geoModel,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        stream: true,
+        temperature,
+        max_tokens: maxTokens
       })
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `API 오류: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`API 오류 (${response.status}): ${errorText}`);
     }
 
-    const data = await response.json();
-    const content = data.choices[0].message.content;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
 
-    // 마크다운 응답을 그대로 반환
-    return content.trim();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 마지막 불완전한 줄은 버퍼에 보관
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === 'data: [DONE]') continue;
+        if (!trimmed.startsWith('data: ')) continue;
+
+        try {
+          const jsonStr = trimmed.slice(6); // 'data: ' 제거
+          const data = JSON.parse(jsonStr);
+          const content = data.choices?.[0]?.delta?.content;
+
+          if (content) {
+            fullText += content;
+            if (onChunk) {
+              onChunk(content);
+            }
+          }
+        } catch (parseError) {
+          // JSON 파싱 에러 무시 (불완전한 청크)
+        }
+      }
+    }
+
+    return fullText;
   } catch (error) {
-    throw new Error(`LLM 의견 수집 실패: ${error.message}`);
+    throw new Error(`스트리밍 실패: ${error.message}`);
   }
+}
+
+/**
+ * 폴백: 일반 LLM 요청 (스트리밍 없음)
+ */
+async function fetchLLM(prompt, apiKey, model) {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 2000
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || `API 오류: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content.trim();
+}
+
+/**
+ * @deprecated 기존 getImprovement는 하위 호환성을 위해 유지 (사용 안 함)
+ */
+export async function getImprovement(auditResult) {
+  // 기존 함수는 하위 호환을 위해 유지하되, 내부적으로 새 함수 사용
+  return await getImprovementsStreaming(auditResult, null);
 }
 
 /**
