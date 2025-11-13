@@ -514,24 +514,11 @@ function displayDualAuditResult(elements, dualResult, improvement = '') {
 
   comparisonHtml += '</div>';
 
-  // LLM 의견 (botResult 기준으로 생성)
-  let improvementHtml = '';
-  if (improvement && elements.improvementSection) {
-    const formattedHtml = formatImprovement(improvement);
-    improvementHtml = `
-      <div class="geo-improvement">
-        <h3>💡 AI 개선 의견 (봇이 보는 관점)</h3>
-        ${formattedHtml}
-      </div>
-    `;
-  }
-
   // 전체 조합
   elements.scoreCard.innerHTML = diffWarning + scoreComparison;
   elements.checklistContainer.innerHTML = comparisonHtml;
-  if (elements.improvementSection) {
-    elements.improvementSection.innerHTML = improvementHtml;
-  }
+
+  // improvementSection은 건드리지 않음 (handleRunAudit에서 AI 섹션 추가)
 
   // 결과 섹션 표시
   elements.resultSection.style.display = 'block';
