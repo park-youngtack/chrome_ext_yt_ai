@@ -101,9 +101,10 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const currentTab = tabs[0];
     const currentUrl = currentTab?.url;
+    const tabId = currentTab?.id;
 
-    if (!currentUrl) {
-      throw new Error('현재 탭 URL을 찾을 수 없습니다');
+    if (!currentUrl || !tabId) {
+      throw new Error('현재 탭 정보를 찾을 수 없습니다');
     }
 
     // http/https만 지원
@@ -111,12 +112,39 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       throw new Error('http/https URL만 지원합니다 (현재: ' + currentUrl.split(':')[0] + ')');
     }
 
+    // Content Script 주입 확인 (PING 테스트)
+    getLogger('Content Script 확인 중...');
+    try {
+      await chrome.tabs.sendMessage(tabId, { action: 'PING' });
+      getLogger('✅ Content Script 이미 주입됨');
+    } catch (error) {
+      // Content Script 미주입 → 자동 주입
+      getLogger('Content Script 미주입, 자동 주입 시작...');
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content.js']
+        });
+        getLogger('✅ Content Script 주입 완료');
+        // 주입 후 안정화 대기
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (injectError) {
+        throw new Error('Content Script 주입 실패: ' + injectError.message);
+      }
+    }
+
     // 콜백 실행
     await onStartAudit();
 
     // Dual Audit 실행
     getLogger('🔍 GEO Dual Audit 시작...');
-    const { runDualAudit, getImprovement, logAuditResult } = await import('./geo-audit.js');
+    const {
+      runDualAudit,
+      logAuditResult,
+      getStrengthsStreaming,
+      getImprovementsStreaming,
+      getRoadmapStreaming
+    } = await import('./geo-audit.js');
 
     const dualResult = await runDualAudit(currentUrl);
 
@@ -127,18 +155,51 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
     logAuditResult(dualResult.clientResult);
     getLogger(`⚠️ 차이점: ${dualResult.differences.length}개`);
 
-    // LLM 의견 수집 (봇 검사 기준)
-    getLogger('💡 LLM 의견 수집 중 (봇 관점)...');
-    let improvement = '';
-    try {
-      improvement = await getImprovement(dualResult.botResult);
-    } catch (error) {
-      getLogger('⚠️ LLM 의견 수집 실패: ' + error.message);
-      // LLM 실패는 검사 결과는 보여주되, 의견은 생략
-    }
+    // ✅ 1단계: 체크리스트 즉시 표시
+    displayDualAuditResultWithoutAI(elements, dualResult);
+    displayLoading(elements, false); // 로딩 스피너 제거
 
-    // UI 업데이트 (Dual Audit 결과)
-    displayDualAuditResult(elements, dualResult, improvement);
+    // ✅ 2단계: AI 분석 섹션 준비 (3개 섹션)
+    const aiSectionContainer = createAISectionContainer(elements);
+
+    const strengthsSection = aiSectionContainer.querySelector('#geoAiStrengths');
+    const improvementsSection = aiSectionContainer.querySelector('#geoAiImprovements');
+    const roadmapSection = aiSectionContainer.querySelector('#geoAiRoadmap');
+
+    // ✅ 3단계: 순차적으로 스트리밍 (강점 → 개선사항 → 로드맵)
+    try {
+      // 3-1. 강점 분석 (빠르게 완료)
+      getLogger('💡 강점 분석 중...');
+      initStreamingSection(strengthsSection, '🎉 강점 분석 중...');
+      await getStrengthsStreaming(dualResult.botResult, (chunk) => {
+        appendStreamingText(strengthsSection, chunk);
+      });
+      completeStreamingSection(strengthsSection);
+      getLogger('✅ 강점 분석 완료');
+
+      // 3-2. 개선사항 분석 (가장 중요!)
+      getLogger('💡 개선사항 분석 중...');
+      initStreamingSection(improvementsSection, '🔍 개선사항 분석 중...');
+      await getImprovementsStreaming(dualResult.botResult, (chunk) => {
+        appendStreamingText(improvementsSection, chunk);
+      });
+      completeStreamingSection(improvementsSection);
+      getLogger('✅ 개선사항 분석 완료');
+
+      // 3-3. 로드맵 생성
+      getLogger('💡 로드맵 생성 중...');
+      initStreamingSection(roadmapSection, '📅 로드맵 생성 중...');
+      await getRoadmapStreaming(dualResult.botResult, (chunk) => {
+        appendStreamingText(roadmapSection, chunk);
+      });
+      completeStreamingSection(roadmapSection);
+      getLogger('✅ 로드맵 생성 완료');
+
+    } catch (error) {
+      getLogger('⚠️ AI 분석 실패: ' + error.message);
+      // AI 분석 실패해도 체크리스트는 이미 표시됨
+      displayError(elements, 'AI 분석 실패: ' + error.message);
+    }
 
     getLogger('✅ GEO Dual Audit 완료');
   } catch (error) {
@@ -147,6 +208,117 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
   } finally {
     displayLoading(elements, false);
   }
+}
+
+/**
+ * Dual Audit 결과 표시 (AI 의견 제외)
+ * 체크리스트만 즉시 표시하고, AI 섹션은 별도로 준비
+ */
+function displayDualAuditResultWithoutAI(elements, dualResult) {
+  if (!elements.resultSection) return;
+
+  const { botResult, clientResult, differences } = dualResult;
+
+  // 차이점 경고
+  const diffWarning = differences.length > 0
+    ? `<div class="geo-diff-warning">⚠️ <strong>차이점 ${differences.length}개 발견</strong>: 봇은 못 보지만 브라우저는 보는 요소가 있습니다</div>`
+    : `<div class="geo-diff-success">✅ 봇과 브라우저 결과가 일치합니다</div>`;
+
+  // 점수 비교
+  const scoreComparison = `
+    <div class="geo-score-comparison">
+      <h3>📊 점수 비교</h3>
+      <div class="geo-score-row">
+        <div class="geo-score-col">
+          <div class="geo-score-label">🤖 봇 (초기 HTML)</div>
+          <div class="geo-score-value ${botResult.scores.total < 50 ? 'low' : ''}">
+            ${botResult.scores.total}/100
+          </div>
+          <div class="geo-score-detail">
+            SEO: ${botResult.scores.seo} | AEO: ${botResult.scores.aeo} | GEO: ${botResult.scores.geo}
+          </div>
+        </div>
+        <div class="geo-score-col">
+          <div class="geo-score-label">👤 브라우저 (JS 실행 후)</div>
+          <div class="geo-score-value ${clientResult.scores.total < 50 ? 'low' : ''}">
+            ${clientResult.scores.total}/100
+          </div>
+          <div class="geo-score-detail">
+            SEO: ${clientResult.scores.seo} | AEO: ${clientResult.scores.aeo} | GEO: ${clientResult.scores.geo}
+          </div>
+        </div>
+      </div>
+      ${differences.length > 0 ? `<div class="geo-score-gap">
+        <span class="geo-gap-icon">📉</span>
+        <span class="geo-gap-text">${Math.abs(clientResult.scores.total - botResult.scores.total)}점 차이</span>
+        <span class="geo-gap-hint">→ CSR 의존도가 높습니다. 검색봇이 제대로 읽지 못할 수 있습니다.</span>
+      </div>` : ''}
+    </div>
+  `;
+
+  // 항목별 나란히 비교
+  const grouped = groupChecklistByCategory();
+  let comparisonHtml = '<div class="geo-dual-comparison">';
+
+  Object.entries(grouped).forEach(([category, items]) => {
+    const categoryLabel = { seo: 'SEO', aeo: 'AEO', geo: 'GEO' }[category];
+    comparisonHtml += `<div class="geo-category">
+      <h3 class="geo-category-title">${categoryLabel}</h3>
+      <div class="geo-items">`;
+
+    // 각 항목을 weight 높은 순으로 정렬
+    const sortedItems = [...items].sort((a, b) => b.weight - a.weight);
+
+    // 각 항목별로 봇/브라우저 나란히 표시
+    sortedItems.forEach(item => {
+      const botItem = botResult.results.find(r => r.id === item.id);
+      const clientItem = clientResult.results.find(r => r.id === item.id);
+      const isDifferent = differences.some(d => d.id === item.id);
+
+      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent, item.tooltip);
+    });
+
+    comparisonHtml += `</div></div>`;
+  });
+
+  comparisonHtml += '</div>';
+
+  // 체크리스트만 표시
+  elements.scoreCard.innerHTML = diffWarning + scoreComparison;
+  elements.checklistContainer.innerHTML = comparisonHtml;
+  elements.resultSection.style.display = 'block';
+}
+
+/**
+ * AI 분석 섹션 컨테이너 생성
+ * 3개 섹션을 가진 컨테이너를 improvementSection에 삽입
+ */
+function createAISectionContainer(elements) {
+  if (!elements.improvementSection) return null;
+
+  const html = `
+    <div class="geo-ai-analysis">
+      <h3>🤖 AI 컨설턴트 분석</h3>
+
+      <div class="geo-ai-section">
+        <h4>👍 잘하고 있는 부분</h4>
+        <div id="geoAiStrengths" class="geo-ai-content"></div>
+      </div>
+
+      <div class="geo-ai-section">
+        <h4>🎯 우선순위 개선사항 TOP 3</h4>
+        <div id="geoAiImprovements" class="geo-ai-content"></div>
+      </div>
+
+      <div class="geo-ai-section">
+        <h4>📅 실행 로드맵</h4>
+        <div id="geoAiRoadmap" class="geo-ai-content"></div>
+      </div>
+    </div>
+  `;
+
+  elements.improvementSection.innerHTML = html;
+  return elements.improvementSection.querySelector('.geo-ai-analysis');
 }
 
 /**
@@ -499,43 +671,48 @@ function decodeHtmlEntities(text) {
 }
 
 /**
- * LLM 개선 의견 포맷팅 (마크다운 → HTML)
+ * 마크다운을 HTML로 변환 (향상된 버전 - 코드 블록 지원)
  *
- * LLM이 마크다운 형식으로 반환한 개선 의견을 HTML로 변환합니다.
- *
- * 입력 형식:
- * ```
- * ## 1. 메타 설명 추가
- * **왜 필요한가?** 메타 설명은...
- * **어떻게 개선할까?**
- * - 150-160자 범위로 작성
- * - 주요 키워드 포함
- * **기대 효과**
- * - CTR 증가
- * - 검색 결과에서 완전한 설명 표시
- * ```
- *
- * @param {string} markdown - LLM이 반환한 마크다운 문자열
- * @returns {string} HTML 문자열 (렌더링 가능)
+ * @param {string} markdown - 마크다운 텍스트
+ * @returns {string} HTML 문자열
  */
-function formatImprovement(markdown) {
+function formatMarkdownToHtml(markdown) {
   if (!markdown || typeof markdown !== 'string') {
     return '';
   }
 
-  // 간단한 마크다운 → HTML 변환
-  let html = markdown
+  // 1. 코드 블록 추출 (```...```)
+  const codeBlocks = [];
+  let processedMd = markdown.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+    codeBlocks.push({ lang: lang || 'plaintext', code: code.trim() });
+    return placeholder;
+  });
+
+  // 2. 기본 마크다운 변환
+  let html = processedMd
+    // ### 제목 → <h4>
+    .replace(/^### (.+)$/gm, '<h4 class="geo-improvement-h4">$1</h4>')
     // ## 제목 → <h3>
     .replace(/^## (.+)$/gm, '<h3 class="geo-improvement-h3">$1</h3>')
     // **굵은 글씨** → <strong>
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // *이탤릭* → <em>
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // `인라인 코드` → <code>
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // 구분선 (---)
+    .replace(/^---$/gm, '<hr class="geo-improvement-hr">')
     // 줄바꿈을 <p>로 분리
     .split('\n\n')
     .map(para => {
       para = para.trim();
       if (!para) return '';
+
+      // 코드 블록 플레이스홀더는 그대로
+      if (para.startsWith('__CODE_BLOCK_')) {
+        return para;
+      }
 
       // 불릿 리스트 처리 (- 로 시작하는 줄)
       if (para.includes('\n- ')) {
@@ -543,21 +720,28 @@ function formatImprovement(markdown) {
         const title = lines[0];
         const items = lines.slice(1).filter(l => l.trim().startsWith('-'));
 
-        let html = '';
-        if (title && !title.startsWith('-')) {
-          html += `<p>${title}</p>`;
+        let listHtml = '';
+        if (title && !title.startsWith('-') && !title.startsWith('<')) {
+          listHtml += `<p>${title}</p>`;
+        } else if (title.startsWith('<')) {
+          listHtml += title;
         }
 
         if (items.length > 0) {
-          html += '<ul class="geo-improvement-list">\n';
+          listHtml += '<ul class="geo-improvement-list">\n';
           items.forEach(item => {
             const text = item.replace(/^-\s*/, '');
-            html += `<li>${text}</li>\n`;
+            listHtml += `<li>${text}</li>\n`;
           });
-          html += '</ul>';
+          listHtml += '</ul>';
         }
 
-        return html;
+        return listHtml;
+      }
+
+      // 이미 HTML 태그로 시작하면 그대로
+      if (para.startsWith('<')) {
+        return para;
       }
 
       // 일반 문장
@@ -565,7 +749,68 @@ function formatImprovement(markdown) {
     })
     .join('\n');
 
+  // 3. 코드 블록 복원
+  codeBlocks.forEach((block, idx) => {
+    const placeholder = `__CODE_BLOCK_${idx}__`;
+    const escapedCode = escapeHtml(block.code);
+    const codeHtml = `<pre><code class="language-${block.lang}">${escapedCode}</code></pre>`;
+    html = html.replace(placeholder, codeHtml);
+  });
+
   return `<div class="geo-improvement-content">${html}</div>`;
+}
+
+/**
+ * @deprecated 기존 formatImprovement는 하위 호환을 위해 유지
+ */
+function formatImprovement(markdown) {
+  return formatMarkdownToHtml(markdown);
+}
+
+/**
+ * 실시간 스트리밍 텍스트를 섹션에 append
+ *
+ * @param {HTMLElement} sectionElement - 섹션 DOM 요소
+ * @param {string} chunk - 추가할 텍스트 청크
+ */
+function appendStreamingText(sectionElement, chunk) {
+  if (!sectionElement) return;
+
+  // 현재 텍스트에 청크 추가
+  const currentText = sectionElement.getAttribute('data-raw-text') || '';
+  const newText = currentText + chunk;
+  sectionElement.setAttribute('data-raw-text', newText);
+
+  // 마크다운 실시간 렌더링 (부분 렌더링)
+  sectionElement.innerHTML = formatMarkdownToHtml(newText);
+}
+
+/**
+ * 섹션 초기화 (로딩 상태 표시)
+ *
+ * @param {HTMLElement} sectionElement - 섹션 DOM 요소
+ * @param {string} loadingMessage - 로딩 메시지
+ */
+function initStreamingSection(sectionElement, loadingMessage = '분석 중...') {
+  if (!sectionElement) return;
+
+  sectionElement.setAttribute('data-raw-text', '');
+  sectionElement.innerHTML = `<p class="geo-streaming-loading">${loadingMessage}</p>`;
+}
+
+/**
+ * 섹션 완료 표시
+ *
+ * @param {HTMLElement} sectionElement - 섹션 DOM 요소
+ */
+function completeStreamingSection(sectionElement) {
+  if (!sectionElement) return;
+
+  // 로딩 표시 제거
+  const loading = sectionElement.querySelector('.geo-streaming-loading');
+  if (loading) {
+    loading.remove();
+  }
 }
 
 
