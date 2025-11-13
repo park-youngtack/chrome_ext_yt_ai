@@ -111,11 +111,8 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       throw new Error('http/https URL만 지원합니다 (현재: ' + currentUrl.split(':')[0] + ')');
     }
 
-    // 콜백 실행 (페이지 새로고침 등)
+    // 콜백 실행
     await onStartAudit();
-
-    // 짧은 딜레이 후 검사 시작 (페이지 로딩 완료 대기)
-    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Dual Audit 실행
     getLogger('🔍 GEO Dual Audit 시작...');
@@ -290,7 +287,7 @@ function displayDualAuditResult(elements, dualResult, improvement = '') {
       const clientItem = clientResult.results.find(r => r.id === item.id);
       const isDifferent = differences.some(d => d.id === item.id);
 
-      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent);
+      comparisonHtml += renderDualCheckItem(botItem, clientItem, isDifferent, item.educationText);
     });
 
     comparisonHtml += `</div></div>`;
@@ -388,19 +385,36 @@ function renderCheckItem(result, differences = []) {
  * @param {CheckResult} botItem - 봇 검사 결과
  * @param {CheckResult} clientItem - 브라우저 검사 결과
  * @param {boolean} isDifferent - 차이점 여부
+ * @param {string} educationText - 교육 메시지 (선택)
  * @returns {string} HTML 문자열
  */
-function renderDualCheckItem(botItem, clientItem, isDifferent) {
+function renderDualCheckItem(botItem, clientItem, isDifferent, educationText = '') {
   const diffClass = isDifferent ? 'geo-item-diff' : '';
   const diffBadge = isDifferent ? '<span class="geo-diff-badge">⚠️ 차이</span>' : '';
 
   const botIcon = botItem.passed ? '✅' : '❌';
   const clientIcon = clientItem.passed ? '✅' : '❌';
 
+  // 힌트 표시 로직: 둘 다 실패 시 공통 힌트, 한쪽만 실패 시 해당 영역에만
+  const bothFailed = !botItem.passed && !clientItem.passed;
+  const showCommonHint = bothFailed;
+  const showBotHint = !botItem.passed && !showCommonHint;
+  const showClientHint = !clientItem.passed && !showCommonHint;
+
+  // 교육 메시지 툴팁 (물음표 아이콘)
+  const educationIcon = educationText ? `
+    <span class="geo-education-icon" data-tooltip="${escapeHtml(educationText)}">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="6.5" stroke="currentColor" stroke-width="1"/>
+        <text x="7" y="10" text-anchor="middle" font-size="10" font-weight="600" fill="currentColor">?</text>
+      </svg>
+    </span>
+  ` : '';
+
   return `
     <div class="geo-dual-item ${diffClass}">
       <div class="geo-dual-header">
-        <span class="geo-item-title">${botItem.title}</span>
+        <span class="geo-item-title">${botItem.title}${educationIcon}</span>
         ${diffBadge}
         <span class="geo-item-weight">${botItem.weight}pt</span>
       </div>
@@ -411,7 +425,7 @@ function renderDualCheckItem(botItem, clientItem, isDifferent) {
           <div class="geo-dual-status ${botItem.passed ? 'passed' : 'failed'}">
             ${botIcon} ${botItem.passed ? '통과' : '실패'} (${botItem.weight}pt)
           </div>
-          ${!botItem.passed ? `<div class="geo-item-hint">💡 ${botItem.hint}</div>` : ''}
+          ${showBotHint ? `<div class="geo-item-hint">💡 ${botItem.hint}</div>` : ''}
         </div>
 
         <div class="geo-dual-col client-col">
@@ -419,9 +433,11 @@ function renderDualCheckItem(botItem, clientItem, isDifferent) {
           <div class="geo-dual-status ${clientItem.passed ? 'passed' : 'failed'}">
             ${clientIcon} ${clientItem.passed ? '통과' : '실패'} (${clientItem.weight}pt)
           </div>
-          ${!clientItem.passed ? `<div class="geo-item-hint">💡 ${clientItem.hint}</div>` : ''}
+          ${showClientHint ? `<div class="geo-item-hint">💡 ${clientItem.hint}</div>` : ''}
         </div>
       </div>
+
+      ${showCommonHint ? `<div class="geo-item-hint-common">💡 ${botItem.hint}</div>` : ''}
     </div>
   `;
 }

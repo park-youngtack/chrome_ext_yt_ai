@@ -2606,6 +2606,88 @@
               border-radius: 4px;
             }
 
+            /* 공통 힌트 (둘 다 실패 시) */
+            .geo-item-hint-common {
+              font-size: 12px;
+              color: var(--text-secondary);
+              margin-top: 12px;
+              padding: 8px;
+              background: rgba(245, 158, 11, 0.05);
+              border-left: 3px solid rgba(245, 158, 11, 0.4);
+              border-radius: 4px;
+            }
+
+            /* 교육 툴팁 - 물음표 아이콘 */
+            .geo-education-icon {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 16px;
+              height: 16px;
+              margin-left: 6px;
+              color: var(--status-active);
+              cursor: help;
+              position: relative;
+              vertical-align: middle;
+              opacity: 0.7;
+              transition: opacity 0.2s;
+            }
+
+            .geo-education-icon:hover {
+              opacity: 1;
+            }
+
+            /* 툴팁 */
+            .geo-education-icon::after {
+              content: attr(data-tooltip);
+              position: absolute;
+              left: 50%;
+              bottom: calc(100% + 8px);
+              transform: translateX(-50%);
+              padding: 12px;
+              background: var(--bg-primary);
+              border: 1px solid var(--border-color);
+              border-radius: var(--radius-md);
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+              font-size: 12px;
+              line-height: 1.5;
+              color: var(--text-primary);
+              white-space: pre-wrap;
+              max-width: 400px;
+              width: max-content;
+              z-index: 1000;
+              opacity: 0;
+              pointer-events: none;
+              transition: opacity 0.2s;
+            }
+
+            .geo-education-icon:hover::after {
+              opacity: 1;
+              pointer-events: auto;
+            }
+
+            /* 툴팁 화살표 */
+            .geo-education-icon::before {
+              content: '';
+              position: absolute;
+              left: 50%;
+              bottom: calc(100% + 2px);
+              transform: translateX(-50%);
+              width: 0;
+              height: 0;
+              border-left: 6px solid transparent;
+              border-right: 6px solid transparent;
+              border-top: 6px solid var(--border-color);
+              z-index: 1001;
+              opacity: 0;
+              pointer-events: none;
+              transition: opacity 0.2s;
+            }
+
+            .geo-education-icon:hover::before {
+              opacity: 1;
+            }
+
             @keyframes spin {
               to { transform: rotate(360deg); }
             }
