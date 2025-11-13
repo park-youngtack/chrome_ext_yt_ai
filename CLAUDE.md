@@ -2,10 +2,10 @@
 
 ## 확장 프로그램 정보
 - **이름**: 무조건 한글로 번역해드림
-- **버전**: 2.2.0
+- **버전**: 2.3.0
 - **설명**: OpenRouter AI를 사용하여 웹페이지를 한글로 번역하는 크롬 확장 프로그램
 - **개발**: 인크로스 AI비즈솔루션팀 박영택
-- **최종 수정**: 2025-11-12 (meta.js 참고)
+- **최종 수정**: 2025-11-13 (meta.js 참고)
 
 ## 파일 구조
 
@@ -539,20 +539,68 @@ function myFunction(paramName) {
 
 이 프로세스는 Claude Code의 Task/Agent를 활용하여 구현 가능합니다.
 
-## 주요 교훈 (2025-11-10)
+## 주요 교훈
 
-### "if if if"를 피하는 법
+### Race Condition 방지: 상태 중복 실행 차단 (2025-11-13)
+**문제**: GEO 검사 중 동시에 여러 요청이 오면 상태가 꼬임
+```javascript
+// ❌ Race condition 발생
+if (isAuditRunning) {
+  runAudit(); // 동시 실행됨!
+}
+
+// ✅ 원자성 보장
+if (isAuditRunning) return;
+isAuditRunning = true;
+try {
+  await runAudit();
+} finally {
+  isAuditRunning = false;
+}
+```
+
+**핵심**: 플래그를 먼저 설정하면 동시 요청 자동 차단
+
+### PING 타임아웃: 명시적 폴백 (2025-11-13)
+**개선**: Content Script와 통신할 수 없을 때 명확한 사용자 안내
+```javascript
+// 3초 타임아웃으로 무한 대기 방지
+const timeoutPromise = new Promise(resolve =>
+  setTimeout(() => resolve(null), 3000)
+);
+const response = await Promise.race([
+  sendMessage('ping'),
+  timeoutPromise
+]);
+
+if (!response) {
+  // 사용자에게 안내
+  showError('페이지를 새로고침해주세요');
+}
+```
+
+**이점**: 응답 없는 상황 자동 감지
+
+### 검사 기준 세분화: 3단계 평가 (2025-11-13)
+**기존**: 이진 판정 (통과/실패) → 사용자 혼란
+**개선**: 3단계 (완벽/부분/미흡) → 명확한 개선 방향
+- CSS 미디어 쿼리 통과 시 이유 표시
+- 모바일 반응형 검사 세분화
+
+**교훈**: 단순 yes/no보다 맥락 정보가 사용자 경험 향상
+
+### "if if if"를 피하는 법 (2025-11-10)
 - ❌ 각 요구사항마다 if 조건 추가 → 복잡도 폭증
 - ✅ 근본적인 데이터 구조 설계 → 조건 최소화
 
 **핵심**: 데이터 구조부터 설계하면 if 조건이 거의 필요 없습니다.
 
-### 탭별 독립 상태 관리
+### 탭별 독립 상태 관리 (2025-11-10)
 - `translationStateByTab` Map으로 각 탭 상태 독립 관리
 - 깊은 복사 필수 (batches 배열)
 - 번역 중일 때만 Port 유지
 
-### 번역 중 탭 전환 보호
+### 번역 중 탭 전환 보호 (2025-11-10)
 ```javascript
 if (translationState.state === 'translating') {
   return; // 조건 1개로 모든 문제 해결!
