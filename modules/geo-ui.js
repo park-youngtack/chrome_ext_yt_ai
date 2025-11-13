@@ -10,6 +10,23 @@
 import { groupChecklistByCategory, GEO_CHECKLIST } from './geo-checklist.js';
 
 /**
+ * 토스트 메시지 표시 함수
+ * @param {string} message - 메시지 내용
+ * @param {string} type - 메시지 타입 ('success', 'error', 'info')
+ */
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+
+  toast.textContent = message;
+  toast.className = `toast show ${type}`;
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2000);
+}
+
+/**
  * Content Script에 메시지 전송
  * @param {string} action - 메시지 액션
  * @param {Object} data - 메시지 데이터
@@ -174,6 +191,9 @@ async function handleRunAudit(elements, getLogger, onStartAudit) {
       getLogger('⚠️ AI 분석 하위 섹션을 찾을 수 없습니다');
       return;
     }
+
+    // 토스트 메시지 표시
+    showToast('🤖 AI 컨설턴트 분석을 시작합니다...', 'info');
 
     // AI 분석 로딩 표시
     strengthsSection.innerHTML = '<p style="color: var(--text-secondary);">🎉 강점 분석 중...</p>';
